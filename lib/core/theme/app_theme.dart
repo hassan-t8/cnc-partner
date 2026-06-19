@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'app_colors.dart';
 
 class AppTheme {
@@ -19,6 +20,12 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0.5,
         centerTitle: false,
+        // White status bar with dark icons across all screens.
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: AppColors.surface,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+        ),
         titleTextStyle: TextStyle(
           color: AppColors.textPrimary,
           fontSize: 18,

@@ -5,7 +5,12 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/auth/jwt_user.dart';
 import '../../core/theme/app_colors.dart';
 import '../common/placeholder_screen.dart';
+import '../partner/partner_bookings_screen.dart';
+import '../partner/partner_dashboard_screen.dart';
+import '../partner/partner_more_screen.dart';
+import '../partner/partner_requests_screen.dart';
 import '../profile/profile_screen.dart';
+import '../reviews/reviews_screen.dart';
 import '../worker/crew_jobs_screen.dart';
 import '../worker/worker_bookings_screen.dart';
 
@@ -29,15 +34,10 @@ class _RoleShellState extends ConsumerState<RoleShell> {
   List<_Dest> _destsFor(JwtUser user) {
     if (user.isPartner) {
       return const [
-        _Dest('Home', Icons.dashboard_outlined,
-            PlaceholderScreen(title: 'Dashboard', icon: Icons.dashboard)),
-        _Dest('Bookings', Icons.assignment_outlined,
-            PlaceholderScreen(title: 'Bookings', icon: Icons.assignment)),
-        _Dest('Requests', Icons.inbox_outlined,
-            PlaceholderScreen(title: 'Requests', icon: Icons.inbox)),
-        _Dest('Team', Icons.groups_outlined,
-            PlaceholderScreen(title: 'My Team', icon: Icons.groups)),
-        _Dest('Profile', Icons.person_outline, ProfileScreen()),
+        _Dest('Home', Icons.dashboard_outlined, PartnerDashboardScreen()),
+        _Dest('Bookings', Icons.assignment_outlined, PartnerBookingsScreen()),
+        _Dest('Requests', Icons.inbox_outlined, PartnerRequestsScreen()),
+        _Dest('More', Icons.menu, PartnerMoreScreen()),
       ];
     }
     // Worker (crew / driver)
@@ -51,8 +51,8 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     }
     dests.add(const _Dest(
         'Bookings', Icons.event_note_outlined, WorkerBookingsScreen()));
-    dests.add(const _Dest('Schedule', Icons.calendar_today_outlined,
-        PlaceholderScreen(title: 'Schedule', icon: Icons.calendar_month)));
+    dests.add(const _Dest('Reviews', Icons.star_outline,
+        ReviewsScreen(worker: true)));
     dests.add(const _Dest('Profile', Icons.person_outline, ProfileScreen()));
     return dests;
   }
