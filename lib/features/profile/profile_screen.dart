@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/brand_logo.dart';
+import '../settings/notifications_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -98,7 +99,10 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 16),
           _tile(Icons.description_outlined, 'Terms & Conditions', () {}),
           _tile(Icons.privacy_tip_outlined, 'Privacy Policy', () {}),
-          _tile(Icons.notifications_outlined, 'Notifications', () {}),
+          _tile(Icons.notifications_outlined, 'Notifications', () {
+            Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const NotificationsScreen()));
+          }),
           _tile(Icons.delete_outline, 'Delete account', () {},
               color: AppColors.rose),
           const SizedBox(height: 16),

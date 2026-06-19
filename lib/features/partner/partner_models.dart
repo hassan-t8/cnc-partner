@@ -6,6 +6,58 @@ String _s(dynamic v) => v?.toString() ?? '';
 bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
 
+class Partner {
+  final int id;
+  final String name;
+  final String contactPerson;
+  final String email;
+  final String website;
+  final String status;
+  final String code;
+  final double ratingAvg;
+  final double commissionPct;
+  final List<String> phones;
+
+  const Partner({
+    required this.id,
+    this.name = '',
+    this.contactPerson = '',
+    this.email = '',
+    this.website = '',
+    this.status = '',
+    this.code = '',
+    this.ratingAvg = 0,
+    this.commissionPct = 0,
+    this.phones = const [],
+  });
+
+  factory Partner.fromJson(Map<String, dynamic> j) {
+    final ph = j['partnerPhones'] ?? j['phones'];
+    final phones = <String>[];
+    if (ph is List) {
+      for (final e in ph) {
+        if (e is Map && e['number'] != null) {
+          phones.add(e['number'].toString());
+        } else if (e != null) {
+          phones.add(e.toString());
+        }
+      }
+    }
+    return Partner(
+      id: _i(j['id']) ?? 0,
+      name: _s(j['partnerName'] ?? j['name']),
+      contactPerson: _s(j['contactPerson']),
+      email: _s(j['email']),
+      website: _s(j['partnerWebsite'] ?? j['website']),
+      status: _s(j['status']),
+      code: _s(j['code']),
+      ratingAvg: _d(j['ratingAvg']),
+      commissionPct: _d(j['commissionPct'] ?? j['defaultCommissionPct']),
+      phones: phones,
+    );
+  }
+}
+
 class Zone {
   final int id;
   final String name;

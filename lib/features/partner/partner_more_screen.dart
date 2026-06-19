@@ -5,6 +5,7 @@ import '../common/placeholder_screen.dart';
 import '../profile/profile_screen.dart';
 import '../reviews/reviews_screen.dart';
 import 'partner_earnings_screen.dart';
+import 'partner_profile_screen.dart';
 import 'partner_vans_screen.dart';
 import 'partner_workers_screen.dart';
 
@@ -18,6 +19,11 @@ class PartnerMoreScreen extends StatelessWidget {
       (Icons.local_shipping_outlined, 'Vans', const PartnerVansScreen()),
       (Icons.wallet_outlined, 'Earnings', const PartnerEarningsScreen()),
       (Icons.reviews_outlined, 'Reviews', const ReviewsScreen()),
+      (
+        Icons.business_outlined,
+        'Business profile',
+        const PartnerProfileScreen()
+      ),
       (
         Icons.calendar_month_outlined,
         'Schedule',

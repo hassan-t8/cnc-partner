@@ -68,6 +68,15 @@ class PartnerRepository {
     return pickList(res.data).map(Zone.fromJson).toList();
   }
 
+  // ----- partner profile -----
+  Future<Partner> getPartner(int id) async {
+    final res = await _api.get('/partner/$id');
+    return Partner.fromJson(pickMap(res.data));
+  }
+
+  Future<void> updatePartner(int id, Map<String, dynamic> body) =>
+      _api.put('/partner/update/$id', body: body);
+
   // ----- earnings -----
   Future<WalletInfo> wallet(int partnerId) async {
     final res = await _api.get('/settlement/wallet/$partnerId/statement');
