@@ -12,6 +12,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'otp_dialog.dart';
+import 'today_summary.dart';
 import 'worker_repository.dart';
 
 class CrewJobsScreen extends ConsumerStatefulWidget {
@@ -126,9 +127,13 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('My jobs')),
-      body: RefreshIndicator(
-        onRefresh: () async => _reload(),
-        child: FutureBuilder<List<Assignment>>(
+      body: Column(
+        children: [
+          const TodaySummary(),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async => _reload(),
+              child: FutureBuilder<List<Assignment>>(
           future: _future,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
@@ -156,7 +161,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
               itemBuilder: (_, i) => _jobCard(jobs[i]),
             );
           },
-        ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -321,7 +329,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
             const SizedBox(width: 6),
             Expanded(
                 child: Text(text,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12.5, color: AppColors.textSecondary))),
           ],
         ),

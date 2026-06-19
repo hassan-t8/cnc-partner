@@ -73,7 +73,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   label: const Text('Send a test notification'),
                 ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Push delivery (FCM) is enabled once Firebase config is added '
                   'to the project. Local reminders work now.',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),

@@ -61,7 +61,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             const Text('Forgot your password?',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
-            const Text(
+            Text(
                 'Enter your account email and we\'ll send you a reset link.',
                 style: TextStyle(color: AppColors.textMuted)),
             const SizedBox(height: 22),
@@ -120,7 +120,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
               'We\'ve sent a reset link to ${_email.text.trim()}. '
               'It expires in 24 hours.',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textMuted),
+              style: TextStyle(color: AppColors.textMuted),
             ),
             const SizedBox(height: 20),
             OutlinedButton(

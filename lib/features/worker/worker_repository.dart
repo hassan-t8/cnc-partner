@@ -39,6 +39,18 @@ class WorkerRepository {
     return pickMap(res.data);
   }
 
+  /// GET /workers/me/profile → { worker, user }
+  Future<Map<String, dynamic>> myProfile() async {
+    final res = await _api.get('/workers/me/profile');
+    return pickMap(res.data);
+  }
+
+  /// GET /workers/me/rating-summary
+  Future<Map<String, dynamic>> ratingSummary() async {
+    final res = await _api.get('/workers/me/rating-summary');
+    return pickMap(res.data);
+  }
+
   Future<void> accept(int assignmentId) =>
       _api.post('/booking-assignments/$assignmentId/accept');
 

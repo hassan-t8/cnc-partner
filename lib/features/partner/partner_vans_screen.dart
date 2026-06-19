@@ -131,7 +131,7 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
               ),
               StatusBadge(v.status == 'active' ? 'completed' : v.status),
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert,
+                icon: Icon(Icons.more_vert,
                     size: 18, color: AppColors.textFaint),
                 onSelected: (s) => s == 'edit' ? _openForm(v) : _delete(v),
                 itemBuilder: (_) => const [
@@ -150,7 +150,7 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
                 if (v.driverName.isNotEmpty) 'Driver: ${v.driverName}',
               ].join(' · '),
               style:
-                  const TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
+                  TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
           if (hasParking) ...[
             const SizedBox(height: 6),
             InkWell(

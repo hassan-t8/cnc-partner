@@ -102,7 +102,7 @@ class _ReviewsScreenState extends ConsumerState<ReviewsScreen> {
                           )),
                 ),
                 Text('${s.count} reviews',
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textMuted, fontSize: 12)),
               ],
             ),
@@ -190,14 +190,14 @@ class _ReviewsScreenState extends ConsumerState<ReviewsScreen> {
             if (r.comment.isNotEmpty) ...[
               const SizedBox(height: 6),
               Text(r.comment,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 13, color: AppColors.textSecondary)),
             ],
             if (r.createdAt != null) ...[
               const SizedBox(height: 4),
               Text(DateFormat('d MMM y').format(r.createdAt!),
                   style:
-                      const TextStyle(fontSize: 11, color: AppColors.textFaint)),
+                      TextStyle(fontSize: 11, color: AppColors.textFaint)),
             ],
           ],
         ),

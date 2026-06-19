@@ -201,7 +201,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
           SizedBox(
             width: 120,
             child: Text(label,
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textMuted, fontSize: 12.5)),
           ),
           Expanded(

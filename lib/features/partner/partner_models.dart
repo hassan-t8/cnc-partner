@@ -6,6 +6,28 @@ String _s(dynamic v) => v?.toString() ?? '';
 bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
 
+class ServiceRequest {
+  final int id;
+  final String requestedName;
+  final String status;
+  final String adminNotes;
+  final DateTime? createdAt;
+  const ServiceRequest({
+    required this.id,
+    this.requestedName = '',
+    this.status = '',
+    this.adminNotes = '',
+    this.createdAt,
+  });
+  factory ServiceRequest.fromJson(Map<String, dynamic> j) => ServiceRequest(
+        id: _i(j['id']) ?? 0,
+        requestedName: _s(j['requestedName'] ?? j['name']),
+        status: _s(j['status']),
+        adminNotes: _s(j['adminNotes'] ?? j['notes']),
+        createdAt: _dt(j['createdAt']),
+      );
+}
+
 class Partner {
   final int id;
   final String name;

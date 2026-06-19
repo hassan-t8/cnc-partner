@@ -30,4 +30,15 @@ class AuthStorage {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_kName);
   }
+
+  static const _kOnboard = 'cnc_partner_onboarded';
+  Future<bool> seenOnboarding() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kOnboard) ?? false;
+  }
+
+  Future<void> setOnboarded() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kOnboard, true);
+  }
 }

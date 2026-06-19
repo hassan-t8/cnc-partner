@@ -98,7 +98,7 @@ class _VanFormState extends ConsumerState<VanForm> {
                   return null;
                 }),
             const SizedBox(height: 4),
-            const Text('Status',
+            Text('Status',
                 style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,

@@ -100,6 +100,15 @@ class PartnerRepository {
         'stars': stars,
         if (comment != null) 'comment': comment,
       });
+
+  // ----- service requests -----
+  Future<List<ServiceRequest>> serviceRequests() async {
+    final res = await _api.get('/catalog/partner/service-requests');
+    return pickList(res.data).map(ServiceRequest.fromJson).toList();
+  }
+
+  Future<void> submitServiceRequest(Map<String, dynamic> body) =>
+      _api.post('/catalog/partner/service-requests', body: body);
 }
 
 final partnerRepositoryProvider = Provider<PartnerRepository>(

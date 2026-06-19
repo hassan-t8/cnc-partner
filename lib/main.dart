@@ -4,10 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/auth/auth_controller.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/router/app_router.dart';
+import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  AppColors.applyBrightness(
+      WidgetsBinding.instance.platformDispatcher.platformBrightness);
   NotificationService.instance.init();
   runApp(const ProviderScope(child: CncPartnerApp()));
 }
@@ -41,12 +44,20 @@ class _CncPartnerAppState extends ConsumerState<CncPartnerApp>
   }
 
   @override
+  void didChangePlatformBrightness() {
+    // Swap the palette + rebuild when the system theme changes.
+    AppColors.applyBrightness(
+        WidgetsBinding.instance.platformDispatcher.platformBrightness);
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: 'CNC Partner',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
+      theme: AppTheme.current,
       routerConfig: router,
     );
   }

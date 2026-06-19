@@ -16,13 +16,13 @@ class UnauthorizedScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.lock_outline,
+              Icon(Icons.lock_outline,
                   color: AppColors.textFaint, size: 48),
               const SizedBox(height: 14),
               const Text('No access',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                   'This account can\'t use the partner app. Contact your administrator.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.textMuted)),

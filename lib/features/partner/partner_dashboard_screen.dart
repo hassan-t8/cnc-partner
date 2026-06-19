@@ -188,7 +188,7 @@ class _PartnerDashboardScreenState
                 style: const TextStyle(
                     fontSize: 22, fontWeight: FontWeight.w800)),
             Text(label,
-                style: const TextStyle(
+                style: TextStyle(
                     color: AppColors.textMuted, fontSize: 12.5)),
           ],
         ),
@@ -254,7 +254,7 @@ class _PartnerDashboardScreenState
           const SizedBox(height: 3),
           Text([b.customerName, b.area, time].where((s) => s.isNotEmpty).join(' · '),
               style:
-                  const TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
+                  TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
           const SizedBox(height: 10),
           Row(
             children: [

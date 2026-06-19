@@ -113,7 +113,7 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                             fontSize: 12,
                             fontWeight: FontWeight.w600),
                         backgroundColor: AppColors.surface,
-                        side: const BorderSide(color: AppColors.border),
+                        side: BorderSide(color: AppColors.border),
                       ),
                     );
                   }).toList(),
@@ -192,7 +192,7 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                       [w.roles.join(', '), w.phone]
                           .where((s) => s.isNotEmpty)
                           .join(' · '),
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textMuted, fontSize: 12.5)),
                   if (w.ratingCount > 0)
                     Padding(
@@ -213,7 +213,7 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
             ),
             StatusBadge(w.displayStatus, worker: true),
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert,
+              icon: Icon(Icons.more_vert,
                   size: 18, color: AppColors.textFaint),
               onSelected: (s) => s == 'edit' ? _openForm(w) : _delete(w),
               itemBuilder: (_) => const [

@@ -146,7 +146,7 @@ class _PartnerEarningsScreenState
                     fontSize: 18, fontWeight: FontWeight.w800)),
             Text(label,
                 style:
-                    const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                    TextStyle(color: AppColors.textMuted, fontSize: 12)),
           ],
         ),
       );
@@ -174,7 +174,7 @@ class _PartnerEarningsScreenState
                         if (b.scheduledStart != null)
                           DateFormat('d MMM').format(b.scheduledStart!)
                       ].where((s) => s.isNotEmpty).join(' · '),
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textMuted, fontSize: 12)),
                 ],
               ),

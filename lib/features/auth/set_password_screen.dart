@@ -83,7 +83,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
               widget.setup
                   ? 'Create a password to activate your account.'
                   : 'Choose a new password for ${widget.email}.',
-              style: const TextStyle(color: AppColors.textMuted)),
+              style: TextStyle(color: AppColors.textMuted)),
           const SizedBox(height: 20),
           TextField(
             controller: _pw,
@@ -167,7 +167,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
             const Text('All set',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
-            const Text('Your password is ready. Sign in to continue.',
+            Text('Your password is ready. Sign in to continue.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textMuted)),
             const SizedBox(height: 20),

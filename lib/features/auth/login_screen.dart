@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
+import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/brand_logo.dart';
+import '../onboarding/onboarding_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -20,6 +22,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _obscure = true;
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final seen = await ref.read(authStorageProvider).seenOnboarding();
+      if (!seen && mounted) {
+        Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const OnboardingScreen()));
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -66,7 +80,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         style: TextStyle(
                             fontSize: 22, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 4),
-                    const Text('Sign in to the CNC Partner portal',
+                    Text('Sign in to the CNC Partner portal',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppColors.textMuted)),
                     const SizedBox(height: 28),

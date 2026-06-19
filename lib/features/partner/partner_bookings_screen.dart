@@ -202,7 +202,7 @@ class _PartnerBookingsScreenState
                           fontSize: 12,
                           fontWeight: FontWeight.w600),
                       backgroundColor: AppColors.surface,
-                      side: const BorderSide(color: AppColors.border),
+                      side: BorderSide(color: AppColors.border),
                     ),
                   );
                 }).toList(),
@@ -259,7 +259,7 @@ class _PartnerBookingsScreenState
                 time
               ].where((s) => s.isNotEmpty).join(' · '),
               style:
-                  const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                  TextStyle(fontSize: 12, color: AppColors.textMuted)),
           if (b.partnerCost > 0) ...[
             const SizedBox(height: 4),
             Text('AED ${b.partnerCost.toStringAsFixed(2)}',

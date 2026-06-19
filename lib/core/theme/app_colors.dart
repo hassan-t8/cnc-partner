@@ -9,15 +9,42 @@ class AppColors {
   static const brand600 = Color(0xFF059669); // primary
   static const brand700 = Color(0xFF047857);
 
-  // Neutrals
-  static const bg = Color(0xFFF9FAFB); // gray-50
-  static const surface = Colors.white;
-  static const border = Color(0xFFE5E7EB); // gray-200
-  static const sidebar = Color(0xFF111827); // gray-900
-  static const textPrimary = Color(0xFF111827);
-  static const textSecondary = Color(0xFF374151);
-  static const textMuted = Color(0xFF6B7280);
-  static const textFaint = Color(0xFF9CA3AF);
+  // Neutrals — runtime-swappable for dark mode (see [applyBrightness]).
+  static Color bg = const Color(0xFFF9FAFB);
+  static Color surface = Colors.white;
+  static Color border = const Color(0xFFE5E7EB);
+  static Color sidebar = const Color(0xFF111827);
+  static Color textPrimary = const Color(0xFF111827);
+  static Color textSecondary = const Color(0xFF374151);
+  static Color textMuted = const Color(0xFF6B7280);
+  static Color textFaint = const Color(0xFF9CA3AF);
+
+  static bool isDark = false;
+
+  /// Swap the neutral palette for the given brightness. Call before runApp and
+  /// whenever the platform brightness changes.
+  static void applyBrightness(Brightness b) {
+    isDark = b == Brightness.dark;
+    if (isDark) {
+      bg = const Color(0xFF0B0F14);
+      surface = const Color(0xFF161B22);
+      border = const Color(0xFF2A323C);
+      sidebar = const Color(0xFF0B0F14);
+      textPrimary = const Color(0xFFF3F4F6);
+      textSecondary = const Color(0xFFD1D5DB);
+      textMuted = const Color(0xFF9CA3AF);
+      textFaint = const Color(0xFF6B7280);
+    } else {
+      bg = const Color(0xFFF9FAFB);
+      surface = Colors.white;
+      border = const Color(0xFFE5E7EB);
+      sidebar = const Color(0xFF111827);
+      textPrimary = const Color(0xFF111827);
+      textSecondary = const Color(0xFF374151);
+      textMuted = const Color(0xFF6B7280);
+      textFaint = const Color(0xFF9CA3AF);
+    }
+  }
 
   // Accents (status)
   static const sky = Color(0xFF0EA5E9);

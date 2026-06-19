@@ -66,7 +66,7 @@ class _OtpDialogState extends State<_OtpDialog> {
           Text(
             'Ask ${widget.customerName ?? 'the customer'} for the 6-digit code '
             'for ${widget.bookingRef}.',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
           ),
           const SizedBox(height: 16),
           Row(

@@ -198,7 +198,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   Widget _label(String t) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(t,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textMuted)),

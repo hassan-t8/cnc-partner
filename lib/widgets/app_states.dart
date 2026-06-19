@@ -63,7 +63,7 @@ class EmptyState extends StatelessWidget {
               Text(subtitle!,
                   textAlign: TextAlign.center,
                   style:
-                      const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                      TextStyle(color: AppColors.textMuted, fontSize: 13)),
             ],
           ],
         ),
@@ -85,11 +85,11 @@ class ErrorRetry extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off, color: AppColors.textFaint, size: 44),
+            Icon(Icons.cloud_off, color: AppColors.textFaint, size: 44),
             const SizedBox(height: 12),
             Text(message,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textMuted)),
+                style: TextStyle(color: AppColors.textMuted)),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: onRetry,

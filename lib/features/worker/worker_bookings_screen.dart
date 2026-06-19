@@ -127,13 +127,13 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
             Text(
               [a.customerName, time].where((s) => s.isNotEmpty).join(' · '),
               style:
-                  const TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+                  TextStyle(fontSize: 12.5, color: AppColors.textMuted),
             ),
           ],
           if (a.fullAddress.isNotEmpty) ...[
             const SizedBox(height: 2),
             Text(a.fullAddress,
-                style: const TextStyle(fontSize: 12, color: AppColors.textFaint)),
+                style: TextStyle(fontSize: 12, color: AppColors.textFaint)),
           ],
         ],
       ),

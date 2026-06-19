@@ -7,6 +7,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/config/env.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
+import '../worker/today_summary.dart';
 import 'driver_repository.dart';
 
 class DriverRouteScreen extends ConsumerStatefulWidget {
@@ -59,6 +60,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
           }
           return Column(
             children: [
+              const TodaySummary(),
               if (plan.vanName.isNotEmpty)
                 Container(
                   width: double.infinity,
@@ -96,7 +98,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
       return Container(
         color: AppColors.bg,
         alignment: Alignment.center,
-        child: const Padding(
+        child: Padding(
           padding: EdgeInsets.all(16),
           child: Text('Map disabled — Google Maps key not configured.',
               textAlign: TextAlign.center,
@@ -159,7 +161,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w700)),
                 if (s.address.isNotEmpty)
                   Text(s.address,
-                      style: const TextStyle(
+                      style: TextStyle(
                           color: AppColors.textMuted, fontSize: 12)),
               ],
             ),

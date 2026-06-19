@@ -227,7 +227,7 @@ class _PartnerRequestsScreenState
             const SizedBox(width: 6),
             Expanded(
                 child: Text(text,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12.5, color: AppColors.textSecondary))),
           ],
         ),

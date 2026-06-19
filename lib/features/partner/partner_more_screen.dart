@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../common/placeholder_screen.dart';
 import '../profile/profile_screen.dart';
 import '../reviews/reviews_screen.dart';
 import 'partner_earnings_screen.dart';
 import 'partner_profile_screen.dart';
+import 'partner_schedule_screen.dart';
 import 'partner_vans_screen.dart';
 import 'partner_workers_screen.dart';
+import 'service_requests_screen.dart';
 
 class PartnerMoreScreen extends StatelessWidget {
   const PartnerMoreScreen({super.key});
@@ -27,13 +28,12 @@ class PartnerMoreScreen extends StatelessWidget {
       (
         Icons.calendar_month_outlined,
         'Schedule',
-        const PlaceholderScreen(title: 'Schedule', icon: Icons.calendar_month)
+        const PartnerScheduleScreen()
       ),
       (
         Icons.auto_awesome_outlined,
         'Service requests',
-        const PlaceholderScreen(
-            title: 'Service requests', icon: Icons.auto_awesome)
+        const ServiceRequestsScreen()
       ),
       (Icons.person_outline, 'Profile', const ProfileScreen()),
     ];
@@ -56,7 +56,7 @@ class PartnerMoreScreen extends StatelessWidget {
               title: Text(label,
                   style: const TextStyle(fontWeight: FontWeight.w600)),
               trailing:
-                  const Icon(Icons.chevron_right, color: AppColors.textFaint),
+                  Icon(Icons.chevron_right, color: AppColors.textFaint),
               onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => screen)),
             ),
