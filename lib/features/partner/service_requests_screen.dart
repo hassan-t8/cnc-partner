@@ -26,6 +26,8 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
   bool _error = false;
   String _query = '';
   int? _busyServiceId; // catalog service id currently linking/unlinking
+  final Set<int> _collapsedVerticals = {}; // verticals expanded by default
+  final Set<int> _expandedCategories = {}; // categories collapsed by default
 
   PartnerRepository get _repo => ref.read(partnerRepositoryProvider);
 
@@ -180,17 +182,7 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
             onRefresh: _loadAll,
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
-              children: [
-                for (final v in tree)
-                  ..._verticalSection(v, q),
-                if (tree.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 80),
-                    child: EmptyState(
-                        icon: Icons.category_outlined,
-                        title: 'No services available'),
-                  ),
-              ],
+              children: _catalogChildren(tree, q),
             ),
           ),
         ),
@@ -198,44 +190,115 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
     );
   }
 
-  List<Widget> _verticalSection(CatalogVertical v, String q) {
-    final cats = v.categories
-        .map((c) => CatalogCategory(
-              id: c.id,
-              name: c.name,
-              services: c.services
-                  .where((s) =>
-                      q.isEmpty ||
-                      s.name.toLowerCase().contains(q) ||
-                      s.shortDescription.toLowerCase().contains(q) ||
-                      c.name.toLowerCase().contains(q) ||
-                      v.name.toLowerCase().contains(q))
-                  .toList(),
-            ))
-        .where((c) => c.services.isNotEmpty)
-        .toList();
-    if (cats.isEmpty) return const [];
-    return [
-      Padding(
-        padding: const EdgeInsets.only(top: 16, bottom: 6),
-        child: Text(v.name.toUpperCase(),
-            style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
-                color: AppColors.textMuted)),
-      ),
-      for (final c in cats) ...[
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 6),
-          child: Text('${c.name} · ${c.services.length}',
-              style: const TextStyle(
-                  fontSize: 13.5, fontWeight: FontWeight.w700)),
-        ),
-        for (final s in c.services) _serviceTile(s),
-      ],
-    ];
+  List<Widget> _catalogChildren(List<CatalogVertical> tree, String q) {
+    final searching = q.isNotEmpty;
+    final out = <Widget>[];
+    for (final v in tree) {
+      final cats = v.categories
+          .map((c) => CatalogCategory(
+                id: c.id,
+                name: c.name,
+                services: c.services
+                    .where((s) =>
+                        q.isEmpty ||
+                        s.name.toLowerCase().contains(q) ||
+                        s.shortDescription.toLowerCase().contains(q) ||
+                        c.name.toLowerCase().contains(q) ||
+                        v.name.toLowerCase().contains(q))
+                    .toList(),
+              ))
+          .where((c) => c.services.isNotEmpty)
+          .toList();
+      if (cats.isEmpty) continue;
+      final vOpen = searching || !_collapsedVerticals.contains(v.id);
+      out.add(_verticalHeader(v, vOpen,
+          cats.fold<int>(0, (s, c) => s + c.services.length)));
+      if (!vOpen) continue;
+      for (final c in cats) {
+        final cOpen = searching || _expandedCategories.contains(c.id);
+        out.add(_categoryHeader(c, cOpen));
+        if (cOpen) out.addAll(c.services.map(_serviceTile));
+      }
+    }
+    if (out.isEmpty) {
+      out.add(const Padding(
+        padding: EdgeInsets.only(top: 80),
+        child: EmptyState(
+            icon: Icons.category_outlined, title: 'No services found'),
+      ));
+    }
+    return out;
   }
+
+  Widget _verticalHeader(CatalogVertical v, bool open, int count) => Padding(
+        padding: const EdgeInsets.only(top: 14, bottom: 2),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => open
+              ? _collapsedVerticals.add(v.id)
+              : _collapsedVerticals.remove(v.id)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Icon(open ? Icons.expand_more : Icons.chevron_right,
+                    size: 22, color: AppColors.brand600),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(v.name,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w800)),
+                ),
+                Text('$count',
+                    style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Widget _categoryHeader(CatalogCategory c, bool open) => InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => setState(() => open
+            ? _expandedCategories.remove(c.id)
+            : _expandedCategories.add(c.id)),
+        child: Container(
+          margin: const EdgeInsets.only(left: 8, bottom: 6, top: 2),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(c.name,
+                    style: const TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w700)),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(20)),
+                child: Text('${c.services.length}',
+                    style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(width: 6),
+              Icon(open ? Icons.expand_less : Icons.expand_more,
+                  size: 20, color: AppColors.textMuted),
+            ],
+          ),
+        ),
+      );
 
   Widget _serviceTile(CatalogServiceNode s) {
     final isLinked = _linked.containsKey(s.id);
@@ -271,36 +334,53 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          SizedBox(
-            height: 34,
-            child: busy
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2.2)),
-                  )
-                : isLinked
-                    ? OutlinedButton.icon(
-                        onPressed: () => _toggle(s),
-                        icon: const Icon(Icons.check_rounded,
-                            size: 16, color: AppColors.brand600),
-                        label: const Text('Linked',
-                            style: TextStyle(
-                                color: AppColors.brand700,
-                                fontWeight: FontWeight.w700)),
-                        style: OutlinedButton.styleFrom(
-                            side:
-                                const BorderSide(color: AppColors.brand600)),
-                      )
-                    : ElevatedButton.icon(
-                        onPressed: () => _toggle(s),
-                        icon: const Icon(Icons.add, size: 16),
-                        label: const Text('I provide'),
-                      ),
-          ),
+          _linkButton(s, isLinked, busy),
         ],
+      ),
+    );
+  }
+
+  Widget _linkButton(CatalogServiceNode s, bool isLinked, bool busy) {
+    if (busy) {
+      return const SizedBox(
+        width: 86,
+        height: 36,
+        child: Center(
+          child: SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.2)),
+        ),
+      );
+    }
+    return Material(
+      color: isLinked ? AppColors.brand50 : AppColors.brand600,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: () => _toggle(s),
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border:
+                isLinked ? Border.all(color: AppColors.brand600) : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(isLinked ? Icons.check_rounded : Icons.add,
+                  size: 16,
+                  color: isLinked ? AppColors.brand700 : Colors.white),
+              const SizedBox(width: 5),
+              Text(isLinked ? 'Linked' : 'I provide',
+                  style: TextStyle(
+                      color: isLinked ? AppColors.brand700 : Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5)),
+            ],
+          ),
+        ),
       ),
     );
   }
