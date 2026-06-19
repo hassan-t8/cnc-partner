@@ -69,29 +69,39 @@ class _OtpDialogState extends State<_OtpDialog> {
             style: TextStyle(color: AppColors.textMuted, fontSize: 13),
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: List.generate(6, (i) {
-              return SizedBox(
-                width: 44,
-                child: TextField(
-                  controller: _controllers[i],
-                  focusNode: _nodes[i],
-                  autofocus: i == 0,
-                  textAlign: TextAlign.center,
-                  keyboardType: TextInputType.number,
-                  maxLength: i == 0 ? 6 : 1,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    counterText: '',
-                    contentPadding: EdgeInsets.symmetric(vertical: 14),
+          // FittedBox scales the row down so 6 boxes never overflow a narrow
+          // dialog on any device.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < 6; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  SizedBox(
+                    width: 44,
+                    child: TextField(
+                      controller: _controllers[i],
+                      focusNode: _nodes[i],
+                      autofocus: i == 0,
+                      textAlign: TextAlign.center,
+                      keyboardType: TextInputType.number,
+                      maxLength: i == 0 ? 6 : 1,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly
+                      ],
+                      decoration: const InputDecoration(
+                        counterText: '',
+                        contentPadding: EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w800),
+                      onChanged: (v) => _onChanged(i, v),
+                    ),
                   ),
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.w800),
-                  onChanged: (v) => _onChanged(i, v),
-                ),
-              );
-            }),
+                ],
+              ],
+            ),
           ),
         ],
       ),
