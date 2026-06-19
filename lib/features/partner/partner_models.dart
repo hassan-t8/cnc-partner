@@ -9,12 +9,16 @@ DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
 class ServiceRequest {
   final int id;
   final String requestedName;
+  final String description;
+  final String targetPriceRange;
   final String status;
   final String adminNotes;
   final DateTime? createdAt;
   const ServiceRequest({
     required this.id,
     this.requestedName = '',
+    this.description = '',
+    this.targetPriceRange = '',
     this.status = '',
     this.adminNotes = '',
     this.createdAt,
@@ -22,9 +26,121 @@ class ServiceRequest {
   factory ServiceRequest.fromJson(Map<String, dynamic> j) => ServiceRequest(
         id: _i(j['id']) ?? 0,
         requestedName: _s(j['requestedName'] ?? j['name']),
+        description: _s(j['description']),
+        targetPriceRange: _s(j['targetPriceRange']),
         status: _s(j['status']),
-        adminNotes: _s(j['adminNotes'] ?? j['notes']),
+        adminNotes: _s(j['adminNotes']),
         createdAt: _dt(j['createdAt']),
+      );
+
+  String get statusLabel {
+    switch (status) {
+      case 'pending':
+        return 'Pending review';
+      case 'in_review':
+        return 'In review';
+      case 'approved_linked':
+        return 'Approved (linked)';
+      case 'approved_created':
+        return 'Approved (created)';
+      case 'declined':
+        return 'Declined';
+      default:
+        return status.replaceAll('_', ' ');
+    }
+  }
+}
+
+/// A catalog service the partner has linked ("I provide this").
+class MyService {
+  final int id; // PartnerService id (used to unlink)
+  final int? catalogServiceId;
+  final String name;
+  final String? heroImage;
+  final String shortDescription;
+  final String categoryName;
+  final String verticalName;
+  const MyService({
+    required this.id,
+    this.catalogServiceId,
+    this.name = '',
+    this.heroImage,
+    this.shortDescription = '',
+    this.categoryName = '',
+    this.verticalName = '',
+  });
+  factory MyService.fromJson(Map<String, dynamic> j) {
+    final c = j['catalog'] is Map ? Map<String, dynamic>.from(j['catalog']) : const {};
+    final cat = c['category'] is Map ? Map<String, dynamic>.from(c['category']) : const {};
+    final vert = cat['vertical'] is Map ? Map<String, dynamic>.from(cat['vertical']) : const {};
+    return MyService(
+      id: _i(j['id']) ?? 0,
+      catalogServiceId: _i(j['catalogServiceId'] ?? c['id']),
+      name: _s(c['name'] ?? j['name']),
+      heroImage: (c['heroImage'])?.toString(),
+      shortDescription: _s(c['shortDescription']),
+      categoryName: _s(cat['name']),
+      verticalName: _s(vert['name']),
+    );
+  }
+}
+
+/// A node in the catalog tree (Vertical -> Category -> Service).
+class CatalogServiceNode {
+  final int id; // CatalogService id (used to link)
+  final String name;
+  final String? heroImage;
+  final String shortDescription;
+  const CatalogServiceNode({
+    required this.id,
+    this.name = '',
+    this.heroImage,
+    this.shortDescription = '',
+  });
+  factory CatalogServiceNode.fromJson(Map<String, dynamic> j) =>
+      CatalogServiceNode(
+        id: _i(j['id']) ?? 0,
+        name: _s(j['name']),
+        heroImage: (j['heroImage'])?.toString(),
+        shortDescription: _s(j['shortDescription']),
+      );
+}
+
+class CatalogCategory {
+  final int id;
+  final String name;
+  final List<CatalogServiceNode> services;
+  const CatalogCategory(
+      {required this.id, this.name = '', this.services = const []});
+  factory CatalogCategory.fromJson(Map<String, dynamic> j) => CatalogCategory(
+        id: _i(j['id']) ?? 0,
+        name: _s(j['name']),
+        services: (j['services'] is List)
+            ? (j['services'] as List)
+                .whereType<Map>()
+                .map((e) =>
+                    CatalogServiceNode.fromJson(Map<String, dynamic>.from(e)))
+                .toList()
+            : const [],
+      );
+}
+
+class CatalogVertical {
+  final int id;
+  final String name;
+  final List<CatalogCategory> categories;
+  const CatalogVertical(
+      {required this.id, this.name = '', this.categories = const []});
+  factory CatalogVertical.fromJson(Map<String, dynamic> j) => CatalogVertical(
+        id: _i(j['id']) ?? 0,
+        name: _s(j['name']),
+        categories: (j['categories'] is List)
+            ? (j['categories'] as List)
+                .whereType<Map>()
+                .map((e) =>
+                    CatalogCategory.fromJson(Map<String, dynamic>.from(e)))
+                .toList()
+            : const [],
       );
 }
 

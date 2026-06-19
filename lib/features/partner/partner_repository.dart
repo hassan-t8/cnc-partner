@@ -141,6 +141,24 @@ class PartnerRepository {
 
   Future<void> submitServiceRequest(Map<String, dynamic> body) =>
       _api.post('/catalog/partner/service-requests', body: body);
+
+  // ----- catalog (services I provide) -----
+  Future<List<MyService>> myServices() async {
+    final res = await _api.get('/catalog/partner/my-services');
+    return pickList(res.data).map(MyService.fromJson).toList();
+  }
+
+  Future<List<CatalogVertical>> catalogTree() async {
+    final res = await _api.get('/catalog/partner/catalog-tree');
+    return pickList(res.data).map(CatalogVertical.fromJson).toList();
+  }
+
+  Future<void> linkService(int catalogServiceId) => _api.post(
+      '/catalog/partner/services',
+      body: {'catalogServiceId': catalogServiceId});
+
+  Future<void> unlinkService(int partnerServiceId) =>
+      _api.delete('/catalog/partner/services/$partnerServiceId');
 }
 
 final partnerRepositoryProvider = Provider<PartnerRepository>(
