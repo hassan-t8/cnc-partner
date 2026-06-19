@@ -7,7 +7,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
-import '../../widgets/notification_bell.dart';
+import '../../widgets/main_app_bar.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'partner_bookings_screen.dart';
@@ -74,10 +74,7 @@ class _PartnerDashboardScreenState
   Widget build(BuildContext context) {
     final name = ref.watch(authControllerProvider).user?.greetingName ?? '';
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        actions: const [NotificationBell()],
-      ),
+      appBar: const MainAppBar('Dashboard'),
       body: RefreshIndicator(
         onRefresh: () async => _reload(),
         child: FutureBuilder<_Dash>(

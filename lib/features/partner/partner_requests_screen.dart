@@ -7,6 +7,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/main_app_bar.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -83,13 +84,7 @@ class _PartnerRequestsScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Requests'),
-        actions: [
-          IconButton(
-              onPressed: _fetch, icon: const Icon(Icons.refresh)),
-        ],
-      ),
+      appBar: const MainAppBar('Requests'),
       body: _loading
           ? const LoadingList(height: 150)
           : _error

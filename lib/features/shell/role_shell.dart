@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/jwt_user.dart';
+import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../driver/driver_route_screen.dart';
 import '../partner/partner_bookings_screen.dart';
@@ -27,8 +28,6 @@ class RoleShell extends ConsumerStatefulWidget {
 }
 
 class _RoleShellState extends ConsumerState<RoleShell> {
-  int _index = 0;
-
   List<_Dest> _destsFor(JwtUser user) {
     if (user.isPartner) {
       return const [
@@ -60,7 +59,7 @@ class _RoleShellState extends ConsumerState<RoleShell> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final dests = _destsFor(user);
-    final index = _index.clamp(0, dests.length - 1);
+    final index = ref.watch(shellIndexProvider).clamp(0, dests.length - 1);
     return Scaffold(
       body: IndexedStack(
         index: index,
@@ -90,7 +89,8 @@ class _RoleShellState extends ConsumerState<RoleShell> {
           ),
           child: NavigationBar(
             selectedIndex: index,
-            onDestinationSelected: (i) => setState(() => _index = i),
+            onDestinationSelected: (i) =>
+                ref.read(shellIndexProvider.notifier).state = i,
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             elevation: 0,

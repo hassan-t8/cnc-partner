@@ -7,3 +7,7 @@ import 'storage/auth_storage.dart';
 final authStorageProvider = Provider<AuthStorage>((ref) => AuthStorage());
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
+
+/// Selected bottom-nav tab for RoleShell. Setting a large value lands on the
+/// last (Profile) tab via the shell's clamp — used by the app-bar avatar.
+final shellIndexProvider = StateProvider<int>((ref) => 0);
