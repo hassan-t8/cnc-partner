@@ -72,39 +72,22 @@ class _OtpDialogState extends State<_OtpDialog> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: List.generate(6, (i) {
-              final on = _controllers[i].text.isNotEmpty;
               return SizedBox(
-                width: 46,
-                height: 56,
+                width: 44,
                 child: TextField(
                   controller: _controllers[i],
                   focusNode: _nodes[i],
                   autofocus: i == 0,
                   textAlign: TextAlign.center,
-                  textAlignVertical: TextAlignVertical.center,
                   keyboardType: TextInputType.number,
                   maxLength: i == 0 ? 6 : 1,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  style: const TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.w800, height: 1.0),
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     counterText: '',
-                    isDense: true,
-                    filled: true,
-                    fillColor: AppColors.bg,
-                    contentPadding: EdgeInsets.zero,
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(
-                          color: on ? AppColors.brand600 : AppColors.border,
-                          width: on ? 1.6 : 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(
-                          color: AppColors.brand600, width: 1.8),
-                    ),
+                    contentPadding: EdgeInsets.symmetric(vertical: 14),
                   ),
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w800),
                   onChanged: (v) => _onChanged(i, v),
                 ),
               );
