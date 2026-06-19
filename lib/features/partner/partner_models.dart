@@ -53,13 +53,14 @@ class ServiceRequest {
 
 /// A catalog service the partner has linked ("I provide this").
 class MyService {
-  final int id; // PartnerService id (used to unlink)
+  final int id; // PartnerService id (used to unlink legacy whole-service rows)
   final int? catalogServiceId;
   final String name;
   final String? heroImage;
   final String shortDescription;
   final String categoryName;
   final String verticalName;
+  final List<int> pickedItemIds; // ServiceItem ids the partner delivers
   const MyService({
     required this.id,
     this.catalogServiceId,
@@ -68,11 +69,19 @@ class MyService {
     this.shortDescription = '',
     this.categoryName = '',
     this.verticalName = '',
+    this.pickedItemIds = const [],
   });
   factory MyService.fromJson(Map<String, dynamic> j) {
     final c = j['catalog'] is Map ? Map<String, dynamic>.from(j['catalog']) : const {};
     final cat = c['category'] is Map ? Map<String, dynamic>.from(c['category']) : const {};
     final vert = cat['vertical'] is Map ? Map<String, dynamic>.from(cat['vertical']) : const {};
+    final picked = (j['items'] is List)
+        ? (j['items'] as List)
+            .whereType<Map>()
+            .map((e) => _i(e['serviceItemId'] ?? e['id']) ?? 0)
+            .where((e) => e > 0)
+            .toList()
+        : <int>[];
     return MyService(
       id: _i(j['id']) ?? 0,
       catalogServiceId: _i(j['catalogServiceId'] ?? c['id']),
@@ -81,8 +90,22 @@ class MyService {
       shortDescription: _s(c['shortDescription']),
       categoryName: _s(cat['name']),
       verticalName: _s(vert['name']),
+      pickedItemIds: picked,
     );
   }
+}
+
+/// One pickable item (sub-service) under a catalog service.
+class CatalogItemNode {
+  final int id; // ServiceItem id
+  final String name;
+  final double? unitPrice;
+  const CatalogItemNode({required this.id, this.name = '', this.unitPrice});
+  factory CatalogItemNode.fromJson(Map<String, dynamic> j) => CatalogItemNode(
+        id: _i(j['id']) ?? 0,
+        name: _s(j['name']),
+        unitPrice: j['unitPrice'] == null ? null : _d(j['unitPrice']),
+      );
 }
 
 /// A node in the catalog tree (Vertical -> Category -> Service).
@@ -91,11 +114,13 @@ class CatalogServiceNode {
   final String name;
   final String? heroImage;
   final String shortDescription;
+  final List<CatalogItemNode> items;
   const CatalogServiceNode({
     required this.id,
     this.name = '',
     this.heroImage,
     this.shortDescription = '',
+    this.items = const [],
   });
   factory CatalogServiceNode.fromJson(Map<String, dynamic> j) =>
       CatalogServiceNode(
@@ -103,6 +128,12 @@ class CatalogServiceNode {
         name: _s(j['name']),
         heroImage: (j['heroImage'])?.toString(),
         shortDescription: _s(j['shortDescription']),
+        items: (j['items'] is List)
+            ? (j['items'] as List)
+                .whereType<Map>()
+                .map((e) => CatalogItemNode.fromJson(Map<String, dynamic>.from(e)))
+                .toList()
+            : const [],
       );
 }
 

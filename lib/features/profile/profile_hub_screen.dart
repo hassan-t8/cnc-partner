@@ -98,7 +98,7 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
             screen: const PartnerEarningsScreen()),
         _Item(Icons.calendar_month_rounded, 'Schedule', AppColors.sky,
             screen: const PartnerScheduleScreen()),
-        _Item(Icons.auto_awesome_rounded, 'Services I provide',
+        _Item(Icons.auto_awesome_rounded, 'Service requests',
             AppColors.violet,
             screen: const ServiceRequestsScreen()),
         _Item(Icons.business_rounded, 'Business profile', AppColors.brand600,

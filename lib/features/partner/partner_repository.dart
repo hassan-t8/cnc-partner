@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_client.dart';
@@ -153,12 +154,27 @@ class PartnerRepository {
     return pickList(res.data).map(CatalogVertical.fromJson).toList();
   }
 
-  Future<void> linkService(int catalogServiceId) => _api.post(
-      '/catalog/partner/services',
-      body: {'catalogServiceId': catalogServiceId});
+  Future<void> linkService(int catalogServiceId) {
+    debugPrint('[catalog] LINK  POST /catalog/partner/services '
+        '{catalogServiceId: $catalogServiceId}');
+    return _api.post('/catalog/partner/services',
+        body: {'catalogServiceId': catalogServiceId});
+  }
 
-  Future<void> unlinkService(int partnerServiceId) =>
-      _api.delete('/catalog/partner/services/$partnerServiceId');
+  Future<void> unlinkService(int partnerServiceId) {
+    debugPrint('[catalog] UNLINK DELETE /catalog/partner/services/'
+        '$partnerServiceId');
+    return _api.delete('/catalog/partner/services/$partnerServiceId');
+  }
+
+  /// Replace the partner's picked items under a service. Ticking any item
+  /// auto-links the parent service; clearing all auto-unlinks it.
+  Future<void> syncItems(int catalogServiceId, List<int> itemIds) {
+    debugPrint('[catalog] SYNC  POST /catalog/partner/services '
+        '{catalogServiceId: $catalogServiceId, itemIds: $itemIds}');
+    return _api.post('/catalog/partner/services',
+        body: {'catalogServiceId': catalogServiceId, 'itemIds': itemIds});
+  }
 }
 
 final partnerRepositoryProvider = Provider<PartnerRepository>(

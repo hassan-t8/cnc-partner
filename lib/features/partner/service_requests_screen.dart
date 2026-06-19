@@ -28,6 +28,14 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
   int? _busyServiceId; // catalog service id currently linking/unlinking
   final Set<int> _collapsedVerticals = {}; // verticals expanded by default
   final Set<int> _expandedCategories = {}; // categories collapsed by default
+  final Set<int> _expandedItems = {}; // services whose item picker is open
+
+  /// catalogServiceId -> set of ServiceItem ids the partner delivers.
+  Map<int, Set<int>> get _pickedItems => {
+        for (final m in _mine)
+          if (m.catalogServiceId != null)
+            m.catalogServiceId!: m.pickedItemIds.toSet()
+      };
 
   PartnerRepository get _repo => ref.read(partnerRepositoryProvider);
 
@@ -78,11 +86,25 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
     } catch (_) {}
   }
 
-  Future<void> _toggle(CatalogServiceNode s) async {
+  /// Tick/untick items under a service. Empty list auto-unlinks (web parity).
+  Future<void> _syncItems(int catalogServiceId, Set<int> itemIds) async {
+    setState(() => _busyServiceId = catalogServiceId);
+    try {
+      await _repo.syncItems(catalogServiceId, itemIds.toList());
+      await _refreshLinks();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    } finally {
+      if (mounted) setState(() => _busyServiceId = -1);
+    }
+  }
+
+  /// Whole-service toggle for catalog services that have no sub-items.
+  Future<void> _toggleWhole(CatalogServiceNode s) async {
     setState(() => _busyServiceId = s.id);
     try {
       final existing = _linked[s.id];
-      if (existing != null) {
+      if (existing != null && existing > 0) {
         await _repo.unlinkService(existing);
         AppToast.success('Removed from your services');
       } else {
@@ -97,10 +119,17 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
     }
   }
 
-  Future<void> _unlinkMine(MyService m) async {
-    setState(() => _busyServiceId = m.catalogServiceId ?? -2);
+  Future<void> _removeMine(MyService m) async {
+    final csid = m.catalogServiceId;
+    setState(() => _busyServiceId = csid ?? -2);
     try {
-      await _repo.unlinkService(m.id);
+      // Item-based links must be cleared via syncItems([]) — the synthetic
+      // PartnerService id can't be DELETEd directly (returns "not found").
+      if (csid != null && m.pickedItemIds.isNotEmpty) {
+        await _repo.syncItems(csid, const []);
+      } else {
+        await _repo.unlinkService(m.id);
+      }
       AppToast.success('Removed from your services');
       await _refreshLinks();
     } on ApiException catch (e) {
@@ -131,7 +160,7 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Services I provide'),
+          title: const Text('Service requests'),
           bottom: TabBar(
             labelColor: AppColors.brand600,
             unselectedLabelColor: AppColors.textMuted,
@@ -301,89 +330,242 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
       );
 
   Widget _serviceTile(CatalogServiceNode s) {
-    final isLinked = _linked.containsKey(s.id);
+    final picked = _pickedItems[s.id] ?? const <int>{};
+    final isLinked = picked.isNotEmpty || _linked.containsKey(s.id);
     final busy = _busyServiceId == s.id;
+    final itemsOpen = _expandedItems.contains(s.id);
+    final hasItems = s.items.isNotEmpty;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: isLinked ? AppColors.brand50.withValues(alpha: 0.4) : AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+            color: isLinked ? AppColors.brand600 : AppColors.border),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _thumb(s.heroImage),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
               children: [
-                Text(s.name.isEmpty ? 'Service' : s.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 13.5)),
-                if (s.shortDescription.isNotEmpty)
-                  Text(s.shortDescription,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: AppColors.textMuted, fontSize: 11.5)),
+                _thumb(s.heroImage),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(s.name.isEmpty ? 'Service' : s.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13.5)),
+                          ),
+                          if (isLinked) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                  color: AppColors.brand600,
+                                  borderRadius: BorderRadius.circular(20)),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.check_rounded,
+                                      size: 11, color: Colors.white),
+                                  SizedBox(width: 2),
+                                  Text('Linked',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (s.shortDescription.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(s.shortDescription,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 11.5)),
+                        ),
+                    ],
+                  ),
+                ),
+                if (busy)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.2)),
+                  )
+                else if (!hasItems)
+                  _wholeToggle(s, isLinked),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          _linkButton(s, isLinked, busy),
+          if (hasItems)
+            InkWell(
+              onTap: () => setState(() => itemsOpen
+                  ? _expandedItems.remove(s.id)
+                  : _expandedItems.add(s.id)),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Row(
+                  children: [
+                    Icon(itemsOpen ? Icons.expand_less : Icons.expand_more,
+                        size: 16, color: AppColors.brand700),
+                    const SizedBox(width: 4),
+                    Text('${s.items.length} item'
+                        '${s.items.length == 1 ? '' : 's'} available',
+                        style: const TextStyle(
+                            color: AppColors.brand700,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600)),
+                    if (picked.isNotEmpty)
+                      Text('  · ${picked.length} picked',
+                          style: const TextStyle(
+                              color: AppColors.brand700,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+            ),
+          if (hasItems && itemsOpen) _itemPicker(s, picked, busy),
         ],
       ),
     );
   }
 
-  Widget _linkButton(CatalogServiceNode s, bool isLinked, bool busy) {
-    if (busy) {
-      return const SizedBox(
-        width: 86,
-        height: 36,
-        child: Center(
-          child: SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2.2)),
+  Widget _wholeToggle(CatalogServiceNode s, bool isLinked) => Material(
+        color: isLinked ? AppColors.brand50 : AppColors.brand600,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: () => _toggleWhole(s),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: isLinked ? Border.all(color: AppColors.brand600) : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(isLinked ? Icons.check_rounded : Icons.add,
+                    size: 16,
+                    color: isLinked ? AppColors.brand700 : Colors.white),
+                const SizedBox(width: 5),
+                Text(isLinked ? 'Linked' : 'I provide',
+                    style: TextStyle(
+                        color: isLinked ? AppColors.brand700 : Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12.5)),
+              ],
+            ),
+          ),
         ),
       );
-    }
-    return Material(
-      color: isLinked ? AppColors.brand50 : AppColors.brand600,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: () => _toggle(s),
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border:
-                isLinked ? Border.all(color: AppColors.brand600) : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(isLinked ? Icons.check_rounded : Icons.add,
-                  size: 16,
-                  color: isLinked ? AppColors.brand700 : Colors.white),
-              const SizedBox(width: 5),
-              Text(isLinked ? 'Linked' : 'I provide',
-                  style: TextStyle(
-                      color: isLinked ? AppColors.brand700 : Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12.5)),
-            ],
-          ),
+
+  Widget _itemPicker(CatalogServiceNode s, Set<int> picked, bool busy) =>
+      Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          borderRadius:
+              const BorderRadius.vertical(bottom: Radius.circular(12)),
+          border: Border(top: BorderSide(color: AppColors.border)),
         ),
-      ),
-    );
-  }
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('PICK THE ITEMS YOU DELIVER',
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: AppColors.textMuted)),
+                const Spacer(),
+                TextButton(
+                  onPressed: busy
+                      ? null
+                      : () => _syncItems(
+                          s.id, s.items.map((e) => e.id).toSet()),
+                  style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8)),
+                  child: const Text('Select all',
+                      style: TextStyle(fontSize: 11.5)),
+                ),
+                TextButton(
+                  onPressed: busy ? null : () => _syncItems(s.id, const {}),
+                  style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8)),
+                  child: Text('Clear',
+                      style: TextStyle(
+                          fontSize: 11.5, color: AppColors.textMuted)),
+                ),
+              ],
+            ),
+            for (final it in s.items)
+              InkWell(
+                onTap: busy
+                    ? null
+                    : () {
+                        final next = {...picked};
+                        if (next.contains(it.id)) {
+                          next.remove(it.id);
+                        } else {
+                          next.add(it.id);
+                        }
+                        _syncItems(s.id, next);
+                      },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                          picked.contains(it.id)
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                          size: 20,
+                          color: picked.contains(it.id)
+                              ? AppColors.brand600
+                              : AppColors.textFaint),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(it.name.isEmpty ? 'Item' : it.name,
+                            style: const TextStyle(fontSize: 13)),
+                      ),
+                      if (it.unitPrice != null && it.unitPrice! > 0)
+                        Text('AED ${it.unitPrice!.toStringAsFixed(0)}',
+                            style: TextStyle(
+                                fontSize: 11.5, color: AppColors.textMuted)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
 
   // ---------- My services tab ----------
   Widget _mineTab() {
@@ -440,7 +622,7 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2.2))
                     : TextButton(
-                        onPressed: () => _unlinkMine(m),
+                        onPressed: () => _removeMine(m),
                         child: const Text('Remove',
                             style: TextStyle(color: AppColors.rose))),
               ],
