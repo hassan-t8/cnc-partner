@@ -72,6 +72,18 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     'suspended': 'Suspended',
   };
 
+  Future<void> _manageAccount(Worker w) async {
+    final repo = ref.read(partnerRepositoryProvider);
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _AccountSheet(worker: w, repo: repo),
+    );
+  }
+
   Future<void> _changeStatus(Worker w) async {
     final picked = await showModalBottomSheet<String>(
       context: context,
@@ -304,6 +316,8 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                         style: TextStyle(
                             color: AppColors.textMuted, fontSize: 12.5)),
                   ),
+                  _miniAction(Icons.key_outlined, 'Account',
+                      () => _manageAccount(w)),
                   _miniAction(Icons.edit_outlined, 'Edit', () => _openForm(w)),
                   _miniAction(Icons.delete_outline, 'Delete', () => _delete(w),
                       danger: true),
@@ -344,4 +358,163 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
         icon: Icon(icon,
             size: 18, color: danger ? AppColors.rose : AppColors.textMuted),
       );
+}
+
+/// Worker account sheet: shows login status and lets the partner set a password
+/// or email a reset link.
+class _AccountSheet extends StatefulWidget {
+  final Worker worker;
+  final PartnerRepository repo;
+  const _AccountSheet({required this.worker, required this.repo});
+  @override
+  State<_AccountSheet> createState() => _AccountSheetState();
+}
+
+class _AccountSheetState extends State<_AccountSheet> {
+  Map<String, dynamic>? _info;
+  bool _loading = true;
+  bool _busy = false;
+  final _pw = TextEditingController();
+  bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.repo.workerLoginInfo(widget.worker.id).then((m) {
+      if (!mounted) return;
+      setState(() {
+        _info = m;
+        _loading = false;
+      });
+    }).catchError((_) {
+      if (mounted) setState(() => _loading = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _pw.dispose();
+    super.dispose();
+  }
+
+  Future<void> _setPassword() async {
+    if (_pw.text.trim().length < 6) {
+      AppToast.error('Password must be at least 6 characters.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await widget.repo.setWorkerPassword(widget.worker.id, _pw.text.trim());
+      AppToast.success('Password set');
+      if (mounted) Navigator.pop(context);
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _sendReset() async {
+    setState(() => _busy = true);
+    try {
+      final r = await widget.repo.sendWorkerReset(widget.worker.id);
+      AppToast.success('Reset link sent to ${r['sentTo'] ?? 'email'}');
+      if (mounted) Navigator.pop(context);
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasLogin = _info?['hasLogin'] == true;
+    final email = '${_info?['email'] ?? widget.worker.email}';
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${widget.worker.name} · account',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.2)),
+                )
+              else
+                Row(
+                  children: [
+                    Icon(hasLogin ? Icons.check_circle : Icons.info_outline,
+                        size: 15,
+                        color:
+                            hasLogin ? AppColors.brand600 : AppColors.amber),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                          hasLogin
+                              ? 'Has login · ${email.isEmpty ? '—' : email}'
+                              : 'No login yet${email.isEmpty ? '' : ' · $email'}',
+                          style: TextStyle(
+                              color: AppColors.textMuted, fontSize: 12.5)),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 16),
+              const Text('Set password',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _pw,
+                obscureText: _obscure,
+                decoration: InputDecoration(
+                  hintText: 'New password (min 6)',
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscure
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: ElevatedButton(
+                  onPressed: _busy ? null : _setPassword,
+                  child: const Text('Set password'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: OutlinedButton.icon(
+                  onPressed: (_busy || email.isEmpty) ? null : _sendReset,
+                  icon: const Icon(Icons.email_outlined, size: 18),
+                  label: Text(email.isEmpty
+                      ? 'No email on file'
+                      : 'Email a reset link'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

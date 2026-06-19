@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth/auth_controller.dart';
@@ -20,6 +21,7 @@ class DriverRouteScreen extends ConsumerStatefulWidget {
 class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
   late Future<DriverDayPlan> _future;
   GoogleMapController? _map;
+  DateTime _date = DateTime.now();
 
   @override
   void initState() {
@@ -29,20 +31,77 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
 
   Future<DriverDayPlan> _load() {
     final workerId = ref.read(authControllerProvider).user?.workerId ?? 0;
-    return ref.read(driverRepositoryProvider).day(workerId, DateTime.now());
+    return ref.read(driverRepositoryProvider).day(workerId, _date);
   }
 
   void _reload() => setState(() => _future = _load());
 
+  void _shift(int days) => setState(() {
+        _date = _date.add(Duration(days: days));
+        _future = _load();
+      });
+
+  Future<void> _pickDate() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime.now().subtract(const Duration(days: 60)),
+      lastDate: DateTime.now().add(const Duration(days: 60)),
+    );
+    if (d != null) {
+      setState(() {
+        _date = d;
+        _future = _load();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isToday = DateUtils.isSameDay(_date, DateTime.now());
     return Scaffold(
       appBar: AppBar(title: const Text('My route'), actions: [
         IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
         const NotificationBell(),
       ]),
-      body: FutureBuilder<DriverDayPlan>(
-        future: _future,
+      body: Column(children: [
+        Container(
+          color: AppColors.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              IconButton(
+                  onPressed: () => _shift(-1),
+                  icon: const Icon(Icons.chevron_left)),
+              Expanded(
+                child: InkWell(
+                  onTap: _pickDate,
+                  child: Center(
+                    child: Text(
+                        '${DateFormat('EEE d MMM y').format(_date)}'
+                        '${isToday ? '  (today)' : ''}',
+                        style:
+                            const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ),
+              if (!isToday)
+                TextButton(
+                    onPressed: () => setState(() {
+                          _date = DateTime.now();
+                          _future = _load();
+                        }),
+                    child: const Text('Today')),
+              IconButton(
+                  onPressed: () => _shift(1),
+                  icon: const Icon(Icons.chevron_right)),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: FutureBuilder<DriverDayPlan>(
+            future: _future,
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const LoadingList(height: 120);
@@ -90,8 +149,10 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
               ),
             ],
           );
-        },
-      ),
+          },
+          ),
+        ),
+      ]),
     );
   }
 
