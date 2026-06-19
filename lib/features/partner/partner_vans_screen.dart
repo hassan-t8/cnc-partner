@@ -158,87 +158,153 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
 
   Widget _card(Van v) {
     final hasParking = v.parkingLat != null && v.parkingLng != null;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: () => _openForm(v),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.local_shipping,
-                  color: AppColors.brand600, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(v.name.isEmpty ? 'Van' : v.name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 14.5)),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.brand50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.local_shipping_rounded,
+                        color: AppColors.brand600, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(v.name.isEmpty ? 'Van' : v.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15)),
+                            ),
+                            const SizedBox(width: 6),
+                            GestureDetector(
+                              onTap: () => _changeStatus(v),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  StatusBadge(v.status == 'active'
+                                      ? 'completed'
+                                      : v.status),
+                                  Icon(Icons.expand_more,
+                                      size: 15, color: AppColors.textFaint),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            if (v.plate.isNotEmpty)
+                              _pill(Icons.pin_outlined, v.plate),
+                            if (v.code.isNotEmpty)
+                              _pill(Icons.badge_outlined, v.code),
+                            _pill(Icons.event_seat_outlined, '${v.seats} seats'),
+                            if (v.driverName.isNotEmpty)
+                              _pill(Icons.person_outline, v.driverName),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              GestureDetector(
-                onTap: () => _changeStatus(v),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    StatusBadge(v.status == 'active' ? 'completed' : v.status),
-                    Icon(Icons.expand_more,
-                        size: 15, color: AppColors.textFaint),
-                  ],
-                ),
-              ),
-              PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert,
-                    size: 18, color: AppColors.textFaint),
-                onSelected: (s) {
-                  if (s == 'edit') _openForm(v);
-                  if (s == 'status') _changeStatus(v);
-                  if (s == 'delete') _delete(v);
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  PopupMenuItem(value: 'status', child: Text('Change status')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+              const SizedBox(height: 10),
+              Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  if (hasParking)
+                    InkWell(
+                      onTap: () => launchUrl(
+                        Uri.parse(
+                            'https://www.google.com/maps?q=${v.parkingLat},${v.parkingLng}'),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.place_outlined,
+                              size: 14, color: AppColors.brand600),
+                          const SizedBox(width: 4),
+                          Text('Parking',
+                              style: TextStyle(
+                                  color: AppColors.brand600,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    )
+                  else
+                    Text('No parking set',
+                        style: TextStyle(
+                            color: AppColors.textFaint, fontSize: 12.5)),
+                  const Spacer(),
+                  _miniAction(Icons.edit_outlined, 'Edit', () => _openForm(v)),
+                  _miniAction(Icons.delete_outline, 'Delete', () => _delete(v),
+                      danger: true),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-              [
-                if (v.plate.isNotEmpty) v.plate,
-                if (v.code.isNotEmpty) v.code,
-                '${v.seats} seats',
-                if (v.driverName.isNotEmpty) 'Driver: ${v.driverName}',
-              ].join(' · '),
-              style:
-                  TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
-          if (hasParking) ...[
-            const SizedBox(height: 6),
-            InkWell(
-              onTap: () => launchUrl(
-                Uri.parse(
-                    'https://www.google.com/maps?q=${v.parkingLat},${v.parkingLng}'),
-                mode: LaunchMode.externalApplication,
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.place_outlined,
-                      size: 14, color: AppColors.brand600),
-                  SizedBox(width: 4),
-                  Text('Parking location',
-                      style: TextStyle(
-                          color: AppColors.brand600,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }
+
+  Widget _pill(IconData icon, String label) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: AppColors.textMuted),
+            const SizedBox(width: 4),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
+
+  Widget _miniAction(IconData icon, String tip, VoidCallback onTap,
+          {bool danger = false}) =>
+      IconButton(
+        onPressed: onTap,
+        visualDensity: VisualDensity.compact,
+        tooltip: tip,
+        icon: Icon(icon,
+            size: 18, color: danger ? AppColors.rose : AppColors.textMuted),
+      );
 }

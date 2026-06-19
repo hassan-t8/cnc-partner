@@ -267,23 +267,51 @@ class _PartnerBookingsScreenState
               ),
               onChanged: (v) => setState(() => _query = v.trim()),
             ),
-            if (_hasFilters) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 34,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: _statusOptions.map((s) {
+                  final on = _status == s;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(s == 'all' ? 'All' : s.replaceAll('_', ' ')),
+                      selected: on,
+                      onSelected: (_) => setState(() => _status = s),
+                      selectedColor: AppColors.brand600,
+                      labelStyle: TextStyle(
+                          color: on ? Colors.white : AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
+                      backgroundColor: AppColors.surface,
+                      side: BorderSide(color: AppColors.border),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            if (_from != null || _to != null) ...[
               const SizedBox(height: 8),
               SizedBox(
                 height: 32,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
-                    if (_status != 'all')
-                      _appliedChip(_status.replaceAll('_', ' '),
-                          () => setState(() => _status = 'all')),
                     if (_from != null)
                       _appliedChip('From ${_fmt(_from!)}',
                           () => setState(() => _from = null)),
                     if (_to != null)
                       _appliedChip(
                           'To ${_fmt(_to!)}', () => setState(() => _to = null)),
-                    _appliedChip('Clear all', _clearFilters, solid: true),
+                    _appliedChip('Clear dates',
+                        () => setState(() {
+                              _from = null;
+                              _to = null;
+                            }),
+                        solid: true),
                   ],
                 ),
               ),
@@ -293,12 +321,6 @@ class _PartnerBookingsScreenState
       );
 
   String _fmt(DateTime d) => DateFormat('d MMM').format(d);
-
-  void _clearFilters() => setState(() {
-        _status = 'all';
-        _from = null;
-        _to = null;
-      });
 
   Widget _appliedChip(String label, VoidCallback onClear, {bool solid = false}) =>
       Padding(

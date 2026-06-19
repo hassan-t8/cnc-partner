@@ -209,85 +209,139 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     );
   }
 
-  Widget _card(Worker w) => GestureDetector(
+  Widget _card(Worker w) {
+    final isDriver = w.roles.contains('driver');
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
         onTap: () => _openForm(w),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-        padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: AppColors.brand50,
+                    child: Text(
+                      (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
+                      style: const TextStyle(
+                          color: AppColors.brand700,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(w.name.isEmpty ? 'Worker' : w.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15)),
+                            ),
+                            const SizedBox(width: 6),
+                            GestureDetector(
+                              onTap: () => _changeStatus(w),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  StatusBadge(w.displayStatus, worker: true),
+                                  Icon(Icons.expand_more,
+                                      size: 15, color: AppColors.textFaint),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _pill(
+                                isDriver
+                                    ? Icons.directions_car_filled
+                                    : Icons.cleaning_services,
+                                isDriver ? 'Driver' : 'Crew'),
+                            if (w.code.isNotEmpty)
+                              _pill(Icons.badge_outlined, w.code),
+                            if (w.ratingCount > 0)
+                              _pill(Icons.star_rounded,
+                                  '${w.ratingAvg.toStringAsFixed(1)} (${w.ratingCount})',
+                                  color: AppColors.star),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(Icons.phone_outlined,
+                      size: 14, color: AppColors.textFaint),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(w.phone.isEmpty ? 'No phone' : w.phone,
+                        style: TextStyle(
+                            color: AppColors.textMuted, fontSize: 12.5)),
+                  ),
+                  _miniAction(Icons.edit_outlined, 'Edit', () => _openForm(w)),
+                  _miniAction(Icons.delete_outline, 'Delete', () => _delete(w),
+                      danger: true),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pill(IconData icon, String label, {Color? color}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
+          color: AppColors.bg,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.border),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: AppColors.brand50,
-              child: Text(
-                (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
+            Icon(icon, size: 12, color: color ?? AppColors.textMuted),
+            const SizedBox(width: 4),
+            Text(label,
                 style: const TextStyle(
-                    color: AppColors.brand700, fontWeight: FontWeight.w800),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(w.name.isEmpty ? 'Worker' : w.name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 14.5)),
-                  const SizedBox(height: 2),
-                  Text(
-                      [w.roles.join(', '), w.phone]
-                          .where((s) => s.isNotEmpty)
-                          .join(' · '),
-                      style: TextStyle(
-                          color: AppColors.textMuted, fontSize: 12.5)),
-                  if (w.ratingCount > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.star,
-                              size: 13, color: AppColors.star),
-                          const SizedBox(width: 3),
-                          Text(
-                              '${w.ratingAvg.toStringAsFixed(1)} (${w.ratingCount})',
-                              style: const TextStyle(fontSize: 11.5)),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            GestureDetector(
-              onTap: () => _changeStatus(w),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  StatusBadge(w.displayStatus, worker: true),
-                  Icon(Icons.expand_more,
-                      size: 15, color: AppColors.textFaint),
-                ],
-              ),
-            ),
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert,
-                  size: 18, color: AppColors.textFaint),
-              onSelected: (s) {
-                if (s == 'edit') _openForm(w);
-                if (s == 'status') _changeStatus(w);
-                if (s == 'delete') _delete(w);
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'edit', child: Text('Edit')),
-                PopupMenuItem(value: 'status', child: Text('Change status')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
-            ),
+                    fontSize: 11, fontWeight: FontWeight.w600)),
           ],
         ),
-      ),
+      );
+
+  Widget _miniAction(IconData icon, String tip, VoidCallback onTap,
+          {bool danger = false}) =>
+      IconButton(
+        onPressed: onTap,
+        visualDensity: VisualDensity.compact,
+        tooltip: tip,
+        icon: Icon(icon,
+            size: 18, color: danger ? AppColors.rose : AppColors.textMuted),
       );
 }
