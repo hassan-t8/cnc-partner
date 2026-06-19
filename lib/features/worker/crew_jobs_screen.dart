@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -211,9 +212,57 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           ),
           const SizedBox(height: 10),
           _actions(a, busy),
+          if (a.status == 'accepted' ||
+              a.status == 'in_progress' ||
+              a.status == 'completed') ...[
+            const Divider(height: 20),
+            _photoRow(a, 'before', 'Before photos'),
+            if (a.status == 'in_progress' || a.status == 'completed')
+              _photoRow(a, 'after', 'After photos'),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _photoRow(Assignment a, String type, String label) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w700)),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => _uploadPhoto(a, type),
+            icon: const Icon(Icons.camera_alt_outlined, size: 16),
+            label: const Text('Add', style: TextStyle(fontSize: 12.5)),
+            style: OutlinedButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _uploadPhoto(Assignment a, String type) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+        source: ImageSource.camera, preferredCameraDevice: CameraDevice.rear);
+    if (file == null) return;
+    try {
+      await ref
+          .read(workerRepositoryProvider)
+          .uploadAttachment(a.id, file.path, type);
+      AppToast.success('Photo uploaded');
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    } catch (_) {
+      AppToast.error('Upload failed.');
+    }
   }
 
   Widget _actions(Assignment a, bool busy) {

@@ -66,5 +66,11 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to capture before/after job photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo access to attach job photos.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app uses your location to show your driving route.</string>
 </dict>
 </plist>

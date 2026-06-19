@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_client.dart';
@@ -52,6 +53,25 @@ class WorkerRepository {
 
   Future<void> complete(int assignmentId) =>
       _api.post('/booking-assignments/$assignmentId/complete');
+
+  /// GET /booking-assignments/{id}/attachments — list before/after photos.
+  Future<List<Map<String, dynamic>>> attachments(int assignmentId) async {
+    final res =
+        await _api.get('/booking-assignments/$assignmentId/attachments');
+    return pickList(res.data);
+  }
+
+  /// POST /booking-assignments/{id}/attachments — multipart upload.
+  Future<void> uploadAttachment(int assignmentId, String filePath, String type,
+      {String? caption}) async {
+    final form = FormData.fromMap({
+      'type': type, // before | after
+      if (caption != null) 'caption': caption,
+      'file': await MultipartFile.fromFile(filePath),
+    });
+    await _api.post('/booking-assignments/$assignmentId/attachments',
+        body: form);
+  }
 }
 
 final workerRepositoryProvider = Provider<WorkerRepository>(

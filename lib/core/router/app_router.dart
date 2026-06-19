@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../auth/auth_controller.dart';
 import '../../features/auth/forgot_password_screen.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/auth/set_password_screen.dart';
 import '../../features/shell/role_shell.dart';
 import '../../features/shell/unauthorized_screen.dart';
 import '../../features/splash/splash_screen.dart';
@@ -24,8 +25,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final auth = ref.read(authControllerProvider);
       final loc = state.matchedLocation;
-      final onAuthPages =
-          loc == '/login' || loc == '/forgot-password' || loc == '/splash';
+      final onAuthPages = loc == '/login' ||
+          loc == '/forgot-password' ||
+          loc == '/reset-password' ||
+          loc == '/set-password' ||
+          loc == '/splash';
 
       switch (auth.status) {
         case AuthStatus.unknown:
@@ -43,6 +47,21 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: '/forgot-password',
           builder: (_, __) => const ForgotPasswordScreen()),
+      GoRoute(
+        path: '/reset-password',
+        builder: (_, st) => SetPasswordScreen(
+          token: st.uri.queryParameters['token'] ?? '',
+          email: st.uri.queryParameters['email'] ?? '',
+        ),
+      ),
+      GoRoute(
+        path: '/set-password',
+        builder: (_, st) => SetPasswordScreen(
+          token: st.uri.queryParameters['token'] ?? '',
+          email: st.uri.queryParameters['email'] ?? '',
+          setup: true,
+        ),
+      ),
       GoRoute(path: '/home', builder: (_, __) => const RoleShell()),
       GoRoute(
           path: '/unauthorized',

@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/jwt_user.dart';
 import '../../core/theme/app_colors.dart';
-import '../common/placeholder_screen.dart';
+import '../driver/driver_route_screen.dart';
 import '../partner/partner_bookings_screen.dart';
 import '../partner/partner_dashboard_screen.dart';
 import '../partner/partner_more_screen.dart';
@@ -43,8 +43,8 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     // Worker (crew / driver)
     final dests = <_Dest>[];
     if (user.isDriver) {
-      dests.add(const _Dest('Route', Icons.map_outlined,
-          PlaceholderScreen(title: 'My Route', icon: Icons.map)));
+      dests.add(
+          const _Dest('Route', Icons.map_outlined, DriverRouteScreen()));
     }
     if (user.isCrew || !user.isDriver) {
       dests.add(const _Dest('Jobs', Icons.checklist_outlined, CrewJobsScreen()));
