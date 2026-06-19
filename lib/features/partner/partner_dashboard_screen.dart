@@ -114,26 +114,31 @@ class _PartnerDashboardScreenState
                     style: const TextStyle(
                         fontSize: 20, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 14),
-                GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 12,
-                  childAspectRatio: 1.7,
+                Row(
                   children: [
-                    _kpi('Today', '$today', Icons.today_rounded,
-                        AppColors.brand600,
-                        () => _open(const PartnerBookingsScreen())),
-                    _kpi('Next 7 days', '$week', Icons.date_range_rounded,
-                        AppColors.sky,
-                        () => _open(const PartnerBookingsScreen())),
-                    _kpi('Workers', '${d.workers}', Icons.groups_rounded,
-                        AppColors.violet,
-                        () => _open(const PartnerWorkersScreen())),
-                    _kpi('Vans', '${d.vans}', Icons.local_shipping_rounded,
-                        AppColors.amber,
-                        () => _open(const PartnerVansScreen())),
+                    Expanded(
+                        child: _kpi('Today', '$today', Icons.today_rounded,
+                            AppColors.brand600,
+                            () => _open(const PartnerBookingsScreen()))),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: _kpi('Next 7 days', '$week',
+                            Icons.date_range_rounded, AppColors.sky,
+                            () => _open(const PartnerBookingsScreen()))),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                        child: _kpi('Workers', '${d.workers}',
+                            Icons.groups_rounded, AppColors.violet,
+                            () => _open(const PartnerWorkersScreen()))),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: _kpi('Vans', '${d.vans}',
+                            Icons.local_shipping_rounded, AppColors.amber,
+                            () => _open(const PartnerVansScreen()))),
                   ],
                 ),
                 const SizedBox(height: 12),

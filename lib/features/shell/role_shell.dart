@@ -66,18 +66,46 @@ class _RoleShellState extends ConsumerState<RoleShell> {
         index: index,
         children: dests.map((d) => d.screen).toList(),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        backgroundColor: AppColors.surface,
-        indicatorColor: AppColors.brand50,
-        destinations: dests
-            .map((d) => NavigationDestination(
-                  icon: Icon(d.icon),
-                  selectedIcon: Icon(d.icon, color: AppColors.brand600),
-                  label: d.label,
-                ))
-            .toList(),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.border)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, -2)),
+          ],
+        ),
+        child: NavigationBarTheme(
+          data: NavigationBarThemeData(
+            labelTextStyle: WidgetStateProperty.resolveWith((states) {
+              final on = states.contains(WidgetState.selected);
+              return TextStyle(
+                fontSize: 11.5,
+                fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                color: on ? AppColors.brand600 : AppColors.textMuted,
+              );
+            }),
+          ),
+          child: NavigationBar(
+            selectedIndex: index,
+            onDestinationSelected: (i) => setState(() => _index = i),
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
+            height: 66,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            indicatorColor: AppColors.brand50,
+            destinations: dests
+                .map((d) => NavigationDestination(
+                      icon: Icon(d.icon, color: AppColors.textMuted),
+                      selectedIcon: Icon(d.icon, color: AppColors.brand600),
+                      label: d.label,
+                    ))
+                .toList(),
+          ),
+        ),
       ),
     );
   }

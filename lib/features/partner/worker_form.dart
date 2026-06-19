@@ -5,6 +5,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/phone_field.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -19,8 +20,8 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _first;
   late final TextEditingController _last;
-  late final TextEditingController _phone;
   late final TextEditingController _email;
+  String _phone = '+971';
   String _role = 'crew';
   String _status = 'active';
   int? _zoneId;
@@ -35,7 +36,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     final w = widget.worker;
     _first = TextEditingController(text: w?.firstName ?? '');
     _last = TextEditingController(text: w?.lastName ?? '');
-    _phone = TextEditingController(text: w?.phone ?? '+971');
+    _phone = (w?.phone.isNotEmpty ?? false) ? w!.phone : '+971';
     _email = TextEditingController(text: w?.email ?? '');
     _role = (w?.roles.contains('driver') ?? false) ? 'driver' : 'crew';
     _status = w?.status.isNotEmpty == true ? w!.status : 'active';
@@ -46,7 +47,6 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   void dispose() {
     _first.dispose();
     _last.dispose();
-    _phone.dispose();
     _email.dispose();
     super.dispose();
   }
@@ -57,12 +57,16 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       AppToast.error('Please choose a primary zone.');
       return;
     }
+    if (_phone.replaceAll(RegExp(r'\D'), '').length < 9) {
+      AppToast.error('Enter a valid phone number.');
+      return;
+    }
     setState(() => _busy = true);
     final partnerId = ref.read(authControllerProvider).user?.partnerId;
     final body = {
       'firstName': _first.text.trim(),
       if (_last.text.trim().isNotEmpty) 'lastName': _last.text.trim(),
-      'phone': _phone.text.trim(),
+      'phone': _phone.trim(),
       'email': _email.text.trim(),
       'roles': [_role],
       'primaryZoneId': _zoneId,
@@ -97,10 +101,14 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
             _field('First name *', _first,
                 validator: (v) => (v ?? '').trim().isEmpty ? 'Required' : null),
             _field('Last name', _last),
-            _field('Phone *', _phone,
-                keyboard: TextInputType.phone,
-                validator: (v) =>
-                    (v ?? '').trim().length < 8 ? 'Enter a valid phone' : null),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: PhoneField(
+                label: 'Phone *',
+                initial: _phone,
+                onChanged: (v) => _phone = v,
+              ),
+            ),
             _field('Email *', _email,
                 keyboard: TextInputType.emailAddress, validator: (v) {
               final s = (v ?? '').trim();
