@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
-import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
@@ -353,7 +352,22 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   Widget _teamBody(bool canManageTeam) {
     final team = _team;
     if (team == null) {
-      return const LoadingList(count: 2, height: 56);
+      // A bounded placeholder — LoadingList is itself a ListView and can't be
+      // nested directly inside this page's ListView (unbounded height).
+      return Column(
+        children: List.generate(
+          2,
+          (_) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+          ),
+        ),
+      );
     }
     if (team.isEmpty) {
       return Container(
