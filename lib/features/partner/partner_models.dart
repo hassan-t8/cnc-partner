@@ -255,6 +255,7 @@ class Van {
   final String parkingAddress;
   final int? homeZoneId;
   final bool acceptAutoAssign;
+  final int? driverWorkerId;
 
   const Van({
     required this.id,
@@ -269,6 +270,7 @@ class Van {
     this.parkingAddress = '',
     this.homeZoneId,
     this.acceptAutoAssign = true,
+    this.driverWorkerId,
   });
 
   factory Van.fromJson(Map<String, dynamic> j) {
@@ -287,6 +289,7 @@ class Van {
       homeZoneId: _i(j['homeZoneId']),
       acceptAutoAssign:
           j['acceptAutoAssign'] == null ? true : _b(j['acceptAutoAssign']),
+      driverWorkerId: _i(j['driverWorkerId'] ?? drv['id']),
     );
   }
 }

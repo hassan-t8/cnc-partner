@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/theme/app_colors.dart';
+import '../auth/change_password_screen.dart';
 import '../legal/delete_account_screen.dart';
 import '../legal/legal_screen.dart';
 import '../partner/partner_earnings_screen.dart';
@@ -108,6 +109,8 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
     ];
 
     final account = <_Item>[
+      _Item(Icons.lock_reset_rounded, 'Change password', AppColors.brand600,
+          screen: const ChangePasswordScreen()),
       _Item(Icons.notifications_rounded, 'Notifications', AppColors.sky,
           screen: const NotificationsScreen()),
       _Item(Icons.description_rounded, 'Terms & Conditions',

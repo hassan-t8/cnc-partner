@@ -25,9 +25,11 @@ class _VanFormState extends ConsumerState<VanForm> {
   late final TextEditingController _parking;
   String _status = 'active';
   int? _zoneId;
+  int? _driverId;
   bool _autoAssign = true;
   bool _busy = false;
   late Future<List<Zone>> _zones;
+  late Future<List<Worker>> _drivers;
 
   bool get _isEdit => widget.van != null;
 
@@ -42,8 +44,14 @@ class _VanFormState extends ConsumerState<VanForm> {
     _parking = TextEditingController(text: v?.parkingAddress ?? '');
     _status = v?.status.isNotEmpty == true ? v!.status : 'active';
     _zoneId = v?.homeZoneId;
+    _driverId = v?.driverWorkerId;
     _autoAssign = v?.acceptAutoAssign ?? true;
     _zones = ref.read(partnerRepositoryProvider).zones();
+    _drivers = ref
+        .read(partnerRepositoryProvider)
+        .workers()
+        .then((all) => all.where((w) => w.roles.contains('driver')).toList())
+        .catchError((_) => <Worker>[]);
   }
 
   @override
@@ -70,6 +78,7 @@ class _VanFormState extends ConsumerState<VanForm> {
       if (_code.text.trim().isNotEmpty) 'code': _code.text.trim(),
       'seats': int.tryParse(_seats.text.trim()) ?? 1,
       'homeZoneId': _zoneId,
+      'driverWorkerId': _driverId,
       'status': _status,
       'acceptAutoAssign': _autoAssign,
       if (_parking.text.trim().isNotEmpty)
@@ -131,6 +140,28 @@ class _VanFormState extends ConsumerState<VanForm> {
                               Text(z.label, overflow: TextOverflow.ellipsis)))
                       .toList(),
                   onChanged: (v) => setState(() => _zoneId = v),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            _label('Driver'),
+            FutureBuilder<List<Worker>>(
+              future: _drivers,
+              builder: (context, snap) {
+                final drivers = snap.data ?? const <Worker>[];
+                return DropdownButtonFormField<int?>(
+                  initialValue: _driverId,
+                  isExpanded: true,
+                  hint: const Text('No driver'),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                        value: null, child: Text('No driver')),
+                    ...drivers.map((d) => DropdownMenuItem<int?>(
+                        value: d.id,
+                        child: Text(d.name.isEmpty ? 'Driver' : d.name,
+                            overflow: TextOverflow.ellipsis))),
+                  ],
+                  onChanged: (v) => setState(() => _driverId = v),
                 );
               },
             ),

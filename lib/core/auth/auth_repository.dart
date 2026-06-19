@@ -43,6 +43,19 @@ class AuthRepository {
     }
   }
 
+  /// PUT /api/users/update-password — change password while signed in.
+  Future<void> changePassword(String current, String next) async {
+    try {
+      await _api.put('/api/users/update-password',
+          body: {'currentPassword': current, 'newPassword': next});
+    } on ApiException catch (e) {
+      if (e.status == 401) {
+        throw ApiException('Your current password is incorrect.', status: 401);
+      }
+      rethrow;
+    }
+  }
+
   /// POST /api/users/password-reset/request.
   Future<void> requestPasswordReset(String email) async {
     try {
