@@ -21,10 +21,12 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   late final TextEditingController _first;
   late final TextEditingController _last;
   late final TextEditingController _email;
+  late final TextEditingController _address;
   String _phone = '+971';
   String _role = 'crew';
   String _status = 'active';
   int? _zoneId;
+  bool _autoAssign = true;
   bool _busy = false;
   late Future<List<Zone>> _zones;
 
@@ -38,8 +40,11 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     _last = TextEditingController(text: w?.lastName ?? '');
     _phone = (w?.phone.isNotEmpty ?? false) ? w!.phone : '+971';
     _email = TextEditingController(text: w?.email ?? '');
+    _address = TextEditingController(text: w?.homeAddress ?? '');
     _role = (w?.roles.contains('driver') ?? false) ? 'driver' : 'crew';
     _status = w?.status.isNotEmpty == true ? w!.status : 'active';
+    _autoAssign = w?.acceptAutoAssign ?? true;
+    _zoneId = w?.primaryZoneId;
     _zones = ref.read(partnerRepositoryProvider).zones();
   }
 
@@ -48,6 +53,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     _first.dispose();
     _last.dispose();
     _email.dispose();
+    _address.dispose();
     super.dispose();
   }
 
@@ -71,6 +77,8 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       'roles': [_role],
       'primaryZoneId': _zoneId,
       'status': _status,
+      'acceptAutoAssign': _autoAssign,
+      if (_address.text.trim().isNotEmpty) 'homeAddress': _address.text.trim(),
       if (partnerId != null) 'partnerId': partnerId,
     };
     try {
@@ -146,8 +154,24 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                 );
               },
             ),
+            const SizedBox(height: 14),
+            _field('Home address', _address),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _autoAssign,
+              activeThumbColor: AppColors.brand600,
+              title: const Text('Auto-assign new bookings',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                  _autoAssign
+                      ? 'Can be auto-dispatched to matching jobs'
+                      : 'Only manual assignments',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              onChanged: (v) => setState(() => _autoAssign = v),
+            ),
             if (_isEdit) ...[
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               _label('Status'),
               DropdownButtonFormField<String>(
                 initialValue: _status,

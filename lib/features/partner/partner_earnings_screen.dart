@@ -30,11 +30,11 @@ class _PartnerEarningsScreenState
     final repo = ref.read(partnerRepositoryProvider);
     final partnerId = ref.read(authControllerProvider).user?.partnerId ?? 0;
     final results = await Future.wait([
-      repo.wallet(partnerId).catchError((_) => const WalletInfo()),
-      repo.bookings(),
+      repo.wallet(partnerId).catchError((_) => const WalletStatement()),
+      repo.bookings().catchError((_) => <PartnerBooking>[]),
     ]);
     return _Earn(
-        wallet: results[0] as WalletInfo,
+        statement: results[0] as WalletStatement,
         bookings: results[1] as List<PartnerBooking>);
   }
 
@@ -57,10 +57,10 @@ class _PartnerEarningsScreenState
                   message: 'Couldn\'t load earnings.', onRetry: _reload);
             }
             final e = snap.data!;
+            final w = e.statement.wallet;
+            final txns = e.statement.transactions;
             final completed =
-                e.bookings.where((b) => b.status == 'completed').toList();
-            final earned =
-                completed.fold<double>(0, (s, b) => s + b.partnerCost);
+                e.bookings.where((b) => b.status == 'completed').length;
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -81,15 +81,15 @@ class _PartnerEarningsScreenState
                           style:
                               TextStyle(color: Colors.white70, fontSize: 13)),
                       const SizedBox(height: 4),
-                      Text('AED ${e.wallet.balance.toStringAsFixed(2)}',
+                      Text('AED ${w.balance.toStringAsFixed(2)}',
                           style: const TextStyle(
                               color: Colors.white,
                               fontSize: 30,
                               fontWeight: FontWeight.w900)),
                       const SizedBox(height: 8),
                       Text(
-                          'Lifetime earned AED ${e.wallet.lifetimeEarnings.toStringAsFixed(0)} · '
-                          'paid out AED ${e.wallet.lifetimePaidOut.toStringAsFixed(0)}',
+                          'Lifetime earned AED ${w.lifetimeEarnings.toStringAsFixed(0)} · '
+                          'paid out AED ${w.lifetimePaidOut.toStringAsFixed(0)}',
                           style: const TextStyle(
                               color: Colors.white70, fontSize: 11.5)),
                     ],
@@ -99,28 +99,32 @@ class _PartnerEarningsScreenState
                 Row(
                   children: [
                     Expanded(
-                        child: _stat('Completed', '${completed.length}',
+                        child: _stat('Completed', '$completed',
                             Icons.check_circle_outline)),
                     const SizedBox(width: 12),
                     Expanded(
-                        child: _stat('Earned',
-                            'AED ${earned.toStringAsFixed(0)}', Icons.payments_outlined)),
+                        child: _stat(
+                            'Lifetime earned',
+                            'AED ${w.lifetimeEarnings.toStringAsFixed(0)}',
+                            Icons.payments_outlined)),
                   ],
                 ),
                 const SizedBox(height: 18),
-                const Text('Completed bookings',
+                const Text('Transactions',
                     style:
                         TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
-                if (completed.isEmpty)
+                if (txns.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 20),
                     child: EmptyState(
-                        icon: Icons.payments_outlined,
-                        title: 'No completed bookings yet'),
+                        icon: Icons.receipt_long_outlined,
+                        title: 'No transactions yet',
+                        subtitle:
+                            'Earnings appear here as bookings complete.'),
                   )
                 else
-                  ...completed.map(_row),
+                  ...txns.map(_txnRow),
               ],
             );
           },
@@ -151,44 +155,81 @@ class _PartnerEarningsScreenState
         ),
       );
 
-  Widget _row(PartnerBooking b) => Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(b.serviceName.isEmpty ? 'Service' : b.serviceName,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 14)),
-                  Text(
-                      [
-                        b.customerName,
-                        if (b.scheduledStart != null)
-                          DateFormat('d MMM').format(b.scheduledStart!)
-                      ].where((s) => s.isNotEmpty).join(' · '),
-                      style: TextStyle(
-                          color: AppColors.textMuted, fontSize: 12)),
-                ],
-              ),
+  Widget _txnRow(WalletTransaction t) {
+    final credit = t.isCredit;
+    final color = credit ? AppColors.brand600 : AppColors.rose;
+    final title = t.description.isNotEmpty
+        ? t.description
+        : t.type.replaceAll('_', ' ');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            Text('AED ${b.partnerCost.toStringAsFixed(2)}',
-                style: const TextStyle(
-                    color: AppColors.brand700, fontWeight: FontWeight.w800)),
-          ],
-        ),
-      );
+            child: Icon(
+                credit ? Icons.south_west_rounded : Icons.north_east_rounded,
+                color: color,
+                size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                    title.isEmpty
+                        ? 'Transaction'
+                        : '${title[0].toUpperCase()}${title.substring(1)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 13.5)),
+                Text(
+                    [
+                      if (t.bookingRef != null) '#${t.bookingRef}',
+                      if (t.createdAt != null)
+                        DateFormat('d MMM y').format(t.createdAt!),
+                      if (t.status.isNotEmpty && t.status != 'completed')
+                        t.status,
+                    ].where((s) => s.isNotEmpty).join(' · '),
+                    style:
+                        TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                  '${credit ? '+' : '−'} AED ${t.amount.toStringAsFixed(2)}',
+                  style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+              if (t.balanceAfter > 0)
+                Text('Bal ${t.balanceAfter.toStringAsFixed(0)}',
+                    style: TextStyle(
+                        color: AppColors.textFaint, fontSize: 10.5)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Earn {
-  final WalletInfo wallet;
+  final WalletStatement statement;
   final List<PartnerBooking> bookings;
-  _Earn({required this.wallet, required this.bookings});
+  _Earn({required this.statement, required this.bookings});
 }

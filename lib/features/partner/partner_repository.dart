@@ -99,13 +99,19 @@ class PartnerRepository {
       _api.put('/partner/update/$id', body: body);
 
   // ----- earnings -----
-  Future<WalletInfo> wallet(int partnerId) async {
+  Future<WalletStatement> wallet(int partnerId) async {
     final res = await _api.get('/settlement/wallet/$partnerId/statement');
     final data = pickMap(res.data);
     final w = data['wallet'] is Map
         ? Map<String, dynamic>.from(data['wallet'])
         : data;
-    return WalletInfo.fromJson(w);
+    final txns = (data['transactions'] is List)
+        ? (data['transactions'] as List)
+            .whereType<Map>()
+            .map((e) => WalletTransaction.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <WalletTransaction>[];
+    return WalletStatement(wallet: WalletInfo.fromJson(w), transactions: txns);
   }
 
   // ----- reviews -----

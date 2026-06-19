@@ -22,8 +22,12 @@ class _VanFormState extends ConsumerState<VanForm> {
   late final TextEditingController _plate;
   late final TextEditingController _code;
   late final TextEditingController _seats;
+  late final TextEditingController _parking;
   String _status = 'active';
+  int? _zoneId;
+  bool _autoAssign = true;
   bool _busy = false;
+  late Future<List<Zone>> _zones;
 
   bool get _isEdit => widget.van != null;
 
@@ -35,7 +39,11 @@ class _VanFormState extends ConsumerState<VanForm> {
     _plate = TextEditingController(text: v?.plate ?? '');
     _code = TextEditingController(text: v?.code ?? '');
     _seats = TextEditingController(text: v != null ? '${v.seats}' : '');
+    _parking = TextEditingController(text: v?.parkingAddress ?? '');
     _status = v?.status.isNotEmpty == true ? v!.status : 'active';
+    _zoneId = v?.homeZoneId;
+    _autoAssign = v?.acceptAutoAssign ?? true;
+    _zones = ref.read(partnerRepositoryProvider).zones();
   }
 
   @override
@@ -44,11 +52,16 @@ class _VanFormState extends ConsumerState<VanForm> {
     _plate.dispose();
     _code.dispose();
     _seats.dispose();
+    _parking.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_zoneId == null) {
+      AppToast.error('Please choose a primary zone.');
+      return;
+    }
     setState(() => _busy = true);
     final partnerId = ref.read(authControllerProvider).user?.partnerId;
     final body = {
@@ -56,7 +69,11 @@ class _VanFormState extends ConsumerState<VanForm> {
       'plate': _plate.text.trim(),
       if (_code.text.trim().isNotEmpty) 'code': _code.text.trim(),
       'seats': int.tryParse(_seats.text.trim()) ?? 1,
+      'homeZoneId': _zoneId,
       'status': _status,
+      'acceptAutoAssign': _autoAssign,
+      if (_parking.text.trim().isNotEmpty)
+        'parkingAddress': _parking.text.trim(),
       if (partnerId != null) 'partnerId': partnerId,
     };
     try {
@@ -97,22 +114,54 @@ class _VanFormState extends ConsumerState<VanForm> {
                   if (n == null || n < 1 || n > 30) return '1–30';
                   return null;
                 }),
-            const SizedBox(height: 4),
-            Text('Status',
-                style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textMuted)),
-            const SizedBox(height: 6),
+            _label('Primary zone *'),
+            FutureBuilder<List<Zone>>(
+              future: _zones,
+              builder: (context, snap) {
+                final zones = snap.data ?? const <Zone>[];
+                _zoneId ??= zones.isNotEmpty ? zones.first.id : null;
+                return DropdownButtonFormField<int>(
+                  initialValue: _zoneId,
+                  isExpanded: true,
+                  hint: const Text('Select a zone'),
+                  items: zones
+                      .map((z) => DropdownMenuItem(
+                          value: z.id,
+                          child:
+                              Text(z.label, overflow: TextOverflow.ellipsis)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _zoneId = v),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            _label('Status'),
             DropdownButtonFormField<String>(
               initialValue: _status,
               items: const [
                 DropdownMenuItem(value: 'active', child: Text('Active')),
                 DropdownMenuItem(
+                    value: 'not_working', child: Text('Not working')),
+                DropdownMenuItem(
                     value: 'maintenance', child: Text('Maintenance')),
                 DropdownMenuItem(value: 'retired', child: Text('Retired')),
               ],
               onChanged: (v) => setState(() => _status = v ?? 'active'),
+            ),
+            const SizedBox(height: 14),
+            _field('Parking address', _parking),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _autoAssign,
+              activeThumbColor: AppColors.brand600,
+              title: const Text('Auto-assign bookings',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                  _autoAssign
+                      ? 'Van can be auto-dispatched'
+                      : 'Active but skips auto-dispatch',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              onChanged: (v) => setState(() => _autoAssign = v),
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -133,6 +182,15 @@ class _VanFormState extends ConsumerState<VanForm> {
       ),
     );
   }
+
+  Widget _label(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(t,
+            style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted)),
+      );
 
   Widget _field(String label, TextEditingController ctrl,
           {String? Function(String?)? validator,

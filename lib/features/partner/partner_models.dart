@@ -106,6 +106,9 @@ class Worker {
   final int ratingCount;
   final double sotPct;
   final bool pendingActivation;
+  final bool acceptAutoAssign;
+  final String homeAddress;
+  final int? primaryZoneId;
 
   const Worker({
     required this.id,
@@ -120,6 +123,9 @@ class Worker {
     this.ratingCount = 0,
     this.sotPct = 0,
     this.pendingActivation = false,
+    this.acceptAutoAssign = true,
+    this.homeAddress = '',
+    this.primaryZoneId,
   });
 
   String get name => [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
@@ -140,6 +146,11 @@ class Worker {
       ratingCount: _i(j['ratingCount']) ?? 0,
       sotPct: _d(j['sotPct'] ?? j['startOnTimePct']),
       pendingActivation: _b(j['pendingActivation']),
+      acceptAutoAssign: j['acceptAutoAssign'] == null
+          ? true
+          : _b(j['acceptAutoAssign']),
+      homeAddress: _s(j['homeAddress']),
+      primaryZoneId: _i(j['primaryZoneId']),
     );
   }
 }
@@ -154,6 +165,9 @@ class Van {
   final String status;
   final double? parkingLat;
   final double? parkingLng;
+  final String parkingAddress;
+  final int? homeZoneId;
+  final bool acceptAutoAssign;
 
   const Van({
     required this.id,
@@ -165,6 +179,9 @@ class Van {
     this.status = '',
     this.parkingLat,
     this.parkingLng,
+    this.parkingAddress = '',
+    this.homeZoneId,
+    this.acceptAutoAssign = true,
   });
 
   factory Van.fromJson(Map<String, dynamic> j) {
@@ -179,6 +196,10 @@ class Van {
       status: _s(j['status']),
       parkingLat: j['parkingLat'] == null ? null : _d(j['parkingLat']),
       parkingLng: j['parkingLng'] == null ? null : _d(j['parkingLng']),
+      parkingAddress: _s(j['parkingAddress']),
+      homeZoneId: _i(j['homeZoneId']),
+      acceptAutoAssign:
+          j['acceptAutoAssign'] == null ? true : _b(j['acceptAutoAssign']),
     );
   }
 }
@@ -241,6 +262,53 @@ class WalletInfo {
         lifetimeEarnings: _d(j['lifetimeEarnings']),
         lifetimePaidOut: _d(j['lifetimePaidOut']),
       );
+}
+
+/// One row from the partner wallet statement (/settlement/wallet/:id/statement).
+class WalletTransaction {
+  final int id;
+  final String type; // earning | payout | adjustment | reversal | ...
+  final String direction; // credit | debit
+  final double amount;
+  final String description;
+  final String? bookingRef;
+  final String status; // pending | completed | reversed | failed
+  final double balanceAfter;
+  final DateTime? createdAt;
+
+  const WalletTransaction({
+    required this.id,
+    this.type = '',
+    this.direction = 'credit',
+    this.amount = 0,
+    this.description = '',
+    this.bookingRef,
+    this.status = '',
+    this.balanceAfter = 0,
+    this.createdAt,
+  });
+
+  bool get isCredit => direction == 'credit';
+
+  factory WalletTransaction.fromJson(Map<String, dynamic> j) =>
+      WalletTransaction(
+        id: _i(j['id']) ?? 0,
+        type: _s(j['type']),
+        direction: _s(j['direction']).isEmpty ? 'credit' : _s(j['direction']),
+        amount: _d(j['amount']),
+        description: _s(j['description']),
+        bookingRef: (j['bookingId'] ?? j['referenceId'])?.toString(),
+        status: _s(j['status']),
+        balanceAfter: _d(j['balanceAfter']),
+        createdAt: _dt(j['createdAt']),
+      );
+}
+
+class WalletStatement {
+  final WalletInfo wallet;
+  final List<WalletTransaction> transactions;
+  const WalletStatement(
+      {this.wallet = const WalletInfo(), this.transactions = const []});
 }
 
 class Review {
