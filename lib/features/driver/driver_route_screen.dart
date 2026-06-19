@@ -7,6 +7,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/config/env.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/notification_bell.dart';
 import '../worker/today_summary.dart';
 import 'driver_repository.dart';
 
@@ -38,6 +39,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('My route'), actions: [
         IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
+        const NotificationBell(),
       ]),
       body: FutureBuilder<DriverDayPlan>(
         future: _future,

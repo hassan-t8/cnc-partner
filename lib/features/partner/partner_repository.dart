@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -103,6 +105,21 @@ class PartnerRepository {
 
   Future<void> updatePartner(int id, Map<String, dynamic> body) =>
       _api.put('/partner/update/$id', body: body);
+
+  /// Update the partner including an optional profile image (multipart).
+  /// Array/object fields are JSON-encoded strings, matching the web form.
+  Future<void> updatePartnerWithImage(
+    int id,
+    Map<String, dynamic> fields, {
+    String? imagePath,
+  }) {
+    final form = <String, String>{};
+    fields.forEach((k, v) {
+      form[k] = (v is String) ? v : jsonEncode(v);
+    });
+    return _api.multipart('/partner/update/$id',
+        method: 'PUT', fields: form, filePath: imagePath, fileField: 'uploadFile');
+  }
 
   // ----- earnings -----
   Future<WalletStatement> wallet(int partnerId) async {

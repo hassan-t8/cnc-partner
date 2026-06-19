@@ -65,6 +65,27 @@ class ApiClient {
   Future<Response<dynamic>> delete(String path, {dynamic body}) =>
       _wrap(() => _dio.delete(path, data: body));
 
+  /// Multipart PUT/POST with an optional file. [fields] values are sent as
+  /// strings; [filePath] (if given) is attached under [fileField].
+  Future<Response<dynamic>> multipart(
+    String path, {
+    String method = 'PUT',
+    Map<String, String> fields = const {},
+    String? filePath,
+    String fileField = 'uploadFile',
+  }) async {
+    final form = FormData.fromMap({
+      ...fields,
+      if (filePath != null && filePath.isNotEmpty)
+        fileField: await MultipartFile.fromFile(filePath),
+    });
+    return _wrap(() => _dio.request(
+          path,
+          data: form,
+          options: Options(method: method),
+        ));
+  }
+
   Future<Response<dynamic>> _wrap(
       Future<Response<dynamic>> Function() run) async {
     try {

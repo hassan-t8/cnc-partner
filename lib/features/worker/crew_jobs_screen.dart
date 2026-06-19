@@ -9,6 +9,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/notification_bell.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'otp_dialog.dart';
@@ -126,7 +127,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My jobs')),
+      appBar: AppBar(
+        title: const Text('My jobs'),
+        actions: const [NotificationBell()],
+      ),
       body: Column(
         children: [
           const TodaySummary(),

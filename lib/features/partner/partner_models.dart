@@ -228,6 +228,7 @@ class Partner {
   final int? primaryZoneId;
   final List<int> serviceZoneIds;
   final List<BankAccount> bankDetails;
+  final String uploadFile; // image filename or URL
 
   const Partner({
     required this.id,
@@ -255,6 +256,7 @@ class Partner {
     this.primaryZoneId,
     this.serviceZoneIds = const [],
     this.bankDetails = const [],
+    this.uploadFile = '',
   });
 
   factory Partner.fromJson(Map<String, dynamic> j) {
@@ -310,6 +312,7 @@ class Partner {
       primaryZoneId: _i(j['primaryZoneId']),
       serviceZoneIds: zones,
       bankDetails: banks,
+      uploadFile: _s(j['uploadFile']),
     );
   }
 }

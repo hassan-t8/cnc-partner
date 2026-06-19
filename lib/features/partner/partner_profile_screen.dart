@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'dart:io';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/config/env.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
@@ -36,6 +39,21 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
   bool _autoAssign = true;
   int? _zoneId;
   List<int> _serviceZoneIds = const [];
+  String _currentImage = ''; // server filename/url
+  String? _pickedImagePath; // newly picked local file
+
+  static String? imageUrl(String f) {
+    if (f.isEmpty) return null;
+    if (f.startsWith('http')) return f;
+    if (f.startsWith('/uploads/')) return '${Env.apiUrl}$f';
+    return '${Env.apiUrl}/uploads/$f';
+  }
+
+  Future<void> _pickImage() async {
+    final x = await ImagePicker()
+        .pickImage(source: ImageSource.gallery, maxWidth: 1024, imageQuality: 85);
+    if (x != null) setState(() => _pickedImagePath = x.path);
+  }
 
   int get _partnerId => ref.read(authControllerProvider).user?.partnerId ?? 0;
 
@@ -60,6 +78,8 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
     _autoAssign = p.acceptAutoAssign;
     _zoneId = p.primaryZoneId;
     _serviceZoneIds = p.serviceZoneIds;
+    _currentImage = p.uploadFile;
+    _pickedImagePath = null;
     final bank = p.bankDetails.isNotEmpty ? p.bankDetails.first : null;
     _bankName.text = bank?.bankName ?? '';
     _bankBranch.text = bank?.branchName ?? '';
@@ -101,20 +121,27 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
       accountNumber: _bankAcc.text.trim(),
       ibanNumber: _bankIban.text.trim(),
     );
+    final body = {
+      'partnerName': _name.text.trim(),
+      'contactPerson': _contact.text.trim(),
+      'partnerWebsite': _website.text.trim(),
+      'status': _status,
+      'acceptAutoAssign': _autoAssign,
+      if (_zoneId != null) 'primaryZoneId': _zoneId,
+      'serviceZoneIds': _serviceZoneIds,
+      'partnerPhones': [
+        if (_phone.trim().length > 4) {'number': _phone.trim()}
+      ],
+      'bankDetails': [if (!bank.isEmpty) bank.toJson()],
+    };
     try {
-      await ref.read(partnerRepositoryProvider).updatePartner(_partnerId, {
-        'partnerName': _name.text.trim(),
-        'contactPerson': _contact.text.trim(),
-        'partnerWebsite': _website.text.trim(),
-        'status': _status,
-        'acceptAutoAssign': _autoAssign,
-        if (_zoneId != null) 'primaryZoneId': _zoneId,
-        'serviceZoneIds': _serviceZoneIds,
-        'partnerPhones': [
-          if (_phone.trim().length > 4) {'number': _phone.trim()}
-        ],
-        'bankDetails': [if (!bank.isEmpty) bank.toJson()],
-      });
+      final repo = ref.read(partnerRepositoryProvider);
+      if (_pickedImagePath != null) {
+        await repo.updatePartnerWithImage(_partnerId, body,
+            imagePath: _pickedImagePath);
+      } else {
+        await repo.updatePartner(_partnerId, body);
+      }
       AppToast.success('Profile updated');
       _reload();
     } on ApiException catch (e) {
@@ -208,17 +235,54 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
         ],
       );
 
+  Widget _avatar(String name, {bool editable = false}) {
+    ImageProvider? img;
+    if (_pickedImagePath != null) {
+      img = FileImage(File(_pickedImagePath!));
+    } else {
+      final u = imageUrl(_currentImage);
+      if (u != null) img = NetworkImage(u);
+    }
+    final avatar = CircleAvatar(
+      radius: 32,
+      backgroundColor: AppColors.brand600,
+      backgroundImage: img,
+      child: img == null
+          ? Text((name.isNotEmpty ? name[0] : '?').toUpperCase(),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 22))
+          : null,
+    );
+    if (!editable) return avatar;
+    return GestureDetector(
+      onTap: _pickImage,
+      child: Stack(
+        children: [
+          avatar,
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: AppColors.brand600,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.surface, width: 2),
+              ),
+              child: const Icon(Icons.camera_alt,
+                  size: 13, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _hero(Partner p) => Row(
         children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: AppColors.brand600,
-            child: Text((p.name.isNotEmpty ? p.name[0] : '?').toUpperCase(),
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 22)),
-          ),
+          _avatar(p.name),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -329,6 +393,21 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Center(
+          child: Column(
+            children: [
+              _avatar(_name.text, editable: true),
+              const SizedBox(height: 6),
+              TextButton.icon(
+                onPressed: _pickImage,
+                icon: const Icon(Icons.photo_camera_outlined, size: 16),
+                label: Text(
+                    _pickedImagePath != null ? 'Change photo' : 'Add photo'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
         _editLabel('Business name *'),
         _editField(_name),
         _editLabel('Contact person'),
