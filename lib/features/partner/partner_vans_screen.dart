@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import 'van_form.dart';
 
 class PartnerVansScreen extends ConsumerStatefulWidget {
   const PartnerVansScreen({super.key});
@@ -26,10 +29,50 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
   void _reload() =>
       setState(() => _future = ref.read(partnerRepositoryProvider).vans());
 
+  Future<void> _openForm([Van? van]) async {
+    final saved = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => VanForm(van: van)));
+    if (saved == true) _reload();
+  }
+
+  Future<void> _delete(Van v) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete van?'),
+        content: Text('Remove "${v.name}"? This can\'t be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.rose),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(partnerRepositoryProvider).deleteVan(v.id);
+      AppToast.success('Van deleted');
+      _reload();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Vans')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openForm(),
+        backgroundColor: AppColors.brand600,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Add van', style: TextStyle(color: Colors.white)),
+      ),
       body: RefreshIndicator(
         onRefresh: () async => _reload(),
         child: FutureBuilder<List<Van>>(
@@ -87,6 +130,15 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
                         fontWeight: FontWeight.w700, fontSize: 14.5)),
               ),
               StatusBadge(v.status == 'active' ? 'completed' : v.status),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert,
+                    size: 18, color: AppColors.textFaint),
+                onSelected: (s) => s == 'edit' ? _openForm(v) : _delete(v),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 4),

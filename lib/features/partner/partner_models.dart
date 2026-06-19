@@ -6,6 +6,19 @@ String _s(dynamic v) => v?.toString() ?? '';
 bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
 
+class Zone {
+  final int id;
+  final String name;
+  final String emirate;
+  const Zone({required this.id, this.name = '', this.emirate = ''});
+  factory Zone.fromJson(Map<String, dynamic> j) => Zone(
+        id: _i(j['id']) ?? 0,
+        name: _s(j['name'] ?? j['area']),
+        emirate: _s(j['emirate'] ?? j['parentName']),
+      );
+  String get label => emirate.isEmpty ? name : '$name, $emirate';
+}
+
 class Worker {
   final int id;
   final String firstName;

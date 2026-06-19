@@ -44,6 +44,10 @@ class PartnerRepository {
     return pickList(res.data).map(Worker.fromJson).toList();
   }
 
+  Future<void> createWorker(Map<String, dynamic> body) =>
+      _api.post('/workers', body: body);
+  Future<void> updateWorker(int id, Map<String, dynamic> body) =>
+      _api.put('/workers/$id', body: body);
   Future<void> deleteWorker(int id) => _api.delete('/workers/$id');
 
   // ----- vans -----
@@ -52,7 +56,17 @@ class PartnerRepository {
     return pickList(res.data).map(Van.fromJson).toList();
   }
 
+  Future<void> createVan(Map<String, dynamic> body) =>
+      _api.post('/vans', body: body);
+  Future<void> updateVan(int id, Map<String, dynamic> body) =>
+      _api.put('/vans/$id', body: body);
   Future<void> deleteVan(int id) => _api.delete('/vans/$id');
+
+  // ----- zones -----
+  Future<List<Zone>> zones() async {
+    final res = await _api.get('/zones/flat');
+    return pickList(res.data).map(Zone.fromJson).toList();
+  }
 
   // ----- earnings -----
   Future<WalletInfo> wallet(int partnerId) async {

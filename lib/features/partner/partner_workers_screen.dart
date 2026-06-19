@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import 'worker_form.dart';
 
 class PartnerWorkersScreen extends ConsumerStatefulWidget {
   const PartnerWorkersScreen({super.key});
@@ -28,6 +31,40 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
   void _reload() =>
       setState(() => _future = ref.read(partnerRepositoryProvider).workers());
 
+  Future<void> _openForm([Worker? w]) async {
+    final saved = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => WorkerForm(worker: w)));
+    if (saved == true) _reload();
+  }
+
+  Future<void> _delete(Worker w) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete worker?'),
+        content: Text('Remove "${w.name}"? This can\'t be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.rose),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(partnerRepositoryProvider).deleteWorker(w.id);
+      AppToast.success('Worker deleted');
+      _reload();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    }
+  }
+
   List<Worker> _filter(List<Worker> all) {
     final q = _query.toLowerCase();
     return all.where((w) {
@@ -42,6 +79,12 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Workers')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openForm(),
+        backgroundColor: AppColors.brand600,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Add worker', style: TextStyle(color: Colors.white)),
+      ),
       body: Column(
         children: [
           Padding(
@@ -116,7 +159,9 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     );
   }
 
-  Widget _card(Worker w) => Container(
+  Widget _card(Worker w) => GestureDetector(
+        onTap: () => _openForm(w),
+        child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -167,7 +212,17 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
               ),
             ),
             StatusBadge(w.displayStatus, worker: true),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert,
+                  size: 18, color: AppColors.textFaint),
+              onSelected: (s) => s == 'edit' ? _openForm(w) : _delete(w),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('Edit')),
+                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
           ],
         ),
+      ),
       );
 }
