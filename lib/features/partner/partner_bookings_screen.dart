@@ -31,7 +31,9 @@ class PartnerBookingsScreen extends ConsumerStatefulWidget {
 
 class _PartnerBookingsScreenState
     extends ConsumerState<PartnerBookingsScreen> {
-  late Future<List<PartnerBooking>> _future;
+  List<PartnerBooking> _all = const [];
+  bool _loading = true;
+  bool _error = false;
   String _query = '';
   String _status = 'all';
   DateTime? _from;
@@ -42,14 +44,54 @@ class _PartnerBookingsScreenState
   int get _filterCount =>
       (_status != 'all' ? 1 : 0) + (_from != null ? 1 : 0) + (_to != null ? 1 : 0);
 
+  static const _statusForAction = {
+    'accept': 'accepted',
+    'decline': 'declined',
+    'start': 'in_progress',
+    'complete': 'completed',
+  };
+
   @override
   void initState() {
     super.initState();
-    _future = ref.read(partnerRepositoryProvider).bookings();
+    _load();
   }
 
-  void _reload() => setState(
-      () => _future = ref.read(partnerRepositoryProvider).bookings());
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
+    try {
+      final list = await ref.read(partnerRepositoryProvider).bookings();
+      if (mounted) {
+        setState(() {
+          _all = list;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = true;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  void _reload() => _load();
+
+  /// Optimistically update a booking's status in the local list.
+  void _patch(int id, String status) {
+    final i = _all.indexWhere((b) => b.id == id);
+    if (i >= 0) {
+      setState(() => _all = [
+            for (var k = 0; k < _all.length; k++)
+              k == i ? _all[k].copyWith(status: status) : _all[k]
+          ]);
+    }
+  }
 
   List<PartnerBooking> _filter(List<PartnerBooking> all) {
     final q = _query.toLowerCase();
@@ -110,6 +152,8 @@ class _PartnerBookingsScreenState
           AppToast.success('Booking completed');
           break;
       }
+      final newStatus = _statusForAction[action];
+      if (newStatus != null) _patch(b.id, newStatus);
       _reload();
     } on ApiException catch (e) {
       AppToast.error(e.message);
@@ -150,35 +194,30 @@ class _PartnerBookingsScreenState
           _filters(),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async => _reload(),
-              child: FutureBuilder<List<PartnerBooking>>(
-                future: _future,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const LoadingList();
-                  }
-                  if (snap.hasError) {
-                    return ErrorRetry(
-                        message: 'Couldn\'t load bookings.', onRetry: _reload);
-                  }
-                  final rows = _filter(snap.data ?? const []);
-                  if (rows.isEmpty) {
-                    return ListView(children: const [
-                      SizedBox(height: 80),
-                      EmptyState(
-                          icon: Icons.assignment_outlined,
-                          title: 'No bookings match',
-                          subtitle: 'Try clearing the filters.'),
-                    ]);
-                  }
-                  return ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _card(rows[i]),
-                  );
-                },
-              ),
+              onRefresh: _load,
+              child: Builder(builder: (context) {
+                if (_loading) return const LoadingList();
+                if (_error) {
+                  return ErrorRetry(
+                      message: 'Couldn\'t load bookings.', onRetry: _reload);
+                }
+                final rows = _filter(_all);
+                if (rows.isEmpty) {
+                  return ListView(children: const [
+                    SizedBox(height: 80),
+                    EmptyState(
+                        icon: Icons.assignment_outlined,
+                        title: 'No bookings match',
+                        subtitle: 'Try clearing the filters.'),
+                  ]);
+                }
+                return ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: rows.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) => _card(rows[i]),
+                );
+              }),
             ),
           ),
         ],
@@ -620,8 +659,16 @@ class _PartnerBookingsScreenState
       );
 
   Future<void> _showDetail(PartnerBooking b) async {
-    final changed = await Navigator.of(context).push<bool>(
+    final result = await Navigator.of(context).push<String>(
         MaterialPageRoute(builder: (_) => BookingDetailScreen(booking: b)));
-    if (changed == true) _reload();
+    // Detail returns the new status string after a lifecycle action,
+    // 'reload' if only the team changed, or '' on a plain back.
+    if (result == null || result.isEmpty) return;
+    if (result == 'reload') {
+      _reload();
+    } else {
+      _patch(b.id, result);
+      _reload();
+    }
   }
 }

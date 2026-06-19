@@ -96,6 +96,19 @@ class PartnerBooking {
     this.paymentStatus = '',
   });
 
+  PartnerBooking copyWith({String? status}) => PartnerBooking(
+        id: id,
+        ref: ref,
+        customerName: customerName,
+        serviceName: serviceName,
+        area: area,
+        status: status ?? this.status,
+        scheduledStart: scheduledStart,
+        partnerCost: partnerCost,
+        requiresStartOtp: requiresStartOtp,
+        paymentStatus: paymentStatus,
+      );
+
   factory PartnerBooking.fromJson(Map<String, dynamic> j) {
     final cust = j['customer'] is Map ? Map<String, dynamic>.from(j['customer']) : const {};
     return PartnerBooking(

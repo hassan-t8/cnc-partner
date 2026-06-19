@@ -56,6 +56,13 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     }
   }
 
+  static const _statusForAction = {
+    'accept': 'accepted',
+    'decline': 'declined',
+    'start': 'in_progress',
+    'complete': 'completed',
+  };
+
   // ---- lifecycle ----
   Future<void> _act(String action) async {
     setState(() => _busy = true);
@@ -100,7 +107,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           break;
       }
       _changed = true;
-      if (mounted) Navigator.pop(context, true);
+      // Return the new status so the list updates optimistically.
+      if (mounted) Navigator.pop(context, _statusForAction[action] ?? '');
     } on ApiException catch (e) {
       AppToast.error(e.message);
       if (mounted) setState(() => _busy = false);
@@ -265,21 +273,32 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) Navigator.pop(context, _changed);
+        if (!didPop) Navigator.pop(context, _changed ? 'reload' : '');
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: Text(b.ref.isEmpty ? 'Booking' : '#${b.ref}'),
-          actions: [Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(child: StatusBadge(b.status)))],
-        ),
+        appBar: AppBar(title: const Text('Booking details')),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text(b.serviceName.isEmpty ? 'Service' : b.serviceName,
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(b.serviceName.isEmpty ? 'Service' : b.serviceName,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w800)),
+                ),
+                StatusBadge(b.status),
+              ],
+            ),
+            if (b.ref.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('#${b.ref}',
+                    style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+              ),
             const SizedBox(height: 16),
             _detailRow(Icons.person_outline, 'Customer',
                 b.customerName.isEmpty ? '—' : b.customerName),

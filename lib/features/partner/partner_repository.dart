@@ -92,7 +92,12 @@ class PartnerRepository {
   // ----- partner profile -----
   Future<Partner> getPartner(int id) async {
     final res = await _api.get('/partner/$id');
-    return Partner.fromJson(pickMap(res.data));
+    final body = res.data;
+    // Backend returns { success, partner: {...} } (not under `data`).
+    final map = (body is Map && body['partner'] is Map)
+        ? Map<String, dynamic>.from(body['partner'] as Map)
+        : pickMap(body);
+    return Partner.fromJson(map);
   }
 
   Future<void> updatePartner(int id, Map<String, dynamic> body) =>
