@@ -244,7 +244,7 @@ class WalletInfo {
 }
 
 class Review {
-  final int stars;
+  final double stars;
   final String comment;
   final String customerName;
   final String? bookingRef;
@@ -256,7 +256,7 @@ class Review {
       this.bookingRef,
       this.createdAt});
   factory Review.fromJson(Map<String, dynamic> j) => Review(
-        stars: _i(j['stars'] ?? j['rating']) ?? 0,
+        stars: _d(j['stars'] ?? j['rating']),
         comment: _s(j['comment']),
         customerName: _s(j['customerName'] ?? j['customer']),
         bookingRef: (j['bookingId'] ?? j['bookingRef'])?.toString(),
@@ -286,6 +286,14 @@ class RatingSummary {
             .map((e) => Review.fromJson(Map<String, dynamic>.from(e)))
             .toList()
         : <Review>[];
+    // The API doesn't send a histogram — derive it from the reviews so the
+    // distribution bars render.
+    if (dist.isEmpty && revs.isNotEmpty) {
+      for (final r in revs) {
+        final bucket = r.stars.round().clamp(1, 5);
+        dist[bucket] = (dist[bucket] ?? 0) + 1;
+      }
+    }
     return RatingSummary(
       avg: _d(j['ratingAvg'] ?? j['avg']),
       count: _i(j['ratingCount'] ?? j['count']) ?? 0,

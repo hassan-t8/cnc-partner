@@ -100,7 +100,8 @@ class PartnerBooking {
     final cust = j['customer'] is Map ? Map<String, dynamic>.from(j['customer']) : const {};
     return PartnerBooking(
       id: _i(j['id']) ?? 0,
-      ref: _s(j['ref'] ?? j['reference'] ?? j['bookingRef'] ?? j['id']),
+      ref: _s(j['bookingId'] ?? j['ref'] ?? j['reference'] ?? j['bookingRef'] ??
+          j['id']),
       customerName: _s(cust['name'] ?? j['customerName']),
       serviceName: _s(j['serviceName'] ?? j['service']),
       area: _s(j['area'] ?? j['city']),

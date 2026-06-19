@@ -34,7 +34,13 @@ class _PartnerBookingsScreenState
   late Future<List<PartnerBooking>> _future;
   String _query = '';
   String _status = 'all';
+  DateTime? _from;
+  DateTime? _to;
   int _acting = -1;
+
+  bool get _hasFilters => _status != 'all' || _from != null || _to != null;
+  int get _filterCount =>
+      (_status != 'all' ? 1 : 0) + (_from != null ? 1 : 0) + (_to != null ? 1 : 0);
 
   @override
   void initState() {
@@ -49,6 +55,13 @@ class _PartnerBookingsScreenState
     final q = _query.toLowerCase();
     return all.where((b) {
       if (_status != 'all' && b.status != _status) return false;
+      final d = b.scheduledStart;
+      if (_from != null && (d == null || d.isBefore(_from!))) return false;
+      if (_to != null &&
+          (d == null ||
+              d.isAfter(DateTime(_to!.year, _to!.month, _to!.day, 23, 59)))) {
+        return false;
+      }
       if (q.isEmpty) return true;
       return [b.ref, b.customerName, b.serviceName, b.area]
           .any((s) => s.toLowerCase().contains(q));
@@ -178,25 +191,145 @@ class _PartnerBookingsScreenState
         child: Column(
           children: [
             TextField(
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: 'Search ref, customer, service…',
-                prefixIcon: Icon(Icons.search),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      onPressed: _openFilterSheet,
+                      icon: Icon(Icons.tune,
+                          color: _hasFilters
+                              ? AppColors.brand600
+                              : AppColors.textMuted),
+                      tooltip: 'Filters',
+                    ),
+                    if (_filterCount > 0)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                              color: AppColors.brand600,
+                              shape: BoxShape.circle),
+                          child: Text('$_filterCount',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                  ],
+                ),
               ),
               onChanged: (v) => setState(() => _query = v.trim()),
             ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: _statusOptions.map((s) {
-                  final on = _status == s;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
+            if (_hasFilters) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 32,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    if (_status != 'all')
+                      _appliedChip(_status.replaceAll('_', ' '),
+                          () => setState(() => _status = 'all')),
+                    if (_from != null)
+                      _appliedChip('From ${_fmt(_from!)}',
+                          () => setState(() => _from = null)),
+                    if (_to != null)
+                      _appliedChip(
+                          'To ${_fmt(_to!)}', () => setState(() => _to = null)),
+                    _appliedChip('Clear all', _clearFilters, solid: true),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+
+  String _fmt(DateTime d) => DateFormat('d MMM').format(d);
+
+  void _clearFilters() => setState(() {
+        _status = 'all';
+        _from = null;
+        _to = null;
+      });
+
+  Widget _appliedChip(String label, VoidCallback onClear, {bool solid = false}) =>
+      Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: InkWell(
+          onTap: onClear,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: solid ? AppColors.rose.withValues(alpha: 0.1)
+                  : AppColors.brand50,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                  color: solid ? AppColors.rose : AppColors.brand600,
+                  width: 0.8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: solid ? AppColors.rose : AppColors.brand700)),
+                const SizedBox(width: 4),
+                Icon(Icons.close,
+                    size: 13,
+                    color: solid ? AppColors.rose : AppColors.brand700),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Future<void> _openFilterSheet() async {
+    var status = _status;
+    DateTime? from = _from;
+    DateTime? to = _to;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Filter bookings',
+                    style:
+                        TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 16),
+                const Text('Status',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _statusOptions.map((s) {
+                    final on = status == s;
+                    return ChoiceChip(
                       label: Text(s == 'all' ? 'All' : s.replaceAll('_', ' ')),
                       selected: on,
-                      onSelected: (_) => setState(() => _status = s),
+                      onSelected: (_) => setSheet(() => status = s),
                       selectedColor: AppColors.brand600,
                       labelStyle: TextStyle(
                           color: on ? Colors.white : AppColors.textSecondary,
@@ -204,12 +337,101 @@ class _PartnerBookingsScreenState
                           fontWeight: FontWeight.w600),
                       backgroundColor: AppColors.surface,
                       side: BorderSide(color: AppColors.border),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 18),
+                const Text('Date range',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                        child: _dateBox('From', from, () async {
+                      final d = await _pickDate(ctx, from);
+                      if (d != null) setSheet(() => from = d);
+                    })),
+                    const SizedBox(width: 10),
+                    Expanded(
+                        child: _dateBox('To', to, () async {
+                      final d = await _pickDate(ctx, to);
+                      if (d != null) setSheet(() => to = d);
+                    })),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          setSheet(() {
+                            status = 'all';
+                            from = null;
+                            to = null;
+                          });
+                        },
+                        child: const Text('Reset'),
+                      ),
                     ),
-                  );
-                }).toList(),
-              ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              _status = status;
+                              _from = from;
+                              _to = to;
+                            });
+                            Navigator.pop(ctx);
+                          },
+                          child: const Text('Apply filters'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<DateTime?> _pickDate(BuildContext ctx, DateTime? initial) => showDatePicker(
+        context: ctx,
+        initialDate: initial ?? DateTime.now(),
+        firstDate: DateTime(2024),
+        lastDate: DateTime(2030),
+      );
+
+  Widget _dateBox(String label, DateTime? value, VoidCallback onTap) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.calendar_today_outlined,
+                  size: 16, color: AppColors.textMuted),
+              const SizedBox(width: 8),
+              Text(value != null ? _fmt(value) : label,
+                  style: TextStyle(
+                      color: value != null
+                          ? AppColors.textPrimary
+                          : AppColors.textMuted,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
       );
 

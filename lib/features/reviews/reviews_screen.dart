@@ -74,6 +74,19 @@ class _ReviewsScreenState extends ConsumerState<ReviewsScreen> {
     );
   }
 
+  Widget _stars(double value, double size) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(5, (i) {
+          final fill = value - i;
+          final icon = fill >= 0.75
+              ? Icons.star
+              : fill >= 0.25
+                  ? Icons.star_half
+                  : Icons.star_border;
+          return Icon(icon, size: size, color: AppColors.star);
+        }),
+      );
+
   Widget _summary(RatingSummary s) => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -89,18 +102,7 @@ class _ReviewsScreenState extends ConsumerState<ReviewsScreen> {
                 Text(s.avg.toStringAsFixed(1),
                     style: const TextStyle(
                         fontSize: 38, fontWeight: FontWeight.w900)),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(
-                      5,
-                      (i) => Icon(
-                            i < s.avg.round()
-                                ? Icons.star
-                                : Icons.star_border,
-                            size: 16,
-                            color: AppColors.star,
-                          )),
-                ),
+                _stars(s.avg, 16),
                 Text('${s.count} reviews',
                     style: TextStyle(
                         color: AppColors.textMuted, fontSize: 12)),
@@ -176,15 +178,7 @@ class _ReviewsScreenState extends ConsumerState<ReviewsScreen> {
                       r.customerName.isEmpty ? 'Customer' : r.customerName,
                       style: const TextStyle(fontWeight: FontWeight.w700)),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(
-                      5,
-                      (i) => Icon(
-                          i < r.stars ? Icons.star : Icons.star_border,
-                          size: 14,
-                          color: AppColors.star)),
-                ),
+                _stars(r.stars, 14),
               ],
             ),
             if (r.comment.isNotEmpty) ...[
