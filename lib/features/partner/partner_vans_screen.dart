@@ -63,6 +63,55 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
     }
   }
 
+  static const _statusLabels = {
+    'active': 'Active',
+    'maintenance': 'Maintenance',
+    'retired': 'Retired',
+  };
+
+  Future<void> _changeStatus(Van v) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text('Set status · ${v.name}',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+            for (final e in _statusLabels.entries)
+              ListTile(
+                title: Text(e.value),
+                trailing: v.status == e.key
+                    ? const Icon(Icons.check_rounded,
+                        color: AppColors.brand600)
+                    : null,
+                onTap: () => Navigator.pop(context, e.key),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || picked == v.status) return;
+    try {
+      await ref
+          .read(partnerRepositoryProvider)
+          .updateVan(v.id, {'status': picked});
+      AppToast.success('Status updated');
+      _reload();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -129,13 +178,28 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
                     style: const TextStyle(
                         fontWeight: FontWeight.w700, fontSize: 14.5)),
               ),
-              StatusBadge(v.status == 'active' ? 'completed' : v.status),
+              GestureDetector(
+                onTap: () => _changeStatus(v),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    StatusBadge(v.status == 'active' ? 'completed' : v.status),
+                    Icon(Icons.expand_more,
+                        size: 15, color: AppColors.textFaint),
+                  ],
+                ),
+              ),
               PopupMenuButton<String>(
                 icon: Icon(Icons.more_vert,
                     size: 18, color: AppColors.textFaint),
-                onSelected: (s) => s == 'edit' ? _openForm(v) : _delete(v),
+                onSelected: (s) {
+                  if (s == 'edit') _openForm(v);
+                  if (s == 'status') _changeStatus(v);
+                  if (s == 'delete') _delete(v);
+                },
                 itemBuilder: (_) => const [
                   PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  PopupMenuItem(value: 'status', child: Text('Change status')),
                   PopupMenuItem(value: 'delete', child: Text('Delete')),
                 ],
               ),

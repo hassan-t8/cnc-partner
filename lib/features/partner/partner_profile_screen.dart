@@ -6,6 +6,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/phone_field.dart';
 import '../../widgets/status_badge.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
@@ -24,7 +25,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
   final _name = TextEditingController();
   final _contact = TextEditingController();
   final _website = TextEditingController();
-  final _phone = TextEditingController();
+  String _phone = '+971';
 
   int get _partnerId => ref.read(authControllerProvider).user?.partnerId ?? 0;
 
@@ -39,7 +40,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
     _name.text = p.name;
     _contact.text = p.contactPerson;
     _website.text = p.website;
-    _phone.text = p.phones.isNotEmpty ? p.phones.first : '';
+    _phone = p.phones.isNotEmpty ? p.phones.first : '+971';
     return p;
   }
 
@@ -53,7 +54,6 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
     _name.dispose();
     _contact.dispose();
     _website.dispose();
-    _phone.dispose();
     super.dispose();
   }
 
@@ -69,7 +69,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
         'contactPerson': _contact.text.trim(),
         'partnerWebsite': _website.text.trim(),
         'partnerPhones': [
-          if (_phone.text.trim().isNotEmpty) {'number': _phone.text.trim()}
+          if (_phone.trim().length > 4) {'number': _phone.trim()}
         ],
       });
       AppToast.success('Profile updated');
@@ -150,7 +150,14 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
                 _editField('Business name *', _name),
                 _editField('Contact person', _contact),
                 _editField('Website', _website),
-                _editField('Phone', _phone, keyboard: TextInputType.phone),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: PhoneField(
+                    label: 'Phone',
+                    initial: _phone,
+                    onChanged: (v) => _phone = v,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Row(
                   children: [

@@ -65,6 +65,56 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     }
   }
 
+  static const _statusLabels = {
+    'active': 'Active',
+    'not_working': 'Not working',
+    'on_leave': 'On leave',
+    'suspended': 'Suspended',
+  };
+
+  Future<void> _changeStatus(Worker w) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text('Set status · ${w.name}',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+            for (final e in _statusLabels.entries)
+              ListTile(
+                title: Text(e.value),
+                trailing: w.status == e.key
+                    ? const Icon(Icons.check_rounded,
+                        color: AppColors.brand600)
+                    : null,
+                onTap: () => Navigator.pop(context, e.key),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || picked == w.status) return;
+    try {
+      await ref
+          .read(partnerRepositoryProvider)
+          .updateWorker(w.id, {'status': picked});
+      AppToast.success('Status updated');
+      _reload();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    }
+  }
+
   List<Worker> _filter(List<Worker> all) {
     final q = _query.toLowerCase();
     return all.where((w) {
@@ -211,13 +261,28 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                 ],
               ),
             ),
-            StatusBadge(w.displayStatus, worker: true),
+            GestureDetector(
+              onTap: () => _changeStatus(w),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  StatusBadge(w.displayStatus, worker: true),
+                  Icon(Icons.expand_more,
+                      size: 15, color: AppColors.textFaint),
+                ],
+              ),
+            ),
             PopupMenuButton<String>(
               icon: Icon(Icons.more_vert,
                   size: 18, color: AppColors.textFaint),
-              onSelected: (s) => s == 'edit' ? _openForm(w) : _delete(w),
+              onSelected: (s) {
+                if (s == 'edit') _openForm(w);
+                if (s == 'status') _changeStatus(w);
+                if (s == 'delete') _delete(w);
+              },
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'edit', child: Text('Edit')),
+                PopupMenuItem(value: 'status', child: Text('Change status')),
                 PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
             ),
