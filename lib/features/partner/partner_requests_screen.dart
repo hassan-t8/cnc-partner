@@ -62,12 +62,13 @@ class _PartnerRequestsScreenState
     }
   }
 
-  Future<void> _act(Offer o, bool accept) async {
+  Future<void> _act(Offer o, bool accept,
+      {Map<String, dynamic>? substitutions}) async {
     setState(() => _acting = o.id);
     try {
       final repo = ref.read(partnerRepositoryProvider);
       if (accept) {
-        await repo.acceptOffer(o.id);
+        await repo.acceptOffer(o.id, substitutions: substitutions);
         AppToast.success('Booking accepted');
       } else {
         await repo.declineOffer(o.id);
@@ -79,6 +80,23 @@ class _PartnerRequestsScreenState
     } finally {
       if (mounted) setState(() => _acting = -1);
     }
+  }
+
+  /// Show the proposed team and let the partner swap the van/driver before
+  /// accepting (substitutions). "Accept as proposed" sends no substitutions.
+  Future<void> _reviewAccept(Offer o) async {
+    final repo = ref.read(partnerRepositoryProvider);
+    final result = await showModalBottomSheet<Map<String, dynamic>?>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _OfferAcceptSheet(offerId: o.id, repo: repo),
+    );
+    // result == null -> cancelled. {} -> accept as proposed. {...} -> subs.
+    if (result == null) return;
+    await _act(o, true, substitutions: result.isEmpty ? null : result);
   }
 
   @override
@@ -188,7 +206,7 @@ class _PartnerRequestsScreenState
                   height: 42,
                   child: ElevatedButton(
                     onPressed:
-                        (busy || expired) ? null : () => _act(o, true),
+                        (busy || expired) ? null : () => _reviewAccept(o),
                     child: const Text('Accept'),
                   ),
                 ),
@@ -227,4 +245,205 @@ class _PartnerRequestsScreenState
           ],
         ),
       );
+}
+
+/// Review the proposed team for an offer and optionally swap the workers / van
+/// / driver before accepting. Pops:
+///   null  -> cancelled
+///   {}    -> accept as proposed (no substitutions)
+///   {...} -> accept with substitutions {workerIds, vanId, driverWorkerId}
+class _OfferAcceptSheet extends ConsumerStatefulWidget {
+  final int offerId;
+  final PartnerRepository repo;
+  const _OfferAcceptSheet({required this.offerId, required this.repo});
+  @override
+  ConsumerState<_OfferAcceptSheet> createState() => _OfferAcceptSheetState();
+}
+
+class _OfferAcceptSheetState extends ConsumerState<_OfferAcceptSheet> {
+  bool _loading = true;
+  bool _busy = false;
+  List<Worker> _workers = const [];
+  List<Van> _vans = const [];
+  // proposed (from candidateSnapshot)
+  Set<int> _selWorkers = {};
+  int? _vanId;
+  int? _driverId;
+  Set<int> _origWorkers = {};
+  int? _origVan;
+  int? _origDriver;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final results = await Future.wait([
+        widget.repo.getOffer(widget.offerId),
+        widget.repo.workers().catchError((_) => <Worker>[]),
+        widget.repo.vans().catchError((_) => <Van>[]),
+      ]);
+      final offer = results[0] as Map<String, dynamic>;
+      final snap = offer['candidateSnapshot'] is Map
+          ? Map<String, dynamic>.from(offer['candidateSnapshot'])
+          : const {};
+      final wIds = (snap['workerIds'] is List)
+          ? (snap['workerIds'] as List)
+              .map((e) => int.tryParse('$e') ?? 0)
+              .where((e) => e > 0)
+              .toSet()
+          : <int>{};
+      _selWorkers = {...wIds};
+      _origWorkers = {...wIds};
+      _vanId = int.tryParse('${snap['vanId'] ?? ''}');
+      _origVan = _vanId;
+      _driverId = int.tryParse('${snap['driverWorkerId'] ?? ''}');
+      _origDriver = _driverId;
+      if (mounted) {
+        setState(() {
+          _workers = results[1] as List<Worker>;
+          _vans = results[2] as List<Van>;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  bool get _changed =>
+      !_setEq(_selWorkers, _origWorkers) ||
+      _vanId != _origVan ||
+      _driverId != _origDriver;
+
+  bool _setEq(Set<int> a, Set<int> b) =>
+      a.length == b.length && a.containsAll(b);
+
+  void _confirm() {
+    if (_selWorkers.isEmpty) {
+      AppToast.error('Select at least one worker.');
+      return;
+    }
+    setState(() => _busy = true);
+    Navigator.pop(context,
+        _changed
+            ? {
+                'workerIds': _selWorkers.toList(),
+                'vanId': _vanId,
+                'driverWorkerId': _driverId,
+              }
+            : <String, dynamic>{});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final drivers = _workers.where((w) => w.roles.contains('driver')).toList();
+    return Padding(
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SafeArea(
+        top: false,
+        child: _loading
+            ? const SizedBox(
+                height: 160,
+                child: Center(child: CircularProgressIndicator()))
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Accept offer',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 2),
+                    Text('Review the team, swap if needed, then accept.',
+                        style: TextStyle(
+                            color: AppColors.textMuted, fontSize: 12.5)),
+                    const SizedBox(height: 16),
+                    const Text('Workers',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _workers
+                          .where((w) => !w.roles.contains('driver') ||
+                              _selWorkers.contains(w.id))
+                          .map((w) {
+                        final on = _selWorkers.contains(w.id);
+                        return FilterChip(
+                          label: Text(w.name.isEmpty ? 'Worker' : w.name),
+                          selected: on,
+                          onSelected: (v) => setState(() => v
+                              ? _selWorkers.add(w.id)
+                              : _selWorkers.remove(w.id)),
+                          selectedColor: AppColors.brand600,
+                          labelStyle: TextStyle(
+                              color: on ? Colors.white : AppColors.textSecondary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600),
+                          backgroundColor: AppColors.surface,
+                          side: BorderSide(color: AppColors.border),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text('Van',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int?>(
+                      initialValue:
+                          _vans.any((v) => v.id == _vanId) ? _vanId : null,
+                      isExpanded: true,
+                      hint: const Text('No van'),
+                      items: [
+                        const DropdownMenuItem<int?>(
+                            value: null, child: Text('No van')),
+                        ..._vans.map((v) => DropdownMenuItem<int?>(
+                            value: v.id,
+                            child: Text(v.name.isEmpty ? 'Van' : v.name,
+                                overflow: TextOverflow.ellipsis))),
+                      ],
+                      onChanged: (v) => setState(() => _vanId = v),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text('Driver',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int?>(
+                      initialValue:
+                          drivers.any((d) => d.id == _driverId) ? _driverId : null,
+                      isExpanded: true,
+                      hint: const Text('No driver'),
+                      items: [
+                        const DropdownMenuItem<int?>(
+                            value: null, child: Text('No driver')),
+                        ...drivers.map((d) => DropdownMenuItem<int?>(
+                            value: d.id,
+                            child: Text(d.name.isEmpty ? 'Driver' : d.name,
+                                overflow: TextOverflow.ellipsis))),
+                      ],
+                      onChanged: (v) => setState(() => _driverId = v),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _busy ? null : _confirm,
+                        child: Text(_changed
+                            ? 'Accept with changes'
+                            : 'Accept as proposed'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
 }

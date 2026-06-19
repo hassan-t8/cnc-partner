@@ -58,7 +58,14 @@ class PartnerRepository {
     return pickList(res.data).map(Offer.fromJson).toList();
   }
 
-  Future<void> acceptOffer(int id) => _api.post('/offers/$id/accept');
+  Future<Map<String, dynamic>> getOffer(int id) async {
+    final res = await _api.get('/offers/$id');
+    return pickMap(res.data);
+  }
+
+  Future<void> acceptOffer(int id, {Map<String, dynamic>? substitutions}) =>
+      _api.post('/offers/$id/accept',
+          body: {if (substitutions != null) 'substitutions': substitutions});
   Future<void> declineOffer(int id, {String? reason}) =>
       _api.post('/offers/$id/decline', body: {if (reason != null) 'reason': reason});
 
