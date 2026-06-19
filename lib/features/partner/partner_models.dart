@@ -28,6 +28,33 @@ class ServiceRequest {
       );
 }
 
+class BankAccount {
+  final String bankName;
+  final String branchName;
+  final String accountNumber;
+  final String ibanNumber;
+  const BankAccount({
+    this.bankName = '',
+    this.branchName = '',
+    this.accountNumber = '',
+    this.ibanNumber = '',
+  });
+  factory BankAccount.fromJson(Map<String, dynamic> j) => BankAccount(
+        bankName: _s(j['bankName']),
+        branchName: _s(j['branchName']),
+        accountNumber: _s(j['accountNumber']),
+        ibanNumber: _s(j['ibanNumber']),
+      );
+  Map<String, dynamic> toJson() => {
+        'bankName': bankName,
+        'branchName': branchName,
+        'accountNumber': accountNumber,
+        'ibanNumber': ibanNumber,
+      };
+  bool get isEmpty =>
+      bankName.isEmpty && accountNumber.isEmpty && ibanNumber.isEmpty;
+}
+
 class Partner {
   final int id;
   final String name;
@@ -37,8 +64,23 @@ class Partner {
   final String status;
   final String code;
   final double ratingAvg;
+  final int ratingCount;
   final double commissionPct;
   final List<String> phones;
+  final double sotPct;
+  final int bufferMinutes;
+  final int priority;
+  final String kind;
+  final DateTime? createdAt;
+  final bool hasTRN;
+  final String trn;
+  final double maxDiscountPercent;
+  final double annualRevenueLimit;
+  final bool availableOnline;
+  final bool acceptAutoAssign;
+  final int? primaryZoneId;
+  final List<int> serviceZoneIds;
+  final List<BankAccount> bankDetails;
 
   const Partner({
     required this.id,
@@ -49,8 +91,23 @@ class Partner {
     this.status = '',
     this.code = '',
     this.ratingAvg = 0,
+    this.ratingCount = 0,
     this.commissionPct = 0,
     this.phones = const [],
+    this.sotPct = 0,
+    this.bufferMinutes = 0,
+    this.priority = 0,
+    this.kind = '',
+    this.createdAt,
+    this.hasTRN = false,
+    this.trn = '',
+    this.maxDiscountPercent = 0,
+    this.annualRevenueLimit = 0,
+    this.availableOnline = true,
+    this.acceptAutoAssign = true,
+    this.primaryZoneId,
+    this.serviceZoneIds = const [],
+    this.bankDetails = const [],
   });
 
   factory Partner.fromJson(Map<String, dynamic> j) {
@@ -65,17 +122,47 @@ class Partner {
         }
       }
     }
+    final banks = (j['bankDetails'] is List)
+        ? (j['bankDetails'] as List)
+            .whereType<Map>()
+            .map((e) => BankAccount.fromJson(Map<String, dynamic>.from(e)))
+            .where((b) => !b.isEmpty)
+            .toList()
+        : <BankAccount>[];
+    final zones = (j['serviceZoneIds'] is List)
+        ? (j['serviceZoneIds'] as List)
+            .map((e) => _i(e) ?? 0)
+            .where((e) => e > 0)
+            .toList()
+        : <int>[];
     return Partner(
       id: _i(j['id']) ?? 0,
       name: _s(j['partnerName'] ?? j['name']),
       contactPerson: _s(j['contactPerson']),
-      email: _s(j['email']),
+      email: _s(j['partnerEmail'] ?? j['email']),
       website: _s(j['partnerWebsite'] ?? j['website']),
       status: _s(j['status']),
-      code: _s(j['code']),
+      code: _s(j['partnerCode'] ?? j['code']),
       ratingAvg: _d(j['ratingAvg']),
+      ratingCount: _i(j['ratingCount']) ?? 0,
       commissionPct: _d(j['commissionPct'] ?? j['defaultCommissionPct']),
       phones: phones,
+      sotPct: _d(j['sotPct']),
+      bufferMinutes: _i(j['bufferMinutes']) ?? 0,
+      priority: _i(j['priority']) ?? 0,
+      kind: _s(j['kind']),
+      createdAt: _dt(j['createdAt']),
+      hasTRN: _b(j['hasTRN']),
+      trn: _s(j['trn']),
+      maxDiscountPercent: _d(j['maxDiscountPercent']),
+      annualRevenueLimit: _d(j['annualRevenueLimit']),
+      availableOnline:
+          j['availableOnline'] == null ? true : _b(j['availableOnline']),
+      acceptAutoAssign:
+          j['acceptAutoAssign'] == null ? true : _b(j['acceptAutoAssign']),
+      primaryZoneId: _i(j['primaryZoneId']),
+      serviceZoneIds: zones,
+      bankDetails: banks,
     );
   }
 }
