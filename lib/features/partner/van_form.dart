@@ -128,7 +128,11 @@ class _VanFormState extends ConsumerState<VanForm> {
               future: _zones,
               builder: (context, snap) {
                 final zones = snap.data ?? const <Zone>[];
-                _zoneId ??= zones.isNotEmpty ? zones.first.id : null;
+                final ids = zones.map((z) => z.id).toSet();
+                // Keep the selected value valid for the dropdown.
+                if (_zoneId == null || !ids.contains(_zoneId)) {
+                  _zoneId = zones.isNotEmpty ? zones.first.id : null;
+                }
                 return DropdownButtonFormField<int>(
                   initialValue: _zoneId,
                   isExpanded: true,
@@ -149,18 +153,29 @@ class _VanFormState extends ConsumerState<VanForm> {
               future: _drivers,
               builder: (context, snap) {
                 final drivers = snap.data ?? const <Worker>[];
+                final items = <DropdownMenuItem<int?>>[
+                  const DropdownMenuItem<int?>(
+                      value: null, child: Text('No driver')),
+                  ...drivers.map((d) => DropdownMenuItem<int?>(
+                      value: d.id,
+                      child: Text(d.name.isEmpty ? 'Driver' : d.name,
+                          overflow: TextOverflow.ellipsis))),
+                ];
+                // Current driver may not be in the active-driver list — keep it
+                // selectable so the dropdown doesn't assert.
+                if (_driverId != null &&
+                    !drivers.any((d) => d.id == _driverId)) {
+                  final name = widget.van?.driverName ?? '';
+                  items.add(DropdownMenuItem<int?>(
+                      value: _driverId,
+                      child: Text(name.isEmpty ? 'Current driver' : name,
+                          overflow: TextOverflow.ellipsis)));
+                }
                 return DropdownButtonFormField<int?>(
                   initialValue: _driverId,
                   isExpanded: true,
                   hint: const Text('No driver'),
-                  items: [
-                    const DropdownMenuItem<int?>(
-                        value: null, child: Text('No driver')),
-                    ...drivers.map((d) => DropdownMenuItem<int?>(
-                        value: d.id,
-                        child: Text(d.name.isEmpty ? 'Driver' : d.name,
-                            overflow: TextOverflow.ellipsis))),
-                  ],
+                  items: items,
                   onChanged: (v) => setState(() => _driverId = v),
                 );
               },

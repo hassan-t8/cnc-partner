@@ -140,7 +140,10 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
               future: _zones,
               builder: (context, snap) {
                 final zones = snap.data ?? const <Zone>[];
-                _zoneId ??= zones.isNotEmpty ? zones.first.id : null;
+                final ids = zones.map((z) => z.id).toSet();
+                if (_zoneId == null || !ids.contains(_zoneId)) {
+                  _zoneId = zones.isNotEmpty ? zones.first.id : null;
+                }
                 return DropdownButtonFormField<int>(
                   initialValue: _zoneId,
                   isExpanded: true,
