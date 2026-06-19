@@ -7,7 +7,8 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 
 class ForgotPasswordScreen extends ConsumerStatefulWidget {
-  const ForgotPasswordScreen({super.key});
+  final String? initialEmail;
+  const ForgotPasswordScreen({super.key, this.initialEmail});
   @override
   ConsumerState<ForgotPasswordScreen> createState() =>
       _ForgotPasswordScreenState();
@@ -18,6 +19,13 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _busy = false;
   bool _sent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.initialEmail?.trim() ?? '';
+    if (e.isNotEmpty) _email.text = e;
+  }
 
   @override
   void dispose() {

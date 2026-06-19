@@ -1,0 +1,422 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
+import '../../core/network/api_client.dart';
+import '../../core/theme/app_colors.dart';
+import '../../widgets/app_states.dart';
+import '../../widgets/app_toast.dart';
+import '../../widgets/status_badge.dart';
+import '../bookings/models.dart';
+import '../worker/otp_dialog.dart';
+import 'partner_models.dart';
+import 'partner_repository.dart';
+
+/// Full booking detail with the team-assignment flow (assign / unassign) and
+/// the accept / start / complete lifecycle. Pops `true` if anything changed.
+class BookingDetailScreen extends ConsumerStatefulWidget {
+  final PartnerBooking booking;
+  const BookingDetailScreen({super.key, required this.booking});
+  @override
+  ConsumerState<BookingDetailScreen> createState() =>
+      _BookingDetailScreenState();
+}
+
+class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
+  late PartnerBooking b;
+  late Future<List<BookingAssignment>> _team;
+  bool _busy = false;
+  bool _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    b = widget.booking;
+    _loadTeam();
+  }
+
+  void _loadTeam() => _team =
+      ref.read(partnerRepositoryProvider).bookingAssignments(b.id);
+
+  PartnerRepository get _repo => ref.read(partnerRepositoryProvider);
+
+  Future<void> _refreshTeam() async {
+    setState(_loadTeam);
+  }
+
+  // ---- lifecycle ----
+  Future<void> _act(String action) async {
+    setState(() => _busy = true);
+    try {
+      switch (action) {
+        case 'accept':
+          await _repo.acceptBooking(b.id);
+          AppToast.success('Booking accepted');
+          break;
+        case 'decline':
+          final reason = await _reasonDialog();
+          if (reason == null) {
+            setState(() => _busy = false);
+            return;
+          }
+          await _repo.declineBooking(b.id,
+              reason: reason.isEmpty ? null : reason);
+          AppToast.success('Booking declined');
+          break;
+        case 'start':
+          try {
+            await _repo.startBooking(b.id);
+          } on ApiException catch (e) {
+            if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
+              if (!mounted) return;
+              final otp = await showOtpDialog(context,
+                  bookingRef: '#${b.ref}', customerName: b.customerName);
+              if (otp == null) {
+                setState(() => _busy = false);
+                return;
+              }
+              await _repo.startBooking(b.id, otp: otp);
+            } else {
+              rethrow;
+            }
+          }
+          AppToast.success('Booking started');
+          break;
+        case 'complete':
+          await _repo.completeBooking(b.id);
+          AppToast.success('Booking completed');
+          break;
+      }
+      _changed = true;
+      if (mounted) Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<String?> _reasonDialog() {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Decline booking'),
+        content: TextField(
+            controller: ctrl,
+            maxLines: 3,
+            decoration: const InputDecoration(hintText: 'Reason (optional)')),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.rose),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Decline'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---- team ----
+  Future<void> _assign() async {
+    final workers = await _repo.workers();
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<Worker>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          builder: (_, controller) => ListView(
+            controller: controller,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 16, 20, 6),
+                child: Text('Assign a worker',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              ),
+              if (workers.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('No workers yet. Add workers first.'),
+                ),
+              for (final w in workers.where((w) => w.status == 'active'))
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.brand50,
+                    child: Text(
+                        (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
+                        style: const TextStyle(
+                            color: AppColors.brand700,
+                            fontWeight: FontWeight.w800)),
+                  ),
+                  title: Text(w.name.isEmpty ? 'Worker' : w.name),
+                  subtitle: Text(w.roles.join(', ')),
+                  onTap: () => Navigator.pop(context, w),
+                ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null) return;
+    final role = picked.roles.contains('driver') ? 'driver' : 'crew';
+    try {
+      await _repo.assignWorker(b.id, picked.id, role: role);
+      AppToast.success('${picked.name} assigned');
+      _changed = true;
+      _refreshTeam();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    }
+  }
+
+  Future<void> _unassign(BookingAssignment a) async {
+    try {
+      await _repo.unassign(a.id);
+      AppToast.success('Removed from job');
+      _changed = true;
+      _refreshTeam();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    }
+  }
+
+  List<Widget> _actions() {
+    Widget btn(String label, IconData icon, Color color, String action,
+            {bool outlined = false}) =>
+        SizedBox(
+          height: 46,
+          child: outlined
+              ? OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _act(action),
+                  icon: Icon(icon, size: 18, color: color),
+                  label: Text(label,
+                      style: TextStyle(
+                          color: color, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: color.withValues(alpha: 0.5))),
+                )
+              : ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(backgroundColor: color),
+                  onPressed: _busy ? null : () => _act(action),
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.2, color: Colors.white))
+                      : Icon(icon, size: 18),
+                  label: Text(label),
+                ),
+        );
+    switch (b.status) {
+      case 'awaiting_acceptance':
+        return [
+          btn('Accept', Icons.check_rounded, AppColors.brand600, 'accept'),
+          btn('Decline', Icons.close_rounded, AppColors.rose, 'decline',
+              outlined: true),
+        ];
+      case 'accepted':
+        return [
+          btn('Start job', Icons.play_arrow_rounded, AppColors.violet,
+              'start'),
+        ];
+      case 'in_progress':
+        return [
+          btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
+              'complete'),
+        ];
+      default:
+        return const [];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final actions = _actions();
+    final canManageTeam = b.status == 'awaiting_acceptance' ||
+        b.status == 'accepted' ||
+        b.status == 'in_progress';
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) Navigator.pop(context, _changed);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(b.ref.isEmpty ? 'Booking' : '#${b.ref}'),
+          actions: [Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(child: StatusBadge(b.status)))],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(b.serviceName.isEmpty ? 'Service' : b.serviceName,
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 16),
+            _detailRow(Icons.person_outline, 'Customer',
+                b.customerName.isEmpty ? '—' : b.customerName),
+            _detailRow(Icons.place_outlined, 'Area',
+                b.area.isEmpty ? '—' : b.area),
+            _detailRow(
+                Icons.schedule_outlined,
+                'Scheduled',
+                b.scheduledStart != null
+                    ? DateFormat('EEE d MMM y · h:mm a')
+                        .format(b.scheduledStart!)
+                    : 'Not scheduled'),
+            if (b.paymentStatus.isNotEmpty)
+              _detailRow(Icons.payments_outlined, 'Payment',
+                  b.paymentStatus.replaceAll('_', ' ')),
+            _detailRow(Icons.account_balance_wallet_outlined, 'Your payout',
+                'AED ${b.partnerCost.toStringAsFixed(2)}'),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                const Text('Team',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                const Spacer(),
+                if (canManageTeam)
+                  TextButton.icon(
+                    onPressed: _assign,
+                    icon: const Icon(Icons.person_add_alt_1, size: 18),
+                    label: const Text('Assign'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            FutureBuilder<List<BookingAssignment>>(
+              future: _team,
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const LoadingList(count: 2, height: 56);
+                }
+                final team = snap.data ?? const [];
+                if (team.isEmpty) {
+                  return Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.group_off_outlined,
+                            size: 18, color: AppColors.textMuted),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                              canManageTeam
+                                  ? 'No one assigned yet. Tap Assign to add a worker.'
+                                  : 'No team assigned.',
+                              style: TextStyle(
+                                  color: AppColors.textMuted, fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return Column(
+                  children: [
+                    for (final a in team) _teamRow(a, canManageTeam),
+                  ],
+                );
+              },
+            ),
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  for (var i = 0; i < actions.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    Expanded(child: actions[i]),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _teamRow(BookingAssignment a, bool canManage) => Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: AppColors.brand50,
+              child: Icon(
+                  a.role == 'driver'
+                      ? Icons.directions_car
+                      : Icons.cleaning_services,
+                  size: 16,
+                  color: AppColors.brand700),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(a.workerName.isEmpty ? 'Worker' : a.workerName,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                      [a.role, if (a.status.isNotEmpty) a.status]
+                          .where((s) => s.isNotEmpty)
+                          .join(' · '),
+                      style: TextStyle(
+                          color: AppColors.textMuted, fontSize: 12)),
+                ],
+              ),
+            ),
+            if (canManage)
+              IconButton(
+                onPressed: () => _unassign(a),
+                icon: const Icon(Icons.close, size: 18, color: AppColors.rose),
+                tooltip: 'Remove',
+              ),
+          ],
+        ),
+      );
+
+  Widget _detailRow(IconData icon, String label, String value) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 92,
+              child: Text(label,
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            ),
+            Expanded(
+              child: Text(value,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 13.5)),
+            ),
+          ],
+        ),
+      );
+}

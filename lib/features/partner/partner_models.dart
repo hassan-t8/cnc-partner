@@ -294,3 +294,35 @@ class RatingSummary {
     );
   }
 }
+
+/// A worker (or driver) assigned to a booking, from /booking-assignments.
+class BookingAssignment {
+  final int id;
+  final String workerName;
+  final String role;
+  final String status;
+
+  const BookingAssignment({
+    required this.id,
+    this.workerName = '',
+    this.role = '',
+    this.status = '',
+  });
+
+  factory BookingAssignment.fromJson(Map<String, dynamic> j) {
+    final w = j['worker'] is Map ? Map<String, dynamic>.from(j['worker']) : const {};
+    final dw = j['driverWorker'] is Map
+        ? Map<String, dynamic>.from(j['driverWorker'])
+        : const {};
+    final who = w.isNotEmpty ? w : dw;
+    final name = [who['firstName'], who['lastName']]
+        .where((s) => '${s ?? ''}'.isNotEmpty)
+        .join(' ');
+    return BookingAssignment(
+      id: _i(j['id']) ?? 0,
+      workerName: name.isNotEmpty ? name : _s(j['workerName'] ?? who['name']),
+      role: _s(j['role'] ?? (dw.isNotEmpty ? 'driver' : 'crew')),
+      status: _s(j['status'] ?? j['acceptanceStatus']),
+    );
+  }
+}

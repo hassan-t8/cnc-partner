@@ -26,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to capture before/after job photos.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Use Face ID to sign in to CNC Partner quickly and securely.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app uses your location to show your driving route.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo access to attach job photos.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -66,11 +74,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>This app uses the camera to capture before/after job photos.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs photo access to attach job photos.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>This app uses your location to show your driving route.</string>
 </dict>
 </plist>

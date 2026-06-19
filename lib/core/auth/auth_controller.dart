@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import '../storage/auth_storage.dart';
 import 'auth_repository.dart';
 import 'jwt_user.dart';
 
@@ -62,7 +63,32 @@ class AuthController extends Notifier<AuthState> {
       throw Exception('This account cannot use the partner app.');
     }
     _token = token;
-    await ref.read(authStorageProvider).writeToken(token);
+    final storage = ref.read(authStorageProvider);
+    await storage.writeToken(token);
+    await storage.saveAccount(SavedAccount(
+      email: email.trim(),
+      token: token,
+      name: user.greetingName,
+      role: user.roleLabel,
+    ));
+    // Arm biometric quick-login for next time (only shown if the device
+    // actually supports biometrics).
+    await storage.setBiometricEnabled(true);
+    _startExpiryWatch(user);
+    state = AuthState.signedIn(user);
+    return user;
+  }
+
+  /// Restore a saved account (biometric quick-login). Throws if its token has
+  /// expired — the caller should fall back to password sign-in.
+  Future<JwtUser> loginWithSaved(SavedAccount account) async {
+    final user = JwtUser.tryParse(account.token);
+    if (user == null) {
+      await ref.read(authStorageProvider).removeAccount(account.email);
+      throw Exception('Your saved session expired. Please sign in again.');
+    }
+    _token = account.token;
+    await ref.read(authStorageProvider).writeToken(account.token);
     _startExpiryWatch(user);
     state = AuthState.signedIn(user);
     return user;

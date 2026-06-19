@@ -28,6 +28,27 @@ class PartnerRepository {
   Future<void> completeBooking(int id) =>
       _api.post('/booking/$id/partner-complete');
 
+  // ----- booking assignments (team picker) -----
+  Future<List<BookingAssignment>> bookingAssignments(int bookingId) async {
+    final res =
+        await _api.get('/booking-assignments', query: {'bookingId': bookingId});
+    return pickList(res.data).map(BookingAssignment.fromJson).toList();
+  }
+
+  Future<void> assignWorker(int bookingId, int workerId,
+      {String role = 'crew'}) {
+    final isDriver = role == 'driver';
+    return _api.post('/booking-assignments', body: {
+      'bookingId': bookingId,
+      if (isDriver) 'driverWorkerId': workerId,
+      if (!isDriver) 'workerId': workerId,
+      'role': role,
+    });
+  }
+
+  Future<void> unassign(int assignmentId) =>
+      _api.delete('/booking-assignments/$assignmentId');
+
   // ----- offers (requests) -----
   Future<List<Offer>> offers() async {
     final res = await _api.get('/offers/mine');

@@ -23,6 +23,7 @@ dependencies:
 
   # Auth / JWT
   jwt_decoder: ^2.0.1
+  local_auth: ^2.3.0
 
   # Routing
   go_router: ^14.6.2

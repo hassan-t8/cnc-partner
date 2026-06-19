@@ -46,7 +46,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(
           path: '/forgot-password',
-          builder: (_, __) => const ForgotPasswordScreen()),
+          builder: (_, state) => ForgotPasswordScreen(
+              initialEmail: state.uri.queryParameters['email'])),
       GoRoute(
         path: '/reset-password',
         builder: (_, st) => SetPasswordScreen(

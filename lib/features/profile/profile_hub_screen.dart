@@ -14,6 +14,7 @@ import '../partner/service_requests_screen.dart';
 import '../reviews/reviews_screen.dart';
 import '../settings/notifications_screen.dart';
 import '../worker/worker_repository.dart';
+import 'worker_profile_screen.dart';
 
 class _Item {
   final IconData icon;
@@ -49,6 +50,13 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
 
   void _push(Widget s) =>
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => s));
+
+  void _openMyProfile() {
+    final isPartner = ref.read(authControllerProvider).user?.isPartner ?? false;
+    _push(isPartner
+        ? const PartnerProfileScreen()
+        : const WorkerProfileScreen());
+  }
 
   Future<void> _logout() async {
     final ok = await showDialog<bool>(
@@ -164,7 +172,9 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
     );
   }
 
-  Widget _header(dynamic user) => Container(
+  Widget _header(dynamic user) => GestureDetector(
+        onTap: _openMyProfile,
+        child: Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(20, 64, 20, 26),
         decoration: const BoxDecoration(
@@ -233,8 +243,18 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
                 ],
               ),
             ),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.chevron_right,
+                  color: Colors.white, size: 20),
+            ),
           ],
         ),
+      ),
       );
 
   Widget _sectionTitle(String t) => Padding(
