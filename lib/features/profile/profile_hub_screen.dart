@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../auth/change_password_screen.dart';
 import '../legal/delete_account_screen.dart';
 import '../legal/legal_screen.dart';
+import '../partner/availability_editor.dart';
 import '../partner/partner_earnings_screen.dart';
 import '../partner/partner_profile_screen.dart';
 import '../partner/partner_schedule_screen.dart';
@@ -98,6 +99,11 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
             screen: const PartnerEarningsScreen()),
         _Item(Icons.calendar_month_rounded, 'Schedule', AppColors.sky,
             screen: const PartnerScheduleScreen()),
+        _Item(Icons.schedule_rounded, 'Working hours', AppColors.amber,
+            screen: AvailabilityEditor(
+                ownerType: 'partner',
+                ownerId: user?.partnerId ?? 0,
+                title: 'Working hours')),
         _Item(Icons.auto_awesome_rounded, 'Service requests',
             AppColors.violet,
             screen: const ServiceRequestsScreen()),

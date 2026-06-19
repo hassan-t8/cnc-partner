@@ -6,6 +6,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/phone_field.dart';
+import 'availability_editor.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -186,6 +187,18 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                   DropdownMenuItem(value: 'suspended', child: Text('Suspended')),
                 ],
                 onChanged: (v) => setState(() => _status = v ?? 'active'),
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AvailabilityEditor(
+                        ownerType: 'worker',
+                        ownerId: widget.worker!.id,
+                        title: '${widget.worker!.name} · hours'))),
+                icon: const Icon(Icons.schedule, size: 18),
+                label: const Text('Working hours'),
+                style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46)),
               ),
             ],
             const SizedBox(height: 24),

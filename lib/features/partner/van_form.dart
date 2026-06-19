@@ -6,6 +6,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import 'availability_editor.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -209,6 +210,20 @@ class _VanFormState extends ConsumerState<VanForm> {
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
               onChanged: (v) => setState(() => _autoAssign = v),
             ),
+            if (_isEdit) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AvailabilityEditor(
+                        ownerType: 'van',
+                        ownerId: widget.van!.id,
+                        title: '${widget.van!.name} · hours'))),
+                icon: const Icon(Icons.schedule, size: 18),
+                label: const Text('Working hours'),
+                style: OutlinedButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46)),
+              ),
+            ],
             const SizedBox(height: 24),
             SizedBox(
               height: 50,

@@ -642,3 +642,26 @@ class BookingAssignment {
     );
   }
 }
+
+/// A recurring weekly availability window (working hours).
+class AvailabilityRule {
+  final int id;
+  final int dayOfWeek; // 0=Sun .. 6=Sat
+  final String startTime; // HH:MM:SS
+  final String endTime;
+  final bool isActive;
+  const AvailabilityRule({
+    required this.id,
+    this.dayOfWeek = 0,
+    this.startTime = '09:00:00',
+    this.endTime = '18:00:00',
+    this.isActive = true,
+  });
+  factory AvailabilityRule.fromJson(Map<String, dynamic> j) => AvailabilityRule(
+        id: _i(j['id']) ?? 0,
+        dayOfWeek: _i(j['dayOfWeek']) ?? 0,
+        startTime: _s(j['startTime']).isEmpty ? '09:00:00' : _s(j['startTime']),
+        endTime: _s(j['endTime']).isEmpty ? '18:00:00' : _s(j['endTime']),
+        isActive: j['isActive'] == null ? true : _b(j['isActive']),
+      );
+}

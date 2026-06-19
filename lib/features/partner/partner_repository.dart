@@ -106,6 +106,23 @@ class PartnerRepository {
   Future<void> syncWorkerServices(int id, List<int> basePriceIds) =>
       _api.post('/workers/$id/services', body: {'basePriceIds': basePriceIds});
 
+  // ----- availability rules (working hours) -----
+  Future<List<AvailabilityRule>> availabilityRules(
+      String ownerType, int ownerId) async {
+    final res = await _api.get('/availability/rules',
+        query: {'ownerType': ownerType, 'ownerId': ownerId});
+    return pickList(res.data).map(AvailabilityRule.fromJson).toList();
+  }
+
+  Future<void> createAvailabilityRule(Map<String, dynamic> body) =>
+      _api.post('/availability/rules', body: body);
+
+  Future<void> updateAvailabilityRule(int id, Map<String, dynamic> body) =>
+      _api.put('/availability/rules/$id', body: body);
+
+  Future<void> deleteAvailabilityRule(int id) =>
+      _api.delete('/availability/rules/$id');
+
   // ----- vans -----
   Future<List<Van>> vans() async {
     final res = await _api.get('/vans');
