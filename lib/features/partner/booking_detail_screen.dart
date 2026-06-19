@@ -24,7 +24,8 @@ class BookingDetailScreen extends ConsumerStatefulWidget {
 
 class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   late PartnerBooking b;
-  late Future<List<BookingAssignment>> _team;
+  List<BookingAssignment>? _team; // null = loading
+  bool _teamError = false;
   bool _busy = false;
   bool _changed = false;
 
@@ -35,13 +36,24 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     _loadTeam();
   }
 
-  void _loadTeam() => _team =
-      ref.read(partnerRepositoryProvider).bookingAssignments(b.id);
-
   PartnerRepository get _repo => ref.read(partnerRepositoryProvider);
 
-  Future<void> _refreshTeam() async {
-    setState(_loadTeam);
+  Future<void> _loadTeam() async {
+    setState(() {
+      _team = null;
+      _teamError = false;
+    });
+    try {
+      final list = await _repo.bookingAssignments(b.id);
+      if (mounted) setState(() => _team = list);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _team = const [];
+          _teamError = true;
+        });
+      }
+    }
   }
 
   // ---- lifecycle ----
@@ -173,20 +185,24 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       await _repo.assignWorker(b.id, picked.id, role: role);
       AppToast.success('${picked.name} assigned');
       _changed = true;
-      _refreshTeam();
+      await _loadTeam();
     } on ApiException catch (e) {
       AppToast.error(e.message);
     }
   }
 
   Future<void> _unassign(BookingAssignment a) async {
+    // Optimistic: drop it from the list immediately, restore on failure.
+    final previous = _team;
+    setState(() => _team =
+        (_team ?? const []).where((x) => x.id != a.id).toList());
     try {
       await _repo.unassign(a.id);
       AppToast.success('Removed from job');
       _changed = true;
-      _refreshTeam();
     } on ApiException catch (e) {
       AppToast.error(e.message);
+      if (mounted) setState(() => _team = previous);
     }
   }
 
@@ -297,45 +313,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               ],
             ),
             const SizedBox(height: 4),
-            FutureBuilder<List<BookingAssignment>>(
-              future: _team,
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const LoadingList(count: 2, height: 56);
-                }
-                final team = snap.data ?? const [];
-                if (team.isEmpty) {
-                  return Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.group_off_outlined,
-                            size: 18, color: AppColors.textMuted),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                              canManageTeam
-                                  ? 'No one assigned yet. Tap Assign to add a worker.'
-                                  : 'No team assigned.',
-                              style: TextStyle(
-                                  color: AppColors.textMuted, fontSize: 13)),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final a in team) _teamRow(a, canManageTeam),
-                  ],
-                );
-              },
-            ),
+            _teamBody(canManageTeam),
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 24),
               Row(
@@ -350,6 +328,43 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _teamBody(bool canManageTeam) {
+    final team = _team;
+    if (team == null) {
+      return const LoadingList(count: 2, height: 56);
+    }
+    if (team.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.group_off_outlined,
+                size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                  _teamError
+                      ? 'Couldn\'t load the team. Pull down or reopen to retry.'
+                      : canManageTeam
+                          ? 'No one assigned yet. Tap Assign to add a worker.'
+                          : 'No team assigned.',
+                  style:
+                      TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            ),
+          ],
+        ),
+      );
+    }
+    return Column(
+      children: [for (final a in team) _teamRow(a, canManageTeam)],
     );
   }
 
