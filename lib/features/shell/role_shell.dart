@@ -7,10 +7,8 @@ import '../../core/theme/app_colors.dart';
 import '../driver/driver_route_screen.dart';
 import '../partner/partner_bookings_screen.dart';
 import '../partner/partner_dashboard_screen.dart';
-import '../partner/partner_more_screen.dart';
 import '../partner/partner_requests_screen.dart';
-import '../profile/profile_screen.dart';
-import '../reviews/reviews_screen.dart';
+import '../profile/profile_hub_screen.dart';
 import '../worker/crew_jobs_screen.dart';
 import '../worker/worker_bookings_screen.dart';
 
@@ -34,26 +32,24 @@ class _RoleShellState extends ConsumerState<RoleShell> {
   List<_Dest> _destsFor(JwtUser user) {
     if (user.isPartner) {
       return const [
-        _Dest('Home', Icons.dashboard_outlined, PartnerDashboardScreen()),
-        _Dest('Bookings', Icons.assignment_outlined, PartnerBookingsScreen()),
-        _Dest('Requests', Icons.inbox_outlined, PartnerRequestsScreen()),
-        _Dest('More', Icons.menu, PartnerMoreScreen()),
+        _Dest('Home', Icons.dashboard_rounded, PartnerDashboardScreen()),
+        _Dest('Bookings', Icons.assignment_rounded, PartnerBookingsScreen()),
+        _Dest('Requests', Icons.inbox_rounded, PartnerRequestsScreen()),
+        _Dest('Profile', Icons.person_rounded, ProfileHubScreen()),
       ];
     }
     // Worker (crew / driver)
     final dests = <_Dest>[];
     if (user.isDriver) {
       dests.add(
-          const _Dest('Route', Icons.map_outlined, DriverRouteScreen()));
+          const _Dest('Route', Icons.map_rounded, DriverRouteScreen()));
     }
     if (user.isCrew || !user.isDriver) {
-      dests.add(const _Dest('Jobs', Icons.checklist_outlined, CrewJobsScreen()));
+      dests.add(const _Dest('Jobs', Icons.checklist_rounded, CrewJobsScreen()));
     }
     dests.add(const _Dest(
-        'Bookings', Icons.event_note_outlined, WorkerBookingsScreen()));
-    dests.add(const _Dest('Reviews', Icons.star_outline,
-        ReviewsScreen(worker: true)));
-    dests.add(const _Dest('Profile', Icons.person_outline, ProfileScreen()));
+        'Bookings', Icons.event_note_rounded, WorkerBookingsScreen()));
+    dests.add(const _Dest('Profile', Icons.person_rounded, ProfileHubScreen()));
     return dests;
   }
 

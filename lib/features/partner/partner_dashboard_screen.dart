@@ -9,8 +9,12 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
+import 'partner_bookings_screen.dart';
+import 'partner_earnings_screen.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import 'partner_vans_screen.dart';
+import 'partner_workers_screen.dart';
 
 class PartnerDashboardScreen extends ConsumerStatefulWidget {
   const PartnerDashboardScreen({super.key});
@@ -118,13 +122,18 @@ class _PartnerDashboardScreenState
                   crossAxisSpacing: 12,
                   childAspectRatio: 1.7,
                   children: [
-                    _kpi('Today', '$today', Icons.today, AppColors.brand600),
-                    _kpi('Next 7 days', '$week', Icons.date_range,
-                        AppColors.sky),
-                    _kpi('Workers', '${d.workers}', Icons.groups,
-                        AppColors.violet),
-                    _kpi('Vans', '${d.vans}', Icons.local_shipping,
-                        AppColors.amber),
+                    _kpi('Today', '$today', Icons.today_rounded,
+                        AppColors.brand600,
+                        () => _open(const PartnerBookingsScreen())),
+                    _kpi('Next 7 days', '$week', Icons.date_range_rounded,
+                        AppColors.sky,
+                        () => _open(const PartnerBookingsScreen())),
+                    _kpi('Workers', '${d.workers}', Icons.groups_rounded,
+                        AppColors.violet,
+                        () => _open(const PartnerWorkersScreen())),
+                    _kpi('Vans', '${d.vans}', Icons.local_shipping_rounded,
+                        AppColors.amber,
+                        () => _open(const PartnerVansScreen())),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -170,58 +179,104 @@ class _PartnerDashboardScreenState
     );
   }
 
-  Widget _kpi(String label, String value, IconData icon, Color color) =>
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 6),
-            Text(value,
-                style: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.w800)),
-            Text(label,
-                style: TextStyle(
-                    color: AppColors.textMuted, fontSize: 12.5)),
-          ],
+  void _open(Widget s) =>
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => s));
+
+  Widget _kpi(String label, String value, IconData icon, Color color,
+          VoidCallback onTap) =>
+      Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+                const SizedBox(height: 8),
+                Text(value,
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w800)),
+                Text(label,
+                    style: TextStyle(
+                        color: AppColors.textMuted, fontSize: 12.5)),
+              ],
+            ),
+          ),
         ),
       );
 
-  Widget _earningsCard(double amount) => Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [AppColors.brand600, AppColors.brand500],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.account_balance_wallet,
-                color: Colors.white, size: 26),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Earnings (completed)',
-                    style: TextStyle(color: Colors.white70, fontSize: 12.5)),
-                Text('AED ${amount.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800)),
+  Widget _earningsCard(double amount) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => _open(const PartnerEarningsScreen()),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [AppColors.brand700, AppColors.brand500],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                    color: AppColors.brand600.withValues(alpha: 0.25),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6)),
               ],
             ),
-          ],
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.account_balance_wallet_rounded,
+                      color: Colors.white, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Earnings (completed)',
+                          style: TextStyle(
+                              color: Colors.white70, fontSize: 12.5)),
+                      Text('AED ${amount.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.white70),
+              ],
+            ),
+          ),
         ),
       );
 
