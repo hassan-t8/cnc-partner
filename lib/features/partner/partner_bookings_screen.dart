@@ -522,6 +522,7 @@ class _PartnerBookingsScreenState
     final time = b.scheduledStart != null
         ? DateFormat('EEE d MMM · h:mm a').format(b.scheduledStart!)
         : 'Not scheduled';
+    final customer = b.customerName.isEmpty ? 'Customer' : b.customerName;
     final actions = _actionsFor(b, busy);
     return Material(
       color: AppColors.surface,
@@ -534,102 +535,123 @@ class _PartnerBookingsScreenState
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.border),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      width: 4,
-                      decoration: BoxDecoration(
-                        color: accent,
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(16),
-                          bottomLeft: Radius.circular(4),
-                        ),
-                      ),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  width: 4,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
                     ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                        child: Column(
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header — customer is the headline (cnc_panel style).
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                      b.serviceName.isEmpty
-                                          ? 'Service'
-                                          : b.serviceName,
+                            CircleAvatar(
+                              radius: 19,
+                              backgroundColor: AppColors.brand50,
+                              child: Text(customer[0].toUpperCase(),
+                                  style: const TextStyle(
+                                      color: AppColors.brand700,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15)),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(customer,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w800,
                                           fontSize: 15)),
-                                ),
-                                StatusBadge(b.status),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            _metaRow(Icons.person_outline,
-                                b.customerName.isEmpty
-                                    ? 'Customer'
-                                    : b.customerName),
-                            if (b.area.isNotEmpty)
-                              _metaRow(Icons.place_outlined, b.area),
-                            _metaRow(Icons.schedule_outlined, time),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                if (b.ref.isNotEmpty)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                        color: AppColors.bg,
-                                        borderRadius:
-                                            BorderRadius.circular(6),
-                                        border: Border.all(
-                                            color: AppColors.border)),
-                                    child: Text('#${b.ref}',
+                                  if (b.ref.isNotEmpty)
+                                    Text('#${b.ref}',
                                         style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w600,
                                             color: AppColors.textMuted)),
-                                  ),
-                                const Spacer(),
-                                if (b.partnerCost > 0)
-                                  Text(
-                                      'AED ${b.partnerCost.toStringAsFixed(2)}',
-                                      style: const TextStyle(
-                                          color: AppColors.brand700,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 15)),
-                              ],
+                                ],
+                              ),
                             ),
+                            StatusBadge(b.status),
                           ],
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (actions.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  child: Row(
-                    children: [
-                      for (var i = 0; i < actions.length; i++) ...[
-                        if (i > 0) const SizedBox(width: 8),
-                        Expanded(child: actions[i]),
+                        const SizedBox(height: 10),
+                        Divider(height: 1, color: AppColors.border),
+                        const SizedBox(height: 8),
+                        _metaRow(Icons.cleaning_services_outlined,
+                            b.serviceName.isEmpty ? 'Service' : b.serviceName),
+                        _metaRow(Icons.schedule_outlined, time),
+                        if (b.area.isNotEmpty)
+                          _metaRow(Icons.place_outlined, b.area),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            if (b.paymentStatus.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                    color: AppColors.bg,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border:
+                                        Border.all(color: AppColors.border)),
+                                child: Text(
+                                    b.paymentStatus
+                                        .replaceAll('_', ' ')
+                                        .toUpperCase(),
+                                    style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.textMuted)),
+                              ),
+                            const Spacer(),
+                            if (b.partnerCost > 0) ...[
+                              Text('Payout  ',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textMuted)),
+                              Text(
+                                  'AED ${b.partnerCost.toStringAsFixed(2)}',
+                                  style: const TextStyle(
+                                      color: AppColors.brand700,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 15.5)),
+                            ],
+                          ],
+                        ),
+                        if (actions.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              for (var i = 0; i < actions.length; i++) ...[
+                                if (i > 0) const SizedBox(width: 8),
+                                Expanded(child: actions[i]),
+                              ],
+                            ],
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -637,11 +659,11 @@ class _PartnerBookingsScreenState
   }
 
   Widget _metaRow(IconData icon, String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 3),
+        padding: const EdgeInsets.only(bottom: 4),
         child: Row(
           children: [
             Icon(icon, size: 14, color: AppColors.textFaint),
-            const SizedBox(width: 6),
+            const SizedBox(width: 7),
             Expanded(
               child: Text(text,
                   maxLines: 1,
