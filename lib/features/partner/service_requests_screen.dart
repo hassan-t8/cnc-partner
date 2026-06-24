@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -159,8 +160,7 @@ class _ServiceRequestsScreenState extends ConsumerState<ServiceRequestsScreen> {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Service requests'),
+        appBar: MainAppBar('Service requests',
           bottom: TabBar(
             labelColor: AppColors.brand600,
             unselectedLabelColor: AppColors.textMuted,

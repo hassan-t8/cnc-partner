@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -8,7 +9,6 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/config/env.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
-import '../../widgets/notification_bell.dart';
 import '../worker/today_summary.dart';
 import 'driver_repository.dart';
 
@@ -60,9 +60,8 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
   Widget build(BuildContext context) {
     final isToday = DateUtils.isSameDay(_date, DateTime.now());
     return Scaffold(
-      appBar: AppBar(title: const Text('My route'), actions: [
+      appBar: MainAppBar('My route', actions: [
         IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
-        const NotificationBell(),
       ]),
       body: Column(children: [
         Container(
@@ -122,15 +121,21 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
           return Column(
             children: [
               const TodaySummary(),
-              if (plan.vanName.isNotEmpty)
+              if (plan.vanName.isNotEmpty || plan.totalDistanceMeters > 0)
                 Container(
                   width: double.infinity,
                   color: AppColors.brand50,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Text(
-                    '${plan.vanName} · ${plan.vanSeats} seats'
-                    '${plan.homeZone.isNotEmpty ? ' · ${plan.homeZone}' : ''}',
+                    [
+                      if (plan.vanName.isNotEmpty)
+                        '${plan.vanName} · ${plan.vanSeats} seats',
+                      if (plan.homeZone.isNotEmpty) plan.homeZone,
+                      if (plan.totalDistanceMeters > 0)
+                        '${(plan.totalDistanceMeters / 1000).toStringAsFixed(1)} km'
+                            '${plan.totalDurationSeconds > 0 ? ' · ${(plan.totalDurationSeconds / 60).round()} min' : ''}',
+                    ].join(' · '),
                     style: const TextStyle(
                         color: AppColors.brand700,
                         fontWeight: FontWeight.w700,
@@ -138,7 +143,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
                   ),
                 ),
               if (located.isNotEmpty)
-                SizedBox(height: 240, child: _buildMap(located)),
+                SizedBox(height: 240, child: _buildMap(plan)),
               Expanded(
                 child: ListView.separated(
                   padding: const EdgeInsets.all(16),
@@ -156,19 +161,21 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
     );
   }
 
-  Widget _buildMap(List<RouteStop> stops) {
+  Widget _buildMap(DriverDayPlan plan) {
     if (Env.googleMapsApiKey.isEmpty) {
       return Container(
         color: AppColors.bg,
         alignment: Alignment.center,
         child: Padding(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           child: Text('Map disabled — Google Maps key not configured.',
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textMuted)),
         ),
       );
     }
+    final stops =
+        plan.stops.where((s) => s.lat != null && s.lng != null).toList();
     final markers = <Marker>{};
     for (var i = 0; i < stops.length; i++) {
       final s = stops[i];
@@ -183,10 +190,37 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
                 : BitmapDescriptor.hueViolet),
       ));
     }
+    // Draw the route polylines (Routes API encoded paths) when available;
+    // otherwise connect the stops in order as a fallback.
+    final polylines = <Polyline>{};
+    if (plan.subPolylines.isNotEmpty) {
+      for (var i = 0; i < plan.subPolylines.length; i++) {
+        final pts = decodePolyline(plan.subPolylines[i])
+            .map((p) => LatLng(p[0], p[1]))
+            .toList();
+        if (pts.length > 1) {
+          polylines.add(Polyline(
+            polylineId: PolylineId('p$i'),
+            points: pts,
+            color: AppColors.brand600,
+            width: 4,
+          ));
+        }
+      }
+    } else if (stops.length > 1) {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('route'),
+        points: [for (final s in stops) LatLng(s.lat!, s.lng!)],
+        color: AppColors.brand600.withValues(alpha: 0.6),
+        width: 3,
+        patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+      ));
+    }
     return GoogleMap(
       initialCameraPosition: CameraPosition(
           target: LatLng(stops.first.lat!, stops.first.lng!), zoom: 12),
       markers: markers,
+      polylines: polylines,
       myLocationButtonEnabled: false,
       onMapCreated: (c) => _map = c,
     );

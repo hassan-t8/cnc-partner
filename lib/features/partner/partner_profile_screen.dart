@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -154,15 +155,12 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Business profile'),
-        actions: [
-          if (!_editing)
-            IconButton(
-                onPressed: () => setState(() => _editing = true),
-                icon: const Icon(Icons.edit_outlined)),
-        ],
-      ),
+      appBar: MainAppBar('Business profile', actions: [
+        if (!_editing)
+          IconButton(
+              onPressed: () => setState(() => _editing = true),
+              icon: const Icon(Icons.edit_outlined)),
+      ]),
       body: FutureBuilder<_Data>(
         future: _future,
         builder: (context, snap) {

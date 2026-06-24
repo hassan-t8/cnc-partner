@@ -35,12 +35,18 @@ class DriverDayPlan {
   final String homeZone;
   final List<RouteStop> stops;
   final List<String> warnings;
+  final List<String> subPolylines; // encoded route polylines (Routes API)
+  final double totalDistanceMeters;
+  final int totalDurationSeconds;
   const DriverDayPlan(
       {this.vanName = '',
       this.vanSeats = 0,
       this.homeZone = '',
       this.stops = const [],
-      this.warnings = const []});
+      this.warnings = const [],
+      this.subPolylines = const [],
+      this.totalDistanceMeters = 0,
+      this.totalDurationSeconds = 0});
   factory DriverDayPlan.fromJson(Map<String, dynamic> j) {
     final plan = j['plan'] is Map ? Map<String, dynamic>.from(j['plan']) : j;
     final legs = (plan['legs'] ?? plan['stops']);
@@ -51,6 +57,8 @@ class DriverDayPlan {
             .toList()
         : <RouteStop>[];
     final warns = plan['warnings'];
+    final polys = plan['subPolylines'];
+    num asNum(dynamic v) => v is num ? v : num.tryParse('${v ?? ''}') ?? 0;
     return DriverDayPlan(
       vanName: (plan['vanName'] ?? '').toString(),
       vanSeats: (plan['vanSeats'] is num)
@@ -59,8 +67,37 @@ class DriverDayPlan {
       homeZone: (plan['homeZone'] ?? '').toString(),
       stops: stops,
       warnings: warns is List ? warns.map((e) => '$e').toList() : const [],
+      subPolylines:
+          polys is List ? polys.map((e) => '$e').toList() : const [],
+      totalDistanceMeters: asNum(plan['totalDistanceMeters']).toDouble(),
+      totalDurationSeconds: asNum(plan['totalDurationSeconds']).toInt(),
     );
   }
+}
+
+/// Decode a Google "encoded polyline" string into lat/lng pairs.
+List<List<double>> decodePolyline(String encoded) {
+  final List<List<double>> points = [];
+  int index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    int shift = 0, result = 0, b;
+    do {
+      b = encoded.codeUnitAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    lat += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.codeUnitAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    lng += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+    points.add([lat / 1e5, lng / 1e5]);
+  }
+  return points;
 }
 
 class DriverRepository {

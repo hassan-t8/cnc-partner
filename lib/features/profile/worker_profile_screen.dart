@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -29,17 +30,13 @@ class _WorkerProfileScreenState extends ConsumerState<WorkerProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My profile'),
-        actions: [
-          IconButton(
-            // Workers can't self-edit — make it visibly disabled.
-            onPressed: null,
-            icon: const Icon(Icons.edit_off_outlined),
-            tooltip: 'Managed by your company',
-          ),
-        ],
-      ),
+      appBar: const MainAppBar('My profile', actions: [
+        IconButton(
+          onPressed: null,
+          icon: Icon(Icons.edit_off_outlined),
+          tooltip: 'Managed by your company',
+        ),
+      ]),
       body: FutureBuilder<Map<String, dynamic>>(
         future: _future,
         builder: (context, snap) {

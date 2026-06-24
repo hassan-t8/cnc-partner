@@ -11,17 +11,34 @@ import 'notification_bell.dart';
 /// in place of the avatar instead.
 class MainAppBar extends ConsumerWidget implements PreferredSizeWidget {
   final String title;
-  const MainAppBar(this.title, {super.key});
+
+  /// Extra actions shown before the notification bell.
+  final List<Widget> actions;
+
+  /// Optional bottom (e.g. a TabBar).
+  final PreferredSizeWidget? bottom;
+
+  /// Show the notification bell (hide it on the Notifications screen itself).
+  final bool showBell;
+
+  const MainAppBar(
+    this.title, {
+    super.key,
+    this.actions = const [],
+    this.bottom,
+    this.showBell = true,
+  });
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize =>
+      Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0));
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canPop = Navigator.of(context).canPop();
     return AppBar(
       centerTitle: true,
-      title: Text(title),
+      title: Text(title, overflow: TextOverflow.ellipsis),
       leadingWidth: 60,
       leading: canPop
           ? IconButton(
@@ -30,7 +47,11 @@ class MainAppBar extends ConsumerWidget implements PreferredSizeWidget {
               onPressed: () => Navigator.of(context).maybePop(),
             )
           : Center(child: _avatar(ref)),
-      actions: const [NotificationBell()],
+      actions: [
+        ...actions,
+        if (showBell) const NotificationBell(),
+      ],
+      bottom: bottom,
     );
   }
 

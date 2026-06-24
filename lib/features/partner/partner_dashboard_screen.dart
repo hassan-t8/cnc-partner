@@ -11,6 +11,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
+import 'booking_detail_screen.dart';
 import 'partner_bookings_screen.dart';
 import 'partner_earnings_screen.dart';
 import 'partner_models.dart';
@@ -307,30 +308,51 @@ class _PartnerDashboardScreenState
         : '';
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: busy ? null : () => _openDetail(b),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(b.serviceName.isEmpty ? 'Service' : b.serviceName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 14.5)),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                        b.serviceName.isEmpty ? 'Service' : b.serviceName,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 14.5)),
+                  ),
+                  StatusBadge(b.status),
+                ],
               ),
-              StatusBadge(b.status),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Text([b.customerName, b.area, time].where((s) => s.isNotEmpty).join(' · '),
-              style:
-                  TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
-          const SizedBox(height: 10),
+              const SizedBox(height: 3),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                        [b.customerName, b.area, time]
+                            .where((s) => s.isNotEmpty)
+                            .join(' · '),
+                        style: TextStyle(
+                            fontSize: 12.5, color: AppColors.textMuted)),
+                  ),
+                  Text('Details',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.brand600)),
+                  Icon(Icons.chevron_right,
+                      size: 16, color: AppColors.brand600),
+                ],
+              ),
+              const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -357,9 +379,17 @@ class _PartnerDashboardScreenState
               ),
             ],
           ),
-        ],
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  Future<void> _openDetail(PartnerBooking b) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => BookingDetailScreen(booking: b)));
+    if (mounted) _reload();
   }
 }
 
