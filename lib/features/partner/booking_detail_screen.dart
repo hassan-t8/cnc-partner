@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
@@ -33,6 +34,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     super.initState();
     b = widget.booking;
     _loadTeam();
+    // Live: join this booking's room for dispatch/assignment updates.
+    ref.read(bookingRealtimeProvider.notifier).joinBooking(b.id);
+  }
+
+  @override
+  void dispose() {
+    ref.read(bookingRealtimeProvider.notifier).leaveBooking(b.id);
+    super.dispose();
   }
 
   PartnerRepository get _repo => ref.read(partnerRepositoryProvider);
@@ -265,6 +274,11 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Live: refresh team when this booking changes (status/dispatch/assign).
+    ref.listen(bookingRealtimeProvider, (_, __) {
+      final lid = ref.read(bookingRealtimeProvider.notifier).lastBookingId;
+      if (mounted && (lid == null || lid == b.id)) _loadTeam();
+    });
     final actions = _actions();
     final canManageTeam = b.status == 'awaiting_acceptance' ||
         b.status == 'accepted' ||
@@ -279,16 +293,45 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(b.serviceName.isEmpty ? 'Service' : b.serviceName,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.w800)),
-                ),
-                StatusBadge(b.status),
-              ],
-            ),
+            Builder(builder: (_) {
+              // serviceName comes as "Category - Subcategory — Service". Show the
+              // specific service as the title and the rest as a small breadcrumb.
+              final parts = b.serviceName
+                  .split(RegExp(r'\s*[—–-]\s*'))
+                  .map((p) => p.trim())
+                  .where((p) => p.isNotEmpty)
+                  .toList();
+              final title = parts.isNotEmpty ? parts.last : 'Service';
+              final crumb = parts.length > 1
+                  ? parts.sublist(0, parts.length - 1).join(' · ')
+                  : '';
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (crumb.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(crumb,
+                                style: TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        Text(title,
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  StatusBadge(b.status),
+                ],
+              );
+            }),
             if (b.ref.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -396,8 +439,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         ),
       );
     }
+    // De-duplicate: the API can return the same worker+role more than once.
+    final seen = <String>{};
+    final unique = [
+      for (final a in team)
+        if (seen.add('${a.workerName.toLowerCase()}|${a.role}')) a
+    ];
     return Column(
-      children: [for (final a in team) _teamRow(a, canManageTeam)],
+      children: [for (final a in unique) _teamRow(a, canManageTeam)],
     );
   }
 

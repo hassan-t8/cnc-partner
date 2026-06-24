@@ -82,6 +82,9 @@ class PartnerBooking {
   final double partnerCost;
   final bool requiresStartOtp;
   final String paymentStatus;
+  final String payment; // cash | card | ...
+  final double cashDue;
+  final bool cashCollected;
 
   const PartnerBooking({
     required this.id,
@@ -94,9 +97,17 @@ class PartnerBooking {
     this.partnerCost = 0,
     this.requiresStartOtp = false,
     this.paymentStatus = '',
+    this.payment = '',
+    this.cashDue = 0,
+    this.cashCollected = false,
   });
 
-  PartnerBooking copyWith({String? status}) => PartnerBooking(
+  /// Cash booking with money still owed at the door.
+  bool get cashPending =>
+      payment.toLowerCase() == 'cash' && cashDue > 0 && !cashCollected;
+
+  PartnerBooking copyWith({String? status, bool? cashCollected}) =>
+      PartnerBooking(
         id: id,
         ref: ref,
         customerName: customerName,
@@ -107,6 +118,9 @@ class PartnerBooking {
         partnerCost: partnerCost,
         requiresStartOtp: requiresStartOtp,
         paymentStatus: paymentStatus,
+        payment: payment,
+        cashDue: cashDue,
+        cashCollected: cashCollected ?? this.cashCollected,
       );
 
   factory PartnerBooking.fromJson(Map<String, dynamic> j) {
@@ -123,6 +137,9 @@ class PartnerBooking {
       partnerCost: _d(j['partnerCost']),
       requiresStartOtp: j['requiresStartOtp'] == true,
       paymentStatus: _s(j['paymentStatus']),
+      payment: _s(j['payment'] ?? j['paymentMethod']),
+      cashDue: _d(j['cashDue'] ?? j['cashOwed'] ?? j['amountDue']),
+      cashCollected: j['cashCollected'] == true,
     );
   }
 }

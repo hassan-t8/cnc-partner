@@ -6,6 +6,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/phone_field.dart';
+import '../../widgets/searchable_picker.dart';
 import 'availability_editor.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
@@ -29,9 +30,14 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   int? _zoneId;
   bool _autoAssign = true;
   bool _busy = false;
+  bool _dirty = false; // enables Save only after a change/entry
   late Future<List<Zone>> _zones;
 
   bool get _isEdit => widget.worker != null;
+
+  void _markDirty() {
+    if (!_dirty) setState(() => _dirty = true);
+  }
 
   @override
   void initState() {
@@ -47,6 +53,10 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     _autoAssign = w?.acceptAutoAssign ?? true;
     _zoneId = w?.primaryZoneId;
     _zones = ref.read(partnerRepositoryProvider).zones();
+    // Track edits to enable Save (listeners added AFTER initial text is set).
+    for (final c in [_first, _last, _email, _address]) {
+      c.addListener(_markDirty);
+    }
   }
 
   @override
@@ -56,6 +66,20 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     _email.dispose();
     _address.dispose();
     super.dispose();
+  }
+
+  // Auto-assign saves immediately in edit mode (independent of the Save button).
+  Future<void> _saveAutoAssign(bool v) async {
+    setState(() => _autoAssign = v);
+    if (!_isEdit) return; // create: persisted with the new worker
+    try {
+      await ref
+          .read(partnerRepositoryProvider)
+          .updateWorker(widget.worker!.id, {'acceptAutoAssign': v});
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _autoAssign = !v);
+      AppToast.error(e.message);
+    }
   }
 
   Future<void> _save() async {
@@ -115,7 +139,10 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
               child: PhoneField(
                 label: 'Phone *',
                 initial: _phone,
-                onChanged: (v) => _phone = v,
+                onChanged: (v) {
+                  _phone = v;
+                  _markDirty();
+                },
               ),
             ),
             _field('Email *', _email,
@@ -145,16 +172,24 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                 if (_zoneId == null || !ids.contains(_zoneId)) {
                   _zoneId = zones.isNotEmpty ? zones.first.id : null;
                 }
-                return DropdownButtonFormField<int>(
-                  initialValue: _zoneId,
-                  isExpanded: true,
-                  hint: const Text('Select a zone'),
-                  items: zones
-                      .map((z) => DropdownMenuItem(
-                          value: z.id,
-                          child: Text(z.label, overflow: TextOverflow.ellipsis)))
-                      .toList(),
-                  onChanged: (v) => setState(() => _zoneId = v),
+                final sel = zones.where((z) => z.id == _zoneId).toList();
+                return PickerField(
+                  value: sel.isNotEmpty ? sel.first.label : '',
+                  hint: 'Select a zone',
+                  onTap: () async {
+                    final picked = await showSearchablePicker<Zone>(
+                      context: context,
+                      title: 'Primary zone',
+                      items: zones,
+                      labelOf: (z) => z.label,
+                      selected: sel.isNotEmpty ? sel.first : null,
+                      equals: (a, b) => a.id == b.id,
+                    );
+                    if (picked != null) {
+                      setState(() => _zoneId = picked.id);
+                      _markDirty();
+                    }
+                  },
                 );
               },
             ),
@@ -172,7 +207,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                       ? 'Can be auto-dispatched to matching jobs'
                       : 'Only manual assignments',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-              onChanged: (v) => setState(() => _autoAssign = v),
+              onChanged: _saveAutoAssign,
             ),
             if (_isEdit) ...[
               const SizedBox(height: 10),
@@ -186,7 +221,10 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                   DropdownMenuItem(value: 'on_leave', child: Text('On leave')),
                   DropdownMenuItem(value: 'suspended', child: Text('Suspended')),
                 ],
-                onChanged: (v) => setState(() => _status = v ?? 'active'),
+                onChanged: (v) {
+                  setState(() => _status = v ?? 'active');
+                  _markDirty();
+                },
               ),
               const SizedBox(height: 14),
               OutlinedButton.icon(
@@ -201,21 +239,25 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                     minimumSize: const Size.fromHeight(46)),
               ),
             ],
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _busy ? null : _save,
-                child: _busy
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.4, color: Colors.white))
-                    : Text(_isEdit ? 'Save changes' : 'Add worker'),
-              ),
-            ),
+            const SizedBox(height: 8),
           ],
+        ),
+      ),
+      // Sticky save bar — always visible (no need to scroll to the bottom).
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: SizedBox(
+          height: 50,
+          child: ElevatedButton(
+            onPressed: (_busy || !_dirty) ? null : _save,
+            child: _busy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.4, color: Colors.white))
+                : Text(_isEdit ? 'Save changes' : 'Add worker'),
+          ),
         ),
       ),
     );
@@ -225,7 +267,10 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     final on = _role == value;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _role = value),
+        onTap: () {
+          setState(() => _role = value);
+          _markDirty();
+        },
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           alignment: Alignment.center,

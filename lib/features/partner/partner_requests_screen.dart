@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/searchable_picker.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
 import 'partner_models.dart';
@@ -395,40 +396,64 @@ class _OfferAcceptSheetState extends ConsumerState<_OfferAcceptSheet> {
                     const Text('Van',
                         style: TextStyle(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
-                    DropdownButtonFormField<int?>(
-                      initialValue:
-                          _vans.any((v) => v.id == _vanId) ? _vanId : null,
-                      isExpanded: true,
-                      hint: const Text('No van'),
-                      items: [
-                        const DropdownMenuItem<int?>(
-                            value: null, child: Text('No van')),
-                        ..._vans.map((v) => DropdownMenuItem<int?>(
-                            value: v.id,
-                            child: Text(v.name.isEmpty ? 'Van' : v.name,
-                                overflow: TextOverflow.ellipsis))),
-                      ],
-                      onChanged: (v) => setState(() => _vanId = v),
-                    ),
+                    Builder(builder: (_) {
+                      const noVan = Van(id: -1);
+                      final cur = _vans.where((v) => v.id == _vanId).toList();
+                      return PickerField(
+                        value: _vanId == null
+                            ? 'No van'
+                            : (cur.isNotEmpty ? cur.first.name : 'Van'),
+                        hint: 'No van',
+                        onTap: () async {
+                          final picked = await showSearchablePicker<Van>(
+                            context: context,
+                            title: 'Van',
+                            items: <Van>[noVan, ..._vans],
+                            labelOf: (v) => v.id == -1
+                                ? 'No van'
+                                : (v.name.isEmpty ? 'Van' : v.name),
+                            selected:
+                                _vanId == null ? noVan : (cur.isNotEmpty ? cur.first : null),
+                            equals: (a, b) => a.id == b.id,
+                          );
+                          if (picked == null) return;
+                          setState(() =>
+                              _vanId = picked.id == -1 ? null : picked.id);
+                        },
+                      );
+                    }),
                     const SizedBox(height: 14),
                     const Text('Driver',
                         style: TextStyle(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 6),
-                    DropdownButtonFormField<int?>(
-                      initialValue:
-                          drivers.any((d) => d.id == _driverId) ? _driverId : null,
-                      isExpanded: true,
-                      hint: const Text('No driver'),
-                      items: [
-                        const DropdownMenuItem<int?>(
-                            value: null, child: Text('No driver')),
-                        ...drivers.map((d) => DropdownMenuItem<int?>(
-                            value: d.id,
-                            child: Text(d.name.isEmpty ? 'Driver' : d.name,
-                                overflow: TextOverflow.ellipsis))),
-                      ],
-                      onChanged: (v) => setState(() => _driverId = v),
-                    ),
+                    Builder(builder: (_) {
+                      const noDriver = Worker(id: -1);
+                      final cur =
+                          drivers.where((d) => d.id == _driverId).toList();
+                      return PickerField(
+                        value: _driverId == null
+                            ? 'No driver'
+                            : (cur.isNotEmpty ? cur.first.name : 'Driver'),
+                        hint: 'No driver',
+                        onTap: () async {
+                          final picked = await showSearchablePicker<Worker>(
+                            context: context,
+                            title: 'Driver',
+                            items: <Worker>[noDriver, ...drivers],
+                            labelOf: (d) => d.id == -1
+                                ? 'No driver'
+                                : (d.name.isEmpty ? 'Driver' : d.name),
+                            selected: _driverId == null
+                                ? noDriver
+                                : (cur.isNotEmpty ? cur.first : null),
+                            equals: (a, b) => a.id == b.id,
+                          );
+                          if (picked == null) return;
+                          setState(() =>
+                              _driverId = picked.id == -1 ? null : picked.id);
+                        },
+                      );
+                    }),
                     const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,

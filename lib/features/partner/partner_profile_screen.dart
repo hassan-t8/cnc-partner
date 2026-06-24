@@ -256,27 +256,42 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
           : null,
     );
     if (!editable) return avatar;
-    return GestureDetector(
-      onTap: _pickImage,
-      child: Stack(
-        children: [
-          avatar,
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.all(5),
-              decoration: BoxDecoration(
-                color: AppColors.brand600,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.surface, width: 2),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: _pickImage,
+          child: Stack(
+            children: [
+              avatar,
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: AppColors.brand600,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.surface, width: 2),
+                  ),
+                  child: const Icon(Icons.camera_alt,
+                      size: 13, color: Colors.white),
+                ),
               ),
-              child: const Icon(Icons.camera_alt,
-                  size: 13, color: Colors.white),
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+        TextButton.icon(
+          onPressed: _pickImage,
+          style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 32)),
+          icon: const Icon(Icons.photo_library_outlined, size: 16),
+          label: Text(_pickedImagePath == null && _currentImage.isEmpty
+              ? 'Upload photo'
+              : 'Change photo'),
+        ),
+      ],
     );
   }
 

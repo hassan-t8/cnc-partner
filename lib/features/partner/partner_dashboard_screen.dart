@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
@@ -72,6 +73,10 @@ class _PartnerDashboardScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Live KPIs/pending-acceptance: refresh on any booking event.
+    ref.listen(bookingRealtimeProvider, (_, __) {
+      if (mounted) _reload();
+    });
     final name = ref.watch(authControllerProvider).user?.greetingName ?? '';
     return Scaffold(
       appBar: const MainAppBar('Dashboard'),
@@ -119,13 +124,22 @@ class _PartnerDashboardScreenState
                   children: [
                     Expanded(
                         child: _kpi('Today', '$today', Icons.today_rounded,
-                            AppColors.brand600,
-                            () => _open(const PartnerBookingsScreen()))),
+                            AppColors.brand600, () {
+                      final now = DateTime.now();
+                      final t0 = DateTime(now.year, now.month, now.day);
+                      _open(PartnerBookingsScreen(
+                          initialFrom: t0, initialTo: t0));
+                    })),
                     const SizedBox(width: 12),
                     Expanded(
                         child: _kpi('Next 7 days', '$week',
-                            Icons.date_range_rounded, AppColors.sky,
-                            () => _open(const PartnerBookingsScreen()))),
+                            Icons.date_range_rounded, AppColors.sky, () {
+                      final now = DateTime.now();
+                      final t0 = DateTime(now.year, now.month, now.day);
+                      _open(PartnerBookingsScreen(
+                          initialFrom: t0,
+                          initialTo: t0.add(const Duration(days: 6))));
+                    })),
                   ],
                 ),
                 const SizedBox(height: 12),

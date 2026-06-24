@@ -368,15 +368,50 @@ class Worker {
   String get name => [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
   String get displayStatus => pendingActivation ? 'pending' : status;
 
+  Worker copyWith({String? status, bool? acceptAutoAssign}) => Worker(
+        id: id,
+        firstName: firstName,
+        lastName: lastName,
+        code: code,
+        email: email,
+        phone: phone,
+        roles: roles,
+        status: status ?? this.status,
+        ratingAvg: ratingAvg,
+        ratingCount: ratingCount,
+        sotPct: sotPct,
+        pendingActivation: pendingActivation,
+        acceptAutoAssign: acceptAutoAssign ?? this.acceptAutoAssign,
+        homeAddress: homeAddress,
+        primaryZoneId: primaryZoneId,
+      );
+
   factory Worker.fromJson(Map<String, dynamic> j) {
-    final r = j['roles'];
+    final r = j['roles'] ?? j['workerRoles'];
+    // Name: prefer firstName/lastName; else split a single name field.
+    var fn = _s(j['firstName'] ?? j['first_name']);
+    var ln = _s(j['lastName'] ?? j['last_name']);
+    if (fn.isEmpty && ln.isEmpty) {
+      final full = _s(j['name'] ?? j['fullName'] ?? j['workerName']);
+      if (full.isNotEmpty) {
+        final parts = full.trim().split(RegExp(r'\s+'));
+        fn = parts.first;
+        ln = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+      }
+    }
+    // Phone: combine dial code + number when stored separately.
+    var phone = _s(j['phone'] ?? j['phoneNumber'] ?? j['mobile']);
+    final dial = _s(j['dialCode'] ?? j['phoneDialCode']);
+    if (dial.isNotEmpty && phone.isNotEmpty && !phone.startsWith('+')) {
+      phone = '$dial $phone';
+    }
     return Worker(
       id: _i(j['id']) ?? 0,
-      firstName: _s(j['firstName']),
-      lastName: _s(j['lastName']),
-      code: _s(j['code']),
+      firstName: fn,
+      lastName: ln,
+      code: _s(j['code'] ?? j['workerCode'] ?? j['employeeCode']),
       email: _s(j['email']),
-      phone: _s(j['phone']),
+      phone: phone,
       roles: r is List ? r.map((e) => '$e').toList() : const [],
       status: _s(j['status']),
       ratingAvg: _d(j['ratingAvg']),
@@ -422,6 +457,22 @@ class Van {
     this.acceptAutoAssign = true,
     this.driverWorkerId,
   });
+
+  Van copyWith({String? status, bool? acceptAutoAssign}) => Van(
+        id: id,
+        name: name,
+        code: code,
+        plate: plate,
+        seats: seats,
+        driverName: driverName,
+        status: status ?? this.status,
+        parkingLat: parkingLat,
+        parkingLng: parkingLng,
+        parkingAddress: parkingAddress,
+        homeZoneId: homeZoneId,
+        acceptAutoAssign: acceptAutoAssign ?? this.acceptAutoAssign,
+        driverWorkerId: driverWorkerId,
+      );
 
   factory Van.fromJson(Map<String, dynamic> j) {
     final drv = j['driver'] is Map ? Map<String, dynamic>.from(j['driver']) : const {};

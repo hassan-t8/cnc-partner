@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
@@ -24,7 +25,10 @@ const _statusOptions = [
 ];
 
 class PartnerBookingsScreen extends ConsumerStatefulWidget {
-  const PartnerBookingsScreen({super.key});
+  /// Optional initial date filter (e.g. opened from a dashboard KPI).
+  final DateTime? initialFrom;
+  final DateTime? initialTo;
+  const PartnerBookingsScreen({super.key, this.initialFrom, this.initialTo});
   @override
   ConsumerState<PartnerBookingsScreen> createState() =>
       _PartnerBookingsScreenState();
@@ -55,6 +59,8 @@ class _PartnerBookingsScreenState
   @override
   void initState() {
     super.initState();
+    _from = widget.initialFrom;
+    _to = widget.initialTo;
     _load();
   }
 
@@ -152,6 +158,34 @@ class _PartnerBookingsScreenState
           await repo.completeBooking(b.id);
           AppToast.success('Booking completed');
           break;
+        case 'unsign':
+          final ok = await _confirmUnsign();
+          if (ok != true) {
+            setState(() => _acting = -1);
+            return;
+          }
+          await repo.unsignBooking(b.id);
+          AppToast.success('Booking released');
+          break;
+        case 'cash':
+          final done = await _cashCollectDialog(b);
+          if (done != true) {
+            setState(() => _acting = -1);
+            return;
+          }
+          await repo.cashCollect(b.id);
+          AppToast.success('Cash marked collected');
+          break;
+        case 'review':
+          final r = await _reviewCustomerDialog(b);
+          if (r == null) {
+            setState(() => _acting = -1);
+            return;
+          }
+          await repo.submitCustomerReview(b.id, r.$1,
+              comment: r.$2.isEmpty ? null : r.$2);
+          AppToast.success('Review submitted');
+          break;
       }
       final newStatus = _statusForAction[action];
       if (newStatus != null) _patch(b.id, newStatus);
@@ -186,8 +220,122 @@ class _PartnerBookingsScreenState
     );
   }
 
+  Future<bool?> _confirmUnsign() => showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Unsign this booking?'),
+          content: const Text(
+              'If you unsign, the booking goes back to dispatch and is re-offered '
+              'to another partner. A penalty of AED 100.00 will apply.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: AppColors.rose),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Unsign'),
+            ),
+          ],
+        ),
+      );
+
+  Future<(int, String)?> _reviewCustomerDialog(PartnerBooking b) {
+    int stars = 0;
+    final comment = TextEditingController();
+    return showDialog<(int, String)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(
+              'Review ${b.customerName.isEmpty ? 'customer' : b.customerName}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 1; i <= 5; i++)
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => setD(() => stars = i),
+                      icon: Icon(
+                          i <= stars
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: AppColors.amber,
+                          size: 34),
+                    ),
+                ],
+              ),
+              TextField(
+                controller: comment,
+                maxLines: 3,
+                decoration:
+                    const InputDecoration(hintText: 'Comment (optional)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: stars == 0
+                  ? null
+                  : () => Navigator.pop(ctx, (stars, comment.text.trim())),
+              child: const Text('Submit'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<bool?> _cashCollectDialog(PartnerBooking b) {
+    final notes = TextEditingController();
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Collect cash'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Confirm you collected the cash from '
+                '${b.customerName.isEmpty ? 'the customer' : b.customerName} '
+                'for booking #${b.ref}.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notes,
+              maxLines: 2,
+              decoration: const InputDecoration(hintText: 'Notes (optional)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppColors.amber),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Mark collected'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Live updates: reload when any booking status/dispatch event arrives.
+    ref.listen(bookingRealtimeProvider, (_, __) {
+      if (mounted) _load();
+    });
     return Scaffold(
       appBar: const MainAppBar('Bookings'),
       body: Column(
@@ -508,10 +656,21 @@ class _PartnerBookingsScreenState
     } else if (b.status == 'accepted') {
       actions.add(_btn('Start job', Icons.play_arrow_rounded,
           AppColors.violet, busy ? null : () => _act(b, 'start'), busy));
+      actions.add(_btn('Unsign', Icons.undo_rounded, AppColors.rose,
+          busy ? null : () => _act(b, 'unsign'), false, outlined: true));
     } else if (b.status == 'in_progress') {
+      // Cash bookings must collect cash before completing.
+      if (b.cashPending) {
+        actions.add(_btn('Collect AED ${b.cashDue.toStringAsFixed(2)}',
+            Icons.payments_rounded, AppColors.amber,
+            busy ? null : () => _act(b, 'cash'), busy));
+      }
       actions.add(_btn('Complete', Icons.check_circle_rounded,
-          AppColors.brand600, busy ? null : () => _act(b, 'complete'),
-          busy));
+          AppColors.brand600,
+          (busy || b.cashPending) ? null : () => _act(b, 'complete'), busy));
+    } else if (b.status == 'completed') {
+      actions.add(_btn('Review customer', Icons.star_rounded, AppColors.amber,
+          busy ? null : () => _act(b, 'review'), false, outlined: true));
     }
     return actions;
   }
