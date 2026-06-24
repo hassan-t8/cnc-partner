@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -137,7 +138,7 @@ class _AvailabilityEditorState extends ConsumerState<AvailabilityEditor> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: MainAppBar(widget.title),
       body: _loading
           ? const LoadingList(height: 64)
           : _error

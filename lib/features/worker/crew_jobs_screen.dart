@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -9,7 +10,6 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
-import '../../widgets/notification_bell.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'otp_dialog.dart';
@@ -127,10 +127,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My jobs'),
-        actions: const [NotificationBell()],
-      ),
+      appBar: const MainAppBar('My jobs'),
       body: Column(
         children: [
           const TodaySummary(),

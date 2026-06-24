@@ -196,7 +196,7 @@ class _PartnerRequestsScreenState
           _row(Icons.person_outline, o.customerName),
           if (o.address.isNotEmpty) _row(Icons.place_outlined, o.address),
           _row(Icons.payments_outlined,
-              'AED ${o.earnings.toStringAsFixed(2)}'),
+              'Your earnings: AED ${o.earnings.toStringAsFixed(2)}'),
           if (o.crewRequired > 0)
             _row(Icons.groups_outlined, '${o.crewRequired} crew required'),
           const SizedBox(height: 12),

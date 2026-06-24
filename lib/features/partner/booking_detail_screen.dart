@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -289,7 +290,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         if (!didPop) Navigator.pop(context, _changed ? 'reload' : '');
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Booking details')),
+        appBar: MainAppBar('Booking details'),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [

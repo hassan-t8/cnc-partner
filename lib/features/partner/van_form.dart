@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -114,7 +115,7 @@ class _VanFormState extends ConsumerState<VanForm> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit van' : 'Add van')),
+      appBar: MainAppBar(_isEdit ? 'Edit van' : 'Add van'),
       body: Form(
         key: _formKey,
         child: ListView(

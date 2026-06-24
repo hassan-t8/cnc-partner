@@ -544,12 +544,17 @@ class Offer {
 
 class WalletInfo {
   final double balance;
+  final double pendingBalance; // awaiting clearance
   final double lifetimeEarnings;
   final double lifetimePaidOut;
   const WalletInfo(
-      {this.balance = 0, this.lifetimeEarnings = 0, this.lifetimePaidOut = 0});
+      {this.balance = 0,
+      this.pendingBalance = 0,
+      this.lifetimeEarnings = 0,
+      this.lifetimePaidOut = 0});
   factory WalletInfo.fromJson(Map<String, dynamic> j) => WalletInfo(
         balance: _d(j['balance']),
+        pendingBalance: _d(j['pendingBalance'] ?? j['pendingClearance']),
         lifetimeEarnings: _d(j['lifetimeEarnings']),
         lifetimePaidOut: _d(j['lifetimePaidOut']),
       );
@@ -563,9 +568,13 @@ class WalletTransaction {
   final double amount;
   final String description;
   final String? bookingRef;
-  final String status; // pending | completed | reversed | failed
+  final String status; // pending_clearance | completed | reversed | failed
   final double balanceAfter;
   final DateTime? createdAt;
+  final DateTime? clearedAt;
+  final int? reversesId; // pairs a reversal debit with the earning it undid
+  final double? grossAmount; // cash collected at the door
+  final double? commissionAmount; // what the partner owes CNC on cash
 
   const WalletTransaction({
     required this.id,
@@ -577,9 +586,16 @@ class WalletTransaction {
     this.status = '',
     this.balanceAfter = 0,
     this.createdAt,
+    this.clearedAt,
+    this.reversesId,
+    this.grossAmount,
+    this.commissionAmount,
   });
 
   bool get isCredit => direction == 'credit';
+  bool get isPendingClearance => status == 'pending_clearance';
+  bool get isReversed => status == 'reversed';
+  bool get isReversal => reversesId != null;
 
   factory WalletTransaction.fromJson(Map<String, dynamic> j) =>
       WalletTransaction(
@@ -592,6 +608,12 @@ class WalletTransaction {
         status: _s(j['status']),
         balanceAfter: _d(j['balanceAfter']),
         createdAt: _dt(j['createdAt']),
+        clearedAt: _dt(j['clearedAt']),
+        reversesId: _i(j['reversesId'] ?? j['reversalOf']),
+        grossAmount:
+            j['grossAmount'] == null ? null : _d(j['grossAmount']),
+        commissionAmount:
+            j['commissionAmount'] == null ? null : _d(j['commissionAmount']),
       );
 }
 

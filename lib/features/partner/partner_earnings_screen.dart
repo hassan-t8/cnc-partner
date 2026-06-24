@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -19,6 +20,7 @@ class PartnerEarningsScreen extends ConsumerStatefulWidget {
 class _PartnerEarningsScreenState
     extends ConsumerState<PartnerEarningsScreen> {
   late Future<_Earn> _future;
+  String _txFilter = 'settled'; // settled | pending | all
 
   @override
   void initState() {
@@ -43,7 +45,7 @@ class _PartnerEarningsScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Earnings')),
+      appBar: MainAppBar('Earnings'),
       body: RefreshIndicator(
         onRefresh: () async => _reload(),
         child: FutureBuilder<_Earn>(
@@ -58,7 +60,14 @@ class _PartnerEarningsScreenState
             }
             final e = snap.data!;
             final w = e.statement.wallet;
-            final txns = e.statement.transactions;
+            // Newest-first chronological (web parity).
+            final txns = [...e.statement.transactions]..sort((a, b) {
+                final ad = a.createdAt, bd = b.createdAt;
+                if (ad == null && bd == null) return 0;
+                if (ad == null) return 1;
+                if (bd == null) return -1;
+                return bd.compareTo(ad);
+              });
             final completed =
                 e.bookings.where((b) => b.status == 'completed').length;
             return ListView(
@@ -86,6 +95,15 @@ class _PartnerEarningsScreenState
                               color: Colors.white,
                               fontSize: 30,
                               fontWeight: FontWeight.w900)),
+                      if (w.pendingBalance > 0) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                            'AED ${w.pendingBalance.toStringAsFixed(2)} pending clearance',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600)),
+                      ],
                       const SizedBox(height: 8),
                       Text(
                           'Lifetime earned AED ${w.lifetimeEarnings.toStringAsFixed(0)} · '
@@ -113,18 +131,26 @@ class _PartnerEarningsScreenState
                 const Text('Transactions',
                     style:
                         TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 10),
-                if (txns.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: EmptyState(
-                        icon: Icons.receipt_long_outlined,
-                        title: 'No transactions yet',
-                        subtitle:
-                            'Earnings appear here as bookings complete.'),
-                  )
-                else
-                  ...txns.map(_txnRow),
+                const SizedBox(height: 8),
+                _filterChips(),
+                const SizedBox(height: 8),
+                Builder(builder: (_) {
+                  final shown = _applyFilter(txns);
+                  if (shown.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: EmptyState(
+                          icon: Icons.receipt_long_outlined,
+                          title: _txFilter == 'pending'
+                              ? 'Nothing pending'
+                              : 'No transactions yet',
+                          subtitle: _txFilter == 'pending'
+                              ? 'Earnings awaiting clearance will show here.'
+                              : 'Earnings appear here as bookings complete.'),
+                    );
+                  }
+                  return Column(children: shown.map(_txnRow).toList());
+                }),
               ],
             );
           },
@@ -154,6 +180,56 @@ class _PartnerEarningsScreenState
           ],
         ),
       );
+
+  List<WalletTransaction> _applyFilter(List<WalletTransaction> txns) {
+    switch (_txFilter) {
+      case 'pending':
+        return txns.where((t) => t.isPendingClearance).toList();
+      case 'settled':
+        return txns
+            .where((t) => t.status == 'completed' || t.status == 'reversed')
+            .toList();
+      default:
+        return txns;
+    }
+  }
+
+  Widget _filterChips() {
+    const opts = [
+      ('settled', 'Settled'),
+      ('pending', 'Pending'),
+      ('all', 'All'),
+    ];
+    return Row(
+      children: [
+        for (final (val, label) in opts) ...[
+          GestureDetector(
+            onTap: () => setState(() => _txFilter = val),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: _txFilter == val ? AppColors.brand600 : AppColors.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                    color: _txFilter == val
+                        ? AppColors.brand600
+                        : AppColors.border),
+              ),
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: _txFilter == val
+                          ? Colors.white
+                          : AppColors.textMuted)),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ],
+    );
+  }
 
   Widget _txnRow(WalletTransaction t) {
     final credit = t.isCredit;
@@ -202,8 +278,10 @@ class _PartnerEarningsScreenState
                       if (t.bookingRef != null) '#${t.bookingRef}',
                       if (t.createdAt != null)
                         DateFormat('d MMM y').format(t.createdAt!),
-                      if (t.status.isNotEmpty && t.status != 'completed')
-                        t.status,
+                      if (t.isPendingClearance) 'Pending clearance',
+                      if (t.isReversed) 'Reversed',
+                      if (t.commissionAmount != null && t.commissionAmount! > 0)
+                        'CNC AED ${t.commissionAmount!.toStringAsFixed(0)}',
                     ].where((s) => s.isNotEmpty).join(' · '),
                     style:
                         TextStyle(color: AppColors.textMuted, fontSize: 12)),
@@ -215,7 +293,12 @@ class _PartnerEarningsScreenState
             children: [
               Text(
                   '${credit ? '+' : '−'} AED ${t.amount.toStringAsFixed(2)}',
-                  style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+                  style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w800,
+                      decoration: t.isReversed
+                          ? TextDecoration.lineThrough
+                          : null)),
               if (t.balanceAfter > 0)
                 Text('Bal ${t.balanceAfter.toStringAsFixed(0)}',
                     style: TextStyle(

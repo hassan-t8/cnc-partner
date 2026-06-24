@@ -1,3 +1,4 @@
+import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -125,7 +126,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_isEdit ? 'Edit worker' : 'Add worker')),
+      appBar: MainAppBar(_isEdit ? 'Edit worker' : 'Add worker'),
       body: Form(
         key: _formKey,
         child: ListView(
