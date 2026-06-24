@@ -19,6 +19,8 @@ class PartnerVansScreen extends ConsumerStatefulWidget {
 
 class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
   late Future<List<Van>> _future;
+  // Optimistic local edits (status / auto-assign) for instant UI feedback.
+  final Map<int, Van> _overrides = {};
 
   @override
   void initState() {
@@ -26,8 +28,12 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
     _future = ref.read(partnerRepositoryProvider).vans();
   }
 
-  void _reload() =>
-      setState(() => _future = ref.read(partnerRepositoryProvider).vans());
+  Van _apply(Van v) => _overrides[v.id] ?? v;
+
+  void _reload() => setState(() {
+        _overrides.clear();
+        _future = ref.read(partnerRepositoryProvider).vans();
+      });
 
   Future<void> _openForm([Van? van]) async {
     final saved = await Navigator.of(context).push<bool>(
@@ -101,13 +107,41 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
       ),
     );
     if (picked == null || picked == v.status) return;
+    final prev = _overrides[v.id];
+    setState(() => _overrides[v.id] = v.copyWith(status: picked));
     try {
       await ref
           .read(partnerRepositoryProvider)
           .updateVan(v.id, {'status': picked});
       AppToast.success('Status updated');
-      _reload();
     } on ApiException catch (e) {
+      setState(() {
+        if (prev != null) {
+          _overrides[v.id] = prev;
+        } else {
+          _overrides.remove(v.id);
+        }
+      });
+      AppToast.error(e.message);
+    }
+  }
+
+  Future<void> _toggleAutoAssign(Van v, bool value) async {
+    final prev = _overrides[v.id];
+    setState(() => _overrides[v.id] = v.copyWith(acceptAutoAssign: value));
+    try {
+      await ref
+          .read(partnerRepositoryProvider)
+          .updateVan(v.id, {'acceptAutoAssign': value});
+      AppToast.success(value ? 'Auto-assign on' : 'Auto-assign off');
+    } on ApiException catch (e) {
+      setState(() {
+        if (prev != null) {
+          _overrides[v.id] = prev;
+        } else {
+          _overrides.remove(v.id);
+        }
+      });
       AppToast.error(e.message);
     }
   }
@@ -148,7 +182,7 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
               padding: const EdgeInsets.all(16),
               itemCount: rows.length,
               separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (_, i) => _card(rows[i]),
+              itemBuilder: (_, i) => _card(_apply(rows[i])),
             );
           },
         ),
@@ -158,153 +192,221 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
 
   Widget _card(Van v) {
     final hasParking = v.parkingLat != null && v.parkingLng != null;
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: () => _openForm(v),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppColors.brand50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.local_shipping_rounded,
-                        color: AppColors.brand600, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(v.name.isEmpty ? 'Van' : v.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 15)),
-                            ),
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              onTap: () => _changeStatus(v),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  StatusBadge(v.status == 'active'
-                                      ? 'completed'
-                                      : v.status),
-                                  Icon(Icons.expand_more,
-                                      size: 15, color: AppColors.textFaint),
-                                ],
-                              ),
-                            ),
-                          ],
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(v.id),
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+      tween: Tween(begin: 0, end: 1),
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child:
+            Transform.translate(offset: Offset(0, (1 - t) * 14), child: child),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.brand700.withValues(alpha: 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openForm(v),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header ─────────────────────────────────────────
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(15),
+                        gradient: LinearGradient(
+                          colors: [AppColors.brand600, AppColors.brand700],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            if (v.plate.isNotEmpty)
-                              _pill(Icons.pin_outlined, v.plate),
-                            if (v.code.isNotEmpty)
-                              _pill(Icons.badge_outlined, v.code),
-                            _pill(Icons.event_seat_outlined, '${v.seats} seats'),
-                            if (v.driverName.isNotEmpty)
-                              _pill(Icons.person_outline, v.driverName),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Divider(height: 1, color: AppColors.border),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  if (hasParking)
-                    InkWell(
-                      onTap: () => launchUrl(
-                        Uri.parse(
-                            'https://www.google.com/maps?q=${v.parkingLat},${v.parkingLng}'),
-                        mode: LaunchMode.externalApplication,
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.place_outlined,
-                              size: 14, color: AppColors.brand600),
-                          const SizedBox(width: 4),
-                          Text('Parking',
-                              style: TextStyle(
-                                  color: AppColors.brand600,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w600)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.brand600.withValues(alpha: 0.30),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
                         ],
                       ),
-                    )
-                  else
-                    Text('No parking set',
-                        style: TextStyle(
-                            color: AppColors.textFaint, fontSize: 12.5)),
-                  const Spacer(),
-                  _miniAction(Icons.edit_outlined, 'Edit', () => _openForm(v)),
-                  _miniAction(Icons.delete_outline, 'Delete', () => _delete(v),
-                      danger: true),
-                ],
-              ),
-            ],
+                      child: const Icon(Icons.local_shipping_rounded,
+                          color: Colors.white, size: 26),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(v.name.isEmpty ? 'Van' : v.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w800, fontSize: 16)),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(Icons.event_seat_outlined,
+                                  size: 13, color: AppColors.textFaint),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                    [
+                                      '${v.seats} seats',
+                                      if (v.plate.isNotEmpty) v.plate,
+                                      if (v.code.isNotEmpty) v.code,
+                                    ].join(' · '),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        color: AppColors.textMuted,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => _changeStatus(v),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          StatusBadge(
+                              v.status == 'active' ? 'completed' : v.status),
+                          Icon(Icons.expand_more,
+                              size: 16, color: AppColors.textFaint),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // ── Info block: driver · parking · auto-assign ─────
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      _infoRow(Icons.person_outline,
+                          v.driverName.isEmpty ? 'No driver' : v.driverName),
+                      if (hasParking)
+                        InkWell(
+                          onTap: () => launchUrl(
+                            Uri.parse(
+                                'https://www.google.com/maps?q=${v.parkingLat},${v.parkingLng}'),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                          child: _infoRow(Icons.place_outlined,
+                              'Open parking in Maps',
+                              link: true),
+                        )
+                      else
+                        _infoRow(Icons.place_outlined, 'No parking set'),
+                      Divider(height: 12, color: AppColors.border),
+                      Row(
+                        children: [
+                          Icon(Icons.bolt_outlined,
+                              size: 16, color: AppColors.brand600),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text('Auto-assign new bookings',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                          SizedBox(
+                            height: 28,
+                            child: Switch(
+                              value: v.acceptAutoAssign,
+                              activeThumbColor: AppColors.brand600,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (val) => _toggleAutoAssign(v, val),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // ── Actions ────────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                        child: _actionBtn(
+                            Icons.edit_outlined, 'Edit', () => _openForm(v))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: _actionBtn(Icons.delete_outline, 'Delete',
+                            () => _delete(v),
+                            danger: true)),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _pill(IconData icon, String label) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: AppColors.bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.border),
-        ),
+  Widget _infoRow(IconData icon, String text, {bool link = false}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12, color: AppColors.textMuted),
-            const SizedBox(width: 4),
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w600)),
+            Icon(icon,
+                size: 15,
+                color: link ? AppColors.brand600 : AppColors.textFaint),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: link ? AppColors.brand600 : AppColors.textMuted,
+                      fontWeight: link ? FontWeight.w600 : FontWeight.w400,
+                      fontSize: 13)),
+            ),
           ],
         ),
       );
 
-  Widget _miniAction(IconData icon, String tip, VoidCallback onTap,
+  Widget _actionBtn(IconData icon, String label, VoidCallback onTap,
           {bool danger = false}) =>
-      IconButton(
+      OutlinedButton.icon(
         onPressed: onTap,
-        visualDensity: VisualDensity.compact,
-        tooltip: tip,
-        icon: Icon(icon,
-            size: 18, color: danger ? AppColors.rose : AppColors.textMuted),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: danger ? AppColors.rose : AppColors.textMuted,
+          side: BorderSide(color: AppColors.border),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        icon: Icon(icon, size: 16),
+        label: Text(label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
       );
 }

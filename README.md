@@ -44,16 +44,24 @@ Built with **Flutter** + **Riverpod**, talking to the CNC CRM backend.
 **Partner (admin)**
 - Dashboard with tappable KPI tiles (today / next 7 days / workers / vans) and a
   wallet earnings card — each routes to the relevant screen
+- Dashboard KPI tiles deep-link with context — "Today" / "Next 7 days" open
+  Bookings **pre-filtered to that date range**
 - Bookings: search, **quick status filter chips** + a filter sheet (status +
   date range) with removable applied-filter chips; cards show the real reference
   (`CNC-B-####`), payout, schedule; **optimistic status updates** on
-  accept/start/complete
-- Booking detail screen: full info + **team assign / unassign** flow + lifecycle
-  actions (accept / decline / start-with-OTP / complete)
-- Workers: list with redesigned cards, inline status change, full add/edit form
-  (name, country-code phone, role, zone, status, auto-assign, home address)
-- Vans: list with redesigned cards, inline status change, add/edit form (name,
-  plate, code, seats, primary zone, **driver**, status, auto-assign, parking)
+  accept/start/complete. Full lifecycle: accept · decline · start-with-OTP ·
+  **Unsign** (penalty confirm) · **Collect cash** (gates Complete on cash
+  bookings) · complete · **Review customer** (stars + comment)
+- Booking detail screen: clean service-title breadcrumb, **de-duplicated team**,
+  **team assign / unassign** flow + the lifecycle actions above
+- Workers: **animated, redesigned cards** (gradient avatar, phone · email ·
+  address, ⭐ rating, **inline auto-assign toggle**, tappable status) with
+  **optimistic** status/auto-assign; full add/edit form (name, country-code
+  phone, role, zone, status, auto-assign, home address)
+- Vans: **animated, redesigned cards** (driver · parking "Open in Maps" ·
+  **inline auto-assign toggle**, tappable status) with **optimistic** updates;
+  add/edit form (name, plate, code, seats, primary zone, **driver**, status,
+  auto-assign, parking)
 - Earnings: wallet balance + lifetime totals + **settlement transactions list**
 - Reviews: rating summary with half-stars + a distribution histogram
 - Business profile: full web-parity view (identity, contact, location,
@@ -70,8 +78,19 @@ Built with **Flutter** + **Riverpod**, talking to the CNC CRM backend.
 - Jobs: accept / decline / start (customer OTP) / complete, before/after photo
   capture, today summary
 
+**Realtime**
+- **Live booking updates over Socket.IO** (`core/realtime`) — joins the user's
+  `user_<id>` room + per-booking rooms and refreshes Dashboard, Bookings and
+  Booking detail on `bookingStatusUpdated` / dispatch / assignment events
+  (push notifications still cover out-of-app alerts)
+
 **Shared / UX**
 - Role-adaptive bottom navigation + role-aware Profile hub
+- **Searchable, fixed-height dropdown pickers** (`widgets/searchable_picker`) for
+  API-backed lists (zones / drivers / vans) — search bar, stable sheet size,
+  "no matches" state
+- Forms: **sticky Save bar** that stays **disabled until something changes**;
+  auto-assign toggles save **immediately** (independent of Save)
 - Light **and** dark theme (follows system), adaptive status bar
 - Shimmer loaders, empty/error states, toasts, button busy/disabled states
 - Onboarding + splash, permission handling, country-code phone picker, legal
@@ -101,6 +120,7 @@ they're entitled to.
 - **Flutter** (Dart SDK `^3.11.5`)
 - **State management:** `flutter_riverpod` (Notifier + Provider)
 - **Networking:** `dio` (interceptors for auth + friendly errors)
+- **Realtime:** `socket_io_client` (live booking/dispatch updates)
 - **Routing:** `go_router` (role-guarded redirects)
 - **Storage:** `flutter_secure_storage` (token, saved accounts) +
   `shared_preferences` (small flags)
@@ -138,6 +158,7 @@ lib/
 │   ├── config/               # Env (API_URL, maps key, portal)
 │   ├── network/              # ApiClient (Dio) + ApiException + envelope helpers
 │   ├── notifications/        # NotificationService (local notifications)
+│   ├── realtime/             # BookingRealtime (Socket.IO live booking updates)
 │   ├── router/               # go_router config + role guards
 │   ├── storage/              # AuthStorage (token, saved accounts, flags)
 │   └── theme/                # AppColors, AppTheme
@@ -156,7 +177,7 @@ lib/
 │   ├── shell/                # RoleShell (bottom nav), unauthorized
 │   └── worker/               # crew jobs, bookings, OTP dialog, today summary
 └── widgets/                  # app_states, app_toast, brand_logo, phone_field,
-                              #   status_badge, ...
+                              #   status_badge, searchable_picker, ...
 ```
 
 ---

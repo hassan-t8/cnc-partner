@@ -31,6 +31,16 @@ class PartnerRepository {
   Future<void> completeBooking(int id) =>
       _api.post('/booking/$id/partner-complete');
 
+  /// Release an accepted booking back to dispatch (incurs a penalty).
+  Future<void> unsignBooking(int id) =>
+      _api.post('/booking/$id/partner-unsign');
+
+  /// Mark cash as collected at the door (required before completing a
+  /// cash-payment booking).
+  Future<void> cashCollect(int id, {String? notes}) => _api.post(
+      '/booking/$id/cash-collect',
+      body: {if (notes != null && notes.isNotEmpty) 'notes': notes});
+
   // ----- booking assignments (team picker) -----
   Future<List<BookingAssignment>> bookingAssignments(int bookingId) async {
     final res =

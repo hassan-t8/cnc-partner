@@ -6,6 +6,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/searchable_picker.dart';
 import 'availability_editor.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
@@ -29,10 +30,15 @@ class _VanFormState extends ConsumerState<VanForm> {
   int? _driverId;
   bool _autoAssign = true;
   bool _busy = false;
+  bool _dirty = false;
   late Future<List<Zone>> _zones;
   late Future<List<Worker>> _drivers;
 
   bool get _isEdit => widget.van != null;
+
+  void _markDirty() {
+    if (!_dirty) setState(() => _dirty = true);
+  }
 
   @override
   void initState() {
@@ -47,6 +53,9 @@ class _VanFormState extends ConsumerState<VanForm> {
     _zoneId = v?.homeZoneId;
     _driverId = v?.driverWorkerId;
     _autoAssign = v?.acceptAutoAssign ?? true;
+    for (final c in [_name, _plate, _code, _seats, _parking]) {
+      c.addListener(_markDirty);
+    }
     _zones = ref.read(partnerRepositoryProvider).zones();
     _drivers = ref
         .read(partnerRepositoryProvider)
@@ -134,17 +143,24 @@ class _VanFormState extends ConsumerState<VanForm> {
                 if (_zoneId == null || !ids.contains(_zoneId)) {
                   _zoneId = zones.isNotEmpty ? zones.first.id : null;
                 }
-                return DropdownButtonFormField<int>(
-                  initialValue: _zoneId,
-                  isExpanded: true,
-                  hint: const Text('Select a zone'),
-                  items: zones
-                      .map((z) => DropdownMenuItem(
-                          value: z.id,
-                          child:
-                              Text(z.label, overflow: TextOverflow.ellipsis)))
-                      .toList(),
-                  onChanged: (v) => setState(() => _zoneId = v),
+                final sel = zones.where((z) => z.id == _zoneId).toList();
+                return PickerField(
+                  value: sel.isNotEmpty ? sel.first.label : '',
+                  hint: 'Select a zone',
+                  onTap: () async {
+                    final picked = await showSearchablePicker<Zone>(
+                      context: context,
+                      title: 'Primary zone',
+                      items: zones,
+                      labelOf: (z) => z.label,
+                      selected: sel.isNotEmpty ? sel.first : null,
+                      equals: (a, b) => a.id == b.id,
+                    );
+                    if (picked != null) {
+                      setState(() => _zoneId = picked.id);
+                      _markDirty();
+                    }
+                  },
                 );
               },
             ),
@@ -154,30 +170,37 @@ class _VanFormState extends ConsumerState<VanForm> {
               future: _drivers,
               builder: (context, snap) {
                 final drivers = snap.data ?? const <Worker>[];
-                final items = <DropdownMenuItem<int?>>[
-                  const DropdownMenuItem<int?>(
-                      value: null, child: Text('No driver')),
-                  ...drivers.map((d) => DropdownMenuItem<int?>(
-                      value: d.id,
-                      child: Text(d.name.isEmpty ? 'Driver' : d.name,
-                          overflow: TextOverflow.ellipsis))),
-                ];
-                // Current driver may not be in the active-driver list — keep it
-                // selectable so the dropdown doesn't assert.
-                if (_driverId != null &&
-                    !drivers.any((d) => d.id == _driverId)) {
-                  final name = widget.van?.driverName ?? '';
-                  items.add(DropdownMenuItem<int?>(
-                      value: _driverId,
-                      child: Text(name.isEmpty ? 'Current driver' : name,
-                          overflow: TextOverflow.ellipsis)));
+                const noDriver = Worker(id: -1); // sentinel = "No driver"
+                final options = <Worker>[noDriver, ...drivers];
+                Worker? current;
+                if (_driverId != null) {
+                  final m = drivers.where((d) => d.id == _driverId);
+                  current = m.isNotEmpty ? m.first : null;
                 }
-                return DropdownButtonFormField<int?>(
-                  initialValue: _driverId,
-                  isExpanded: true,
-                  hint: const Text('No driver'),
-                  items: items,
-                  onChanged: (v) => setState(() => _driverId = v),
+                final label = _driverId == null
+                    ? 'No driver'
+                    : (current?.name.isNotEmpty == true
+                        ? current!.name
+                        : (widget.van?.driverName ?? 'Current driver'));
+                return PickerField(
+                  value: label,
+                  hint: 'No driver',
+                  onTap: () async {
+                    final picked = await showSearchablePicker<Worker>(
+                      context: context,
+                      title: 'Driver',
+                      items: options,
+                      labelOf: (w) => w.id == -1
+                          ? 'No driver'
+                          : (w.name.isEmpty ? 'Driver' : w.name),
+                      selected: _driverId == null ? noDriver : current,
+                      equals: (a, b) => a.id == b.id,
+                    );
+                    if (picked == null) return; // dismissed
+                    setState(
+                        () => _driverId = picked.id == -1 ? null : picked.id);
+                    _markDirty();
+                  },
                 );
               },
             ),
@@ -193,7 +216,10 @@ class _VanFormState extends ConsumerState<VanForm> {
                     value: 'maintenance', child: Text('Maintenance')),
                 DropdownMenuItem(value: 'retired', child: Text('Retired')),
               ],
-              onChanged: (v) => setState(() => _status = v ?? 'active'),
+              onChanged: (v) {
+                setState(() => _status = v ?? 'active');
+                _markDirty();
+              },
             ),
             const SizedBox(height: 14),
             _field('Parking address', _parking),
@@ -208,7 +234,7 @@ class _VanFormState extends ConsumerState<VanForm> {
                       ? 'Van can be auto-dispatched'
                       : 'Active but skips auto-dispatch',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-              onChanged: (v) => setState(() => _autoAssign = v),
+              onChanged: _saveAutoAssign,
             ),
             if (_isEdit) ...[
               const SizedBox(height: 8),
@@ -224,24 +250,41 @@ class _VanFormState extends ConsumerState<VanForm> {
                     minimumSize: const Size.fromHeight(46)),
               ),
             ],
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _busy ? null : _save,
-                child: _busy
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.4, color: Colors.white))
-                    : Text(_isEdit ? 'Save changes' : 'Add van'),
-              ),
-            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: SizedBox(
+          height: 50,
+          child: ElevatedButton(
+            onPressed: (_busy || !_dirty) ? null : _save,
+            child: _busy
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.4, color: Colors.white))
+                : Text(_isEdit ? 'Save changes' : 'Add van'),
+          ),
+        ),
+      ),
     );
+  }
+
+  // Auto-assign saves immediately in edit mode (independent of Save).
+  Future<void> _saveAutoAssign(bool v) async {
+    setState(() => _autoAssign = v);
+    if (!_isEdit) return;
+    try {
+      await ref
+          .read(partnerRepositoryProvider)
+          .updateVan(widget.van!.id, {'acceptAutoAssign': v});
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _autoAssign = !v);
+      AppToast.error(e.message);
+    }
   }
 
   Widget _label(String t) => Padding(

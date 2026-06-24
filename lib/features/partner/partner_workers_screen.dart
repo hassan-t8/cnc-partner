@@ -21,6 +21,9 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
   late Future<List<Worker>> _future;
   String _query = '';
   String _role = 'all';
+  // Optimistic local edits (status / auto-assign) so the UI updates instantly,
+  // before the server round-trip completes.
+  final Map<int, Worker> _overrides = {};
 
   @override
   void initState() {
@@ -28,8 +31,12 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     _future = ref.read(partnerRepositoryProvider).workers();
   }
 
-  void _reload() =>
-      setState(() => _future = ref.read(partnerRepositoryProvider).workers());
+  Worker _apply(Worker w) => _overrides[w.id] ?? w;
+
+  void _reload() => setState(() {
+        _overrides.clear();
+        _future = ref.read(partnerRepositoryProvider).workers();
+      });
 
   Future<void> _openForm([Worker? w]) async {
     final saved = await Navigator.of(context).push<bool>(
@@ -116,20 +123,50 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       ),
     );
     if (picked == null || picked == w.status) return;
+    final prev = _overrides[w.id];
+    // Optimistic: reflect immediately.
+    setState(() => _overrides[w.id] = w.copyWith(status: picked));
     try {
       await ref
           .read(partnerRepositoryProvider)
           .updateWorker(w.id, {'status': picked});
       AppToast.success('Status updated');
-      _reload();
     } on ApiException catch (e) {
+      setState(() {
+        if (prev != null) {
+          _overrides[w.id] = prev;
+        } else {
+          _overrides.remove(w.id);
+        }
+      });
+      AppToast.error(e.message);
+    }
+  }
+
+  Future<void> _toggleAutoAssign(Worker w, bool value) async {
+    final prev = _overrides[w.id];
+    // Optimistic: flip the switch right away.
+    setState(() => _overrides[w.id] = w.copyWith(acceptAutoAssign: value));
+    try {
+      await ref
+          .read(partnerRepositoryProvider)
+          .updateWorker(w.id, {'acceptAutoAssign': value});
+      AppToast.success(value ? 'Auto-assign on' : 'Auto-assign off');
+    } on ApiException catch (e) {
+      setState(() {
+        if (prev != null) {
+          _overrides[w.id] = prev;
+        } else {
+          _overrides.remove(w.id);
+        }
+      });
       AppToast.error(e.message);
     }
   }
 
   List<Worker> _filter(List<Worker> all) {
     final q = _query.toLowerCase();
-    return all.where((w) {
+    return all.map(_apply).where((w) {
       if (_role != 'all' && !w.roles.contains(_role)) return false;
       if (q.isEmpty) return true;
       return [w.name, w.code, w.phone, w.email]
@@ -223,140 +260,230 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
 
   Widget _card(Worker w) {
     final isDriver = w.roles.contains('driver');
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: () => _openForm(w),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: AppColors.brand50,
-                    child: Text(
-                      (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
-                      style: const TextStyle(
-                          color: AppColors.brand700,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 17),
+    final roleLabel = w.roles.contains('driver') && w.roles.contains('crew')
+        ? 'Crew · Driver'
+        : (isDriver ? 'Driver' : 'Crew');
+    // Subtle fade + rise entrance for a modern feel.
+    return TweenAnimationBuilder<double>(
+      key: ValueKey(w.id),
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutCubic,
+      tween: Tween(begin: 0, end: 1),
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(offset: Offset(0, (1 - t) * 14), child: child),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.border),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.brand700.withValues(alpha: 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openForm(w),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Header: avatar · name + role · status ───────────
+                Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [AppColors.brand600, AppColors.brand700],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.brand600.withValues(alpha: 0.30),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 20),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
+                    const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Text(w.name.isEmpty ? 'Worker' : w.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 16)),
+                        const SizedBox(height: 2),
                         Row(
                           children: [
-                            Expanded(
-                              child: Text(w.name.isEmpty ? 'Worker' : w.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 15)),
-                            ),
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              onTap: () => _changeStatus(w),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  StatusBadge(w.displayStatus, worker: true),
-                                  Icon(Icons.expand_more,
-                                      size: 15, color: AppColors.textFaint),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            _pill(
+                            Icon(
                                 isDriver
                                     ? Icons.directions_car_filled
                                     : Icons.cleaning_services,
-                                isDriver ? 'Driver' : 'Crew'),
-                            if (w.code.isNotEmpty)
-                              _pill(Icons.badge_outlined, w.code),
-                            if (w.ratingCount > 0)
-                              _pill(Icons.star_rounded,
-                                  '${w.ratingAvg.toStringAsFixed(1)} (${w.ratingCount})',
-                                  color: AppColors.star),
+                                size: 13,
+                                color: AppColors.textFaint),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                  w.code.isEmpty
+                                      ? roleLabel
+                                      : '$roleLabel · ${w.code}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      color: AppColors.textMuted,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                            if (w.ratingCount > 0) ...[
+                              const SizedBox(width: 8),
+                              Icon(Icons.star_rounded,
+                                  size: 14, color: AppColors.star),
+                              const SizedBox(width: 2),
+                              Text(w.ratingAvg.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700)),
+                            ],
                           ],
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => _changeStatus(w),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        StatusBadge(w.displayStatus, worker: true),
+                        Icon(Icons.expand_more,
+                            size: 16, color: AppColors.textFaint),
+                      ],
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Divider(height: 1, color: AppColors.border),
-              const SizedBox(height: 6),
+              const SizedBox(height: 12),
+              // ── Info block: phone · address · auto-assign ─────────
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.bg,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    _infoRow(Icons.phone_outlined,
+                        w.phone.isEmpty ? 'No phone' : w.phone),
+                    if (w.email.isNotEmpty)
+                      _infoRow(Icons.mail_outline_rounded, w.email),
+                    if (w.homeAddress.isNotEmpty)
+                      _infoRow(Icons.place_outlined, w.homeAddress),
+                    Divider(height: 12, color: AppColors.border),
+                    Row(
+                      children: [
+                        Icon(Icons.bolt_outlined,
+                            size: 16, color: AppColors.brand600),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text('Auto-assign new bookings',
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600)),
+                        ),
+                        SizedBox(
+                          height: 28,
+                          child: Switch(
+                            value: w.acceptAutoAssign,
+                            activeThumbColor: AppColors.brand600,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            onChanged: (v) => _toggleAutoAssign(w, v),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // ── Actions ───────────────────────────────────────────
               Row(
                 children: [
-                  Icon(Icons.phone_outlined,
-                      size: 14, color: AppColors.textFaint),
-                  const SizedBox(width: 6),
                   Expanded(
-                    child: Text(w.phone.isEmpty ? 'No phone' : w.phone,
-                        style: TextStyle(
-                            color: AppColors.textMuted, fontSize: 12.5)),
-                  ),
-                  _miniAction(Icons.key_outlined, 'Account',
-                      () => _manageAccount(w)),
-                  _miniAction(Icons.edit_outlined, 'Edit', () => _openForm(w)),
-                  _miniAction(Icons.delete_outline, 'Delete', () => _delete(w),
-                      danger: true),
+                      child: _actionBtn(Icons.key_outlined, 'Account',
+                          () => _manageAccount(w))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _actionBtn(
+                          Icons.edit_outlined, 'Edit', () => _openForm(w))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: _actionBtn(Icons.delete_outline, 'Delete',
+                          () => _delete(w),
+                          danger: true)),
                 ],
               ),
             ],
           ),
         ),
       ),
+      ),
     );
   }
 
-  Widget _pill(IconData icon, String label, {Color? color}) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: AppColors.bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.border),
-        ),
+  Widget _infoRow(IconData icon, String text) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 12, color: color ?? AppColors.textMuted),
-            const SizedBox(width: 4),
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w600)),
+            Icon(icon, size: 15, color: AppColors.textFaint),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            ),
           ],
         ),
       );
 
-  Widget _miniAction(IconData icon, String tip, VoidCallback onTap,
+  Widget _actionBtn(IconData icon, String label, VoidCallback onTap,
           {bool danger = false}) =>
-      IconButton(
+      OutlinedButton.icon(
         onPressed: onTap,
-        visualDensity: VisualDensity.compact,
-        tooltip: tip,
-        icon: Icon(icon,
-            size: 18, color: danger ? AppColors.rose : AppColors.textMuted),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: danger ? AppColors.rose : AppColors.textMuted,
+          side: BorderSide(color: AppColors.border),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10)),
+        ),
+        icon: Icon(icon, size: 16),
+        label: Text(label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
       );
 }
 
