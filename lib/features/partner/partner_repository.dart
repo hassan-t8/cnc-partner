@@ -31,9 +31,17 @@ class PartnerRepository {
   Future<void> completeBooking(int id) =>
       _api.post('/booking/$id/partner-complete');
 
-  /// Release an accepted booking back to dispatch (incurs a penalty).
-  Future<void> unsignBooking(int id) =>
-      _api.post('/booking/$id/partner-unsign');
+  /// Release an accepted booking back to dispatch. Canonical self-unassign
+  /// flow — captures a reason + idempotency key and returns the applied
+  /// penalty ({pct, amount, ...}).
+  Future<Map<String, dynamic>> partnerUnassign(int id,
+      {String? reason, required String clientRequestId}) async {
+    final res = await _api.post('/booking/$id/partner-unassign', body: {
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      'clientRequestId': clientRequestId,
+    });
+    return res.data is Map ? Map<String, dynamic>.from(res.data) : {};
+  }
 
   /// Mark cash as collected at the door (required before completing a
   /// cash-payment booking).

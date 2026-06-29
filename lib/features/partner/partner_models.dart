@@ -232,6 +232,9 @@ class Partner {
   final List<int> serviceZoneIds;
   final List<BankAccount> bankDetails;
   final String uploadFile; // image filename or URL
+  // Self-unassign penalty as a PERCENT of partnerCost. null = legacy (no
+  // penalty), 0 = explicitly waived, > 0 = active penalty config.
+  final double? unassignPenaltyPct;
 
   const Partner({
     required this.id,
@@ -260,6 +263,7 @@ class Partner {
     this.serviceZoneIds = const [],
     this.bankDetails = const [],
     this.uploadFile = '',
+    this.unassignPenaltyPct,
   });
 
   factory Partner.fromJson(Map<String, dynamic> j) {
@@ -316,6 +320,9 @@ class Partner {
       serviceZoneIds: zones,
       bankDetails: banks,
       uploadFile: _s(j['uploadFile']),
+      unassignPenaltyPct: j['unassignPenaltyPct'] == null
+          ? null
+          : _d(j['unassignPenaltyPct']),
     );
   }
 }
@@ -348,6 +355,8 @@ class Worker {
   final bool pendingActivation;
   final bool acceptAutoAssign;
   final String homeAddress;
+  final double? homeLat;
+  final double? homeLng;
   final int? primaryZoneId;
 
   const Worker({
@@ -365,6 +374,8 @@ class Worker {
     this.pendingActivation = false,
     this.acceptAutoAssign = true,
     this.homeAddress = '',
+    this.homeLat,
+    this.homeLng,
     this.primaryZoneId,
   });
 
@@ -425,6 +436,8 @@ class Worker {
           ? true
           : _b(j['acceptAutoAssign']),
       homeAddress: _s(j['homeAddress']),
+      homeLat: j['homeLat'] == null ? null : _d(j['homeLat']),
+      homeLng: j['homeLng'] == null ? null : _d(j['homeLng']),
       primaryZoneId: _i(j['primaryZoneId']),
     );
   }

@@ -7,6 +7,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/location_picker_screen.dart';
 import '../../widgets/searchable_picker.dart';
 import 'availability_editor.dart';
 import 'partner_models.dart';
@@ -29,6 +30,8 @@ class _VanFormState extends ConsumerState<VanForm> {
   String _status = 'active';
   int? _zoneId;
   String _emirate = ''; // tracks emirate when no area is picked yet
+  double? _parkingLat;
+  double? _parkingLng;
   int? _driverId;
   List<int> _serviceZoneIds = const [];
   bool _autoAssign = true;
@@ -36,6 +39,7 @@ class _VanFormState extends ConsumerState<VanForm> {
   bool _dirty = false;
   late Future<List<Zone>> _zones;
   late Future<List<Worker>> _drivers;
+  late Future<Set<int>> _takenDrivers; // driver ids on another van
 
   bool get _isEdit => widget.van != null;
 
@@ -52,6 +56,8 @@ class _VanFormState extends ConsumerState<VanForm> {
     _code = TextEditingController(text: v?.code ?? '');
     _seats = TextEditingController(text: v != null ? '${v.seats}' : '');
     _parking = TextEditingController(text: v?.parkingAddress ?? '');
+    _parkingLat = v?.parkingLat;
+    _parkingLng = v?.parkingLng;
     _status = v?.status.isNotEmpty == true ? v!.status : 'active';
     _zoneId = v?.homeZoneId;
     _driverId = v?.driverWorkerId;
@@ -66,6 +72,16 @@ class _VanFormState extends ConsumerState<VanForm> {
         .workers()
         .then((all) => all.where((w) => w.roles.contains('driver')).toList())
         .catchError((_) => <Worker>[]);
+    // Driver ids already attached to ANOTHER van → shown disabled in the picker.
+    _takenDrivers = ref
+        .read(partnerRepositoryProvider)
+        .vans()
+        .then((vans) => {
+              for (final v in vans)
+                if (v.driverWorkerId != null && v.id != widget.van?.id)
+                  v.driverWorkerId!
+            })
+        .catchError((_) => <int>{});
   }
 
   @override
@@ -99,6 +115,8 @@ class _VanFormState extends ConsumerState<VanForm> {
       'acceptAutoAssign': _autoAssign,
       if (_parking.text.trim().isNotEmpty)
         'parkingAddress': _parking.text.trim(),
+      if (_parkingLat != null) 'parkingLat': _parkingLat,
+      if (_parkingLng != null) 'parkingLng': _parkingLng,
       if (partnerId != null) 'partnerId': partnerId,
     };
     try {
@@ -229,8 +247,9 @@ class _VanFormState extends ConsumerState<VanForm> {
                       context: context,
                       title: 'Additional service zones',
                       items: selectable,
-                      labelOf: (z) => z.label,
+                      labelOf: (z) => z.name,
                       keyOf: (z) => z.id,
+                      groupOf: (z) => z.emirate.isEmpty ? 'Other' : z.emirate,
                       selected: sel,
                     );
                     if (picked != null) {
@@ -265,6 +284,8 @@ class _VanFormState extends ConsumerState<VanForm> {
                   value: label,
                   hint: 'No driver',
                   onTap: () async {
+                    final taken = await _takenDrivers;
+                    if (!context.mounted) return;
                     final picked = await showSearchablePicker<Worker>(
                       context: context,
                       title: 'Driver',
@@ -272,6 +293,9 @@ class _VanFormState extends ConsumerState<VanForm> {
                       labelOf: (w) => w.id == -1
                           ? 'No driver'
                           : (w.name.isEmpty ? 'Driver' : w.name),
+                      // Drivers already on another van are disabled.
+                      enabledOf: (w) => w.id == -1 || !taken.contains(w.id),
+                      disabledReasonOf: (w) => 'Already driving another van',
                       selected: _driverId == null ? noDriver : current,
                       equals: (a, b) => a.id == b.id,
                     );
@@ -302,6 +326,34 @@ class _VanFormState extends ConsumerState<VanForm> {
               },
             ),
             const SizedBox(height: 14),
+            _label('Overnight parking'),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: PickerField(
+                value: _parkingLat != null ? 'Pinned on map' : '',
+                hint: 'Pick on map',
+                onTap: () async {
+                  final r = await Navigator.of(context).push<PickedLocation>(
+                    MaterialPageRoute(
+                      builder: (_) => LocationPickerScreen(
+                        title: 'Overnight parking',
+                        initialLat: _parkingLat,
+                        initialLng: _parkingLng,
+                        initialAddress: _parking.text,
+                      ),
+                    ),
+                  );
+                  if (r != null) {
+                    setState(() {
+                      _parkingLat = r.lat;
+                      _parkingLng = r.lng;
+                      _parking.text = r.address;
+                    });
+                    _markDirty();
+                  }
+                },
+              ),
+            ),
             _field('Parking address', _parking),
             _hint('Where the van overnights and starts the morning shift from.'),
             SwitchListTile(

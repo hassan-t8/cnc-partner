@@ -6,6 +6,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/location_picker_screen.dart';
 import '../../widgets/phone_field.dart';
 import '../../widgets/searchable_picker.dart';
 import 'availability_editor.dart';
@@ -33,6 +34,8 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   final Set<int> _workingDays = {}; // 0=Sun..6=Sat (create-only quick set)
   String _startTime = '09:00';
   String _endTime = '18:00';
+  double? _homeLat;
+  double? _homeLng;
   List<int> _serviceZoneIds = const []; // additional zones beyond primary
   List<int> _serviceBasePriceIds = const []; // services (crew)
   int? _assignedVanId; // van (driver)
@@ -64,6 +67,8 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     _status = w?.status.isNotEmpty == true ? w!.status : 'active';
     _autoAssign = w?.acceptAutoAssign ?? true;
     _zoneId = w?.primaryZoneId;
+    _homeLat = w?.homeLat;
+    _homeLng = w?.homeLng;
     final repo = ref.read(partnerRepositoryProvider);
     _zones = repo.zones();
     _vans = repo.vans().catchError((_) => <Van>[]);
@@ -144,6 +149,8 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       'status': _status,
       'acceptAutoAssign': _autoAssign,
       if (_address.text.trim().isNotEmpty) 'homeAddress': _address.text.trim(),
+      if (_homeLat != null) 'homeLat': _homeLat,
+      if (_homeLng != null) 'homeLng': _homeLng,
       if (partnerId != null) 'partnerId': partnerId,
     };
     try {
@@ -340,8 +347,9 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                       context: context,
                       title: 'Additional service zones',
                       items: selectable,
-                      labelOf: (z) => z.label,
+                      labelOf: (z) => z.name,
                       keyOf: (z) => z.id,
+                      groupOf: (z) => z.emirate.isEmpty ? 'Other' : z.emirate,
                       selected: sel,
                     );
                     if (picked != null) {
@@ -377,10 +385,13 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                         context: context,
                         title: 'Services delivered',
                         items: services,
-                        labelOf: (s) => s.categoryName.isEmpty
-                            ? s.name
-                            : '${s.name} · ${s.categoryName}',
+                        labelOf: (s) => s.name,
                         keyOf: (s) => s.basePriceId!,
+                        groupOf: (s) => s.verticalName.isNotEmpty
+                            ? s.verticalName
+                            : (s.categoryName.isEmpty
+                                ? 'Services'
+                                : s.categoryName),
                         selected: sel,
                       );
                       if (picked != null) {
@@ -416,10 +427,17 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                         context: context,
                         title: 'Assigned van',
                         items: options,
-                        labelOf: (v) => v.id == -1
-                            ? 'No van'
-                            : '${v.name} · ${v.plate}'
-                                '${v.driverWorkerId != null && v.driverWorkerId != widget.worker?.id ? ' (taken)' : ''}',
+                        labelOf: (v) =>
+                            v.id == -1 ? 'No van' : '${v.name} · ${v.plate}',
+                        // A van already attached to another driver is shown but
+                        // disabled (unselectable) until that pairing is removed.
+                        enabledOf: (v) =>
+                            v.id == -1 ||
+                            v.driverWorkerId == null ||
+                            v.driverWorkerId == widget.worker?.id,
+                        disabledReasonOf: (v) => v.driverName.isNotEmpty
+                            ? 'Assigned to ${v.driverName}'
+                            : 'Assigned to another driver',
                         selected: _assignedVanId == null
                             ? noVan
                             : (cur.isNotEmpty ? cur.first : null),
@@ -435,9 +453,33 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
               ),
               const SizedBox(height: 14),
             ],
-            _field('Home address', _address),
+            _label('Home pickup location'),
+            PickerField(
+              value: _address.text,
+              hint: 'Pick home location',
+              onTap: () async {
+                final r = await Navigator.of(context).push<PickedLocation>(
+                  MaterialPageRoute(
+                    builder: (_) => LocationPickerScreen(
+                      title: 'Home pickup location',
+                      initialLat: _homeLat,
+                      initialLng: _homeLng,
+                      initialAddress: _address.text,
+                    ),
+                  ),
+                );
+                if (r != null) {
+                  setState(() {
+                    _homeLat = r.lat;
+                    _homeLng = r.lng;
+                    _address.text = r.address;
+                  });
+                  _markDirty();
+                }
+              },
+            ),
             _hint('Exact pickup point for the daily van route. Leave blank to use the primary zone centre as a fallback.'),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _autoAssign,

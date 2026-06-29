@@ -225,8 +225,33 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
       markers: markers,
       polylines: polylines,
       myLocationButtonEnabled: false,
-      onMapCreated: (c) => _map = c,
+      onMapCreated: (c) {
+        _map = c;
+        _fitBounds(stops);
+      },
     );
+  }
+
+  /// Frame the whole route so every stop is visible (web map-fix parity).
+  void _fitBounds(List<RouteStop> stops) {
+    if (stops.length < 2) return;
+    var minLat = stops.first.lat!, maxLat = stops.first.lat!;
+    var minLng = stops.first.lng!, maxLng = stops.first.lng!;
+    for (final s in stops) {
+      if (s.lat == null || s.lng == null) continue;
+      minLat = s.lat! < minLat ? s.lat! : minLat;
+      maxLat = s.lat! > maxLat ? s.lat! : maxLat;
+      minLng = s.lng! < minLng ? s.lng! : minLng;
+      maxLng = s.lng! > maxLng ? s.lng! : maxLng;
+    }
+    final bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+    // Small delay so the map has laid out before the camera move.
+    Future.delayed(const Duration(milliseconds: 350), () {
+      _map?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 56));
+    });
   }
 
   Widget _stopRow(int n, RouteStop s) {

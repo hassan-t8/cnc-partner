@@ -140,6 +140,11 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           .compareTo(a.createdAt ?? DateTime(0)));
 
     final completed = e.bookings.where((b) => b.status == 'completed').length;
+    // Physical cash collected at the door this period — canonical source is the
+    // informational `cash_collected` ledger row (incl-VAT), per web parity.
+    final cashCollected = txns
+        .where((t) => t.type == 'cash_collected' && _inRange(t.createdAt))
+        .fold<double>(0, (s, t) => s + t.amount);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -159,6 +164,11 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                     Icons.hourglass_bottom_outlined)),
           ],
         ),
+        if (cashCollected > 0) ...[
+          const SizedBox(height: 12),
+          _stat('Cash collected (period)',
+              'AED ${cashCollected.toStringAsFixed(2)}', Icons.payments_outlined),
+        ],
         const SizedBox(height: 16),
         _dateFilterBar(),
         const SizedBox(height: 12),
@@ -504,7 +514,12 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
 
   Widget _settledRow(WalletTransaction t, Map<int, PartnerBooking> bMap) {
     final credit = t.isCredit;
-    final color = credit ? AppColors.brand600 : AppColors.rose;
+    // cash_collected is INFORMATIONAL — it doesn't move the wallet balance, so
+    // render it neutral (no +/- credit/debit styling).
+    final info = t.type == 'cash_collected';
+    final color = info
+        ? AppColors.textMuted
+        : (credit ? AppColors.brand600 : AppColors.rose);
     final desc = t.description.isNotEmpty
         ? t.description
         : t.type.replaceAll('_', ' ');
@@ -531,7 +546,11 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
-                credit ? Icons.south_west_rounded : Icons.north_east_rounded,
+                info
+                    ? Icons.info_outline
+                    : (credit
+                        ? Icons.south_west_rounded
+                        : Icons.north_east_rounded),
                 color: color,
                 size: 18),
           ),
@@ -562,7 +581,10 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text('${credit ? '+' : '−'} AED ${t.amount.toStringAsFixed(2)}',
+          Text(
+              info
+                  ? 'AED ${t.amount.toStringAsFixed(2)}'
+                  : '${credit ? '+' : '−'} AED ${t.amount.toStringAsFixed(2)}',
               style: TextStyle(
                   color: color,
                   fontWeight: FontWeight.w800,
@@ -599,13 +621,17 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     if (t.isReversed || t.isReversal || t.type == 'reversal') return 'Reversal';
     switch (t.type) {
       case 'earning':
-        return 'Earning';
+        return 'Settlement'; // central settlement helper (web parity)
       case 'payout':
         return 'Payout';
       case 'adjustment':
         return 'Adjustment';
       case 'commission':
         return 'Commission';
+      case 'cash_commission':
+        return 'Cash commission';
+      case 'cash_collected':
+        return 'Cash collected · info';
       default:
         return t.type.isEmpty
             ? (t.isCredit ? 'Credit' : 'Debit')

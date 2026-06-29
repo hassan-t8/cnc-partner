@@ -750,8 +750,9 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
                 context: context,
                 title: 'Additional service zones',
                 items: selectable,
-                labelOf: (z) => z.label,
+                labelOf: (z) => z.name,
                 keyOf: (z) => z.id,
+                groupOf: (z) => z.emirate.isEmpty ? 'Other' : z.emirate,
                 selected: sel,
               );
               if (picked != null) {
