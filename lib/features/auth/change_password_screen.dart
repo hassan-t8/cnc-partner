@@ -20,6 +20,7 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
   final _pw2 = TextEditingController();
   bool _obscure = true;
   bool _busy = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -35,14 +36,22 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
       _pw.text == _pw2.text;
 
   Future<void> _submit() async {
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       await ref
           .read(authRepositoryProvider)
           .changePassword(_current.text, _pw.text);
+      // The backend keeps the existing session valid, so no re-login is
+      // needed — just confirm and go back.
       AppToast.success('Password changed');
       if (mounted) Navigator.pop(context);
     } on ApiException catch (e) {
+      // Stay on the screen and show the reason inline (a wrong current
+      // password must NOT log the user out).
+      if (mounted) setState(() => _error = e.message);
       AppToast.error(e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -85,6 +94,31 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
               child: Text('Passwords don\'t match',
                   style: TextStyle(color: AppColors.rose, fontSize: 12.5)),
             ),
+          if (_error != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.rose.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.rose.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline,
+                      color: AppColors.rose, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(_error!,
+                        style: const TextStyle(
+                            color: AppColors.rose,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13)),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           SizedBox(
             height: 50,
@@ -107,7 +141,7 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
   Widget _field(String label, TextEditingController c) => TextField(
         controller: c,
         obscureText: _obscure,
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) => setState(() => _error = null),
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: const Icon(Icons.lock_outline),

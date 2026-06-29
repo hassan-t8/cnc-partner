@@ -28,7 +28,9 @@ class _VanFormState extends ConsumerState<VanForm> {
   late final TextEditingController _parking;
   String _status = 'active';
   int? _zoneId;
+  String _emirate = ''; // tracks emirate when no area is picked yet
   int? _driverId;
+  List<int> _serviceZoneIds = const [];
   bool _autoAssign = true;
   bool _busy = false;
   bool _dirty = false;
@@ -53,6 +55,7 @@ class _VanFormState extends ConsumerState<VanForm> {
     _status = v?.status.isNotEmpty == true ? v!.status : 'active';
     _zoneId = v?.homeZoneId;
     _driverId = v?.driverWorkerId;
+    _serviceZoneIds = List<int>.from(v?.serviceZoneIds ?? const []);
     _autoAssign = v?.acceptAutoAssign ?? true;
     for (final c in [_name, _plate, _code, _seats, _parking]) {
       c.addListener(_markDirty);
@@ -90,6 +93,8 @@ class _VanFormState extends ConsumerState<VanForm> {
       'seats': int.tryParse(_seats.text.trim()) ?? 1,
       'homeZoneId': _zoneId,
       'driverWorkerId': _driverId,
+      'serviceZoneIds':
+          _serviceZoneIds.where((z) => z != _zoneId).toList(),
       'status': _status,
       'acceptAutoAssign': _autoAssign,
       if (_parking.text.trim().isNotEmpty)
@@ -135,36 +140,109 @@ class _VanFormState extends ConsumerState<VanForm> {
                   return null;
                 }),
             _label('Primary zone *'),
+            // Two-step (Emirate → Area), matching the web's ZonePicker.
             FutureBuilder<List<Zone>>(
               future: _zones,
               builder: (context, snap) {
                 final zones = snap.data ?? const <Zone>[];
-                final ids = zones.map((z) => z.id).toSet();
-                // Keep the selected value valid for the dropdown.
-                if (_zoneId == null || !ids.contains(_zoneId)) {
-                  _zoneId = zones.isNotEmpty ? zones.first.id : null;
+                final emirates = <String>[];
+                for (final z in zones) {
+                  if (z.emirate.isNotEmpty && !emirates.contains(z.emirate)) {
+                    emirates.add(z.emirate);
+                  }
                 }
                 final sel = zones.where((z) => z.id == _zoneId).toList();
+                final curEmirate =
+                    sel.isNotEmpty ? sel.first.emirate : _emirate;
+                final areas =
+                    zones.where((z) => z.emirate == curEmirate).toList();
+                return Row(
+                  children: [
+                    Expanded(
+                      child: PickerField(
+                        value: curEmirate,
+                        hint: 'Emirate',
+                        onTap: () async {
+                          final picked = await showSearchablePicker<String>(
+                            context: context,
+                            title: 'Emirate',
+                            items: emirates,
+                            labelOf: (e) => e,
+                            selected: curEmirate.isEmpty ? null : curEmirate,
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _emirate = picked;
+                              _zoneId = null;
+                            });
+                            _markDirty();
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: PickerField(
+                        value: sel.isNotEmpty ? sel.first.name : '',
+                        hint: '— Select area —',
+                        onTap: () async {
+                          if (areas.isEmpty) return;
+                          final picked = await showSearchablePicker<Zone>(
+                            context: context,
+                            title: 'Area',
+                            items: areas,
+                            labelOf: (z) => z.name,
+                            selected: sel.isNotEmpty ? sel.first : null,
+                            equals: (a, b) => a.id == b.id,
+                          );
+                          if (picked != null) {
+                            setState(() => _zoneId = picked.id);
+                            _markDirty();
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            _hint('Default operating zone — drives dispatch + scheduling.'),
+            const SizedBox(height: 14),
+            _label('Additional service zones'),
+            FutureBuilder<List<Zone>>(
+              future: _zones,
+              builder: (context, snap) {
+                final zones = snap.data ?? const <Zone>[];
+                final selectable =
+                    zones.where((z) => z.id != _zoneId).toList();
+                final sel = zones
+                    .where((z) => _serviceZoneIds.contains(z.id) && z.id != _zoneId)
+                    .toList();
+                final value = sel.isEmpty
+                    ? ''
+                    : sel.map((z) => z.label).join(', ');
                 return PickerField(
-                  value: sel.isNotEmpty ? sel.first.label : '',
-                  hint: 'Select a zone',
+                  value: value,
+                  hint: 'None (primary zone only)',
                   onTap: () async {
-                    final picked = await showSearchablePicker<Zone>(
+                    final picked = await showMultiSearchablePicker<Zone>(
                       context: context,
-                      title: 'Primary zone',
-                      items: zones,
+                      title: 'Additional service zones',
+                      items: selectable,
                       labelOf: (z) => z.label,
-                      selected: sel.isNotEmpty ? sel.first : null,
-                      equals: (a, b) => a.id == b.id,
+                      keyOf: (z) => z.id,
+                      selected: sel,
                     );
                     if (picked != null) {
-                      setState(() => _zoneId = picked.id);
+                      setState(() =>
+                          _serviceZoneIds = picked.map((z) => z.id).toList());
                       _markDirty();
                     }
                   },
                 );
               },
             ),
+            _hint('Extra zones to serve beyond the primary zone. Primary is auto-included and locked here.'),
             const SizedBox(height: 14),
             _label('Driver'),
             FutureBuilder<List<Worker>>(
@@ -205,6 +283,7 @@ class _VanFormState extends ConsumerState<VanForm> {
                 );
               },
             ),
+            _hint('Drivers already attached to another van are shown but not selectable until that pairing is removed.'),
             const SizedBox(height: 14),
             _label('Status'),
             DropdownButtonFormField<String>(
@@ -224,6 +303,7 @@ class _VanFormState extends ConsumerState<VanForm> {
             ),
             const SizedBox(height: 14),
             _field('Parking address', _parking),
+            _hint('Where the van overnights and starts the morning shift from.'),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _autoAssign,
@@ -295,6 +375,12 @@ class _VanFormState extends ConsumerState<VanForm> {
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textMuted)),
+      );
+
+  Widget _hint(String t) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(t,
+            style: TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
       );
 
   Widget _field(String label, TextEditingController ctrl,

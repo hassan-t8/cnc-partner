@@ -39,7 +39,12 @@ class ApiClient {
         handler.next(options);
       },
       onError: (e, handler) {
-        if (e.response?.statusCode == 401) {
+        // A 401 normally means the session expired → sign out. But some
+        // endpoints (e.g. change-password) return 401 to mean "wrong
+        // credential" — those opt out via extra['skipAuthRedirect'] so a
+        // bad current password doesn't silently log the user out.
+        final skip = e.requestOptions.extra['skipAuthRedirect'] == true;
+        if (e.response?.statusCode == 401 && !skip) {
           _onUnauthorized?.call();
         }
         handler.next(e);
@@ -56,11 +61,17 @@ class ApiClient {
           {Map<String, dynamic>? query}) =>
       _wrap(() => _dio.get(path, queryParameters: query));
 
-  Future<Response<dynamic>> post(String path, {dynamic body}) =>
-      _wrap(() => _dio.post(path, data: body));
+  Future<Response<dynamic>> post(String path,
+          {dynamic body, bool skipAuthRedirect = false}) =>
+      _wrap(() => _dio.post(path,
+          data: body,
+          options: Options(extra: {'skipAuthRedirect': skipAuthRedirect})));
 
-  Future<Response<dynamic>> put(String path, {dynamic body}) =>
-      _wrap(() => _dio.put(path, data: body));
+  Future<Response<dynamic>> put(String path,
+          {dynamic body, bool skipAuthRedirect = false}) =>
+      _wrap(() => _dio.put(path,
+          data: body,
+          options: Options(extra: {'skipAuthRedirect': skipAuthRedirect})));
 
   Future<Response<dynamic>> delete(String path, {dynamic body}) =>
       _wrap(() => _dio.delete(path, data: body));

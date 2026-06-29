@@ -1,7 +1,6 @@
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
 
@@ -11,13 +10,19 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../core/profile/profile_image_provider.dart';
+import '../../widgets/image_source_sheet.dart';
+import '../../widgets/profile_avatar.dart';
 import '../../widgets/phone_field.dart';
+import '../../widgets/searchable_picker.dart';
 import '../../widgets/status_badge.dart';
+import 'availability_editor.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
 class PartnerProfileScreen extends ConsumerStatefulWidget {
-  const PartnerProfileScreen({super.key});
+  final bool startInEdit;
+  const PartnerProfileScreen({super.key, this.startInEdit = false});
   @override
   ConsumerState<PartnerProfileScreen> createState() =>
       _PartnerProfileScreenState();
@@ -25,17 +30,15 @@ class PartnerProfileScreen extends ConsumerStatefulWidget {
 
 class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
   late Future<_Data> _future;
-  bool _editing = false;
+  late bool _editing = widget.startInEdit;
   bool _busy = false;
+  bool _uploadingPhoto = false;
 
   final _name = TextEditingController();
   final _contact = TextEditingController();
   final _website = TextEditingController();
-  final _bankName = TextEditingController();
-  final _bankBranch = TextEditingController();
-  final _bankAcc = TextEditingController();
-  final _bankIban = TextEditingController();
-  String _phone = '+971';
+  final List<_BankEntry> _banks = [];
+  List<String> _phones = ['+971'];
   String _status = 'active';
   bool _autoAssign = true;
   int? _zoneId;
@@ -50,10 +53,30 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
     return '${Env.apiUrl}/uploads/$f';
   }
 
-  Future<void> _pickImage() async {
-    final x = await ImagePicker()
-        .pickImage(source: ImageSource.gallery, maxWidth: 1024, imageQuality: 85);
-    if (x != null) setState(() => _pickedImagePath = x.path);
+  /// Open the Camera/Gallery sheet and upload the photo immediately — the
+  /// edit form's Save is not required for the picture. Updates the shared
+  /// avatar provider so the app bar + hub reflect it at once.
+  Future<void> _changePhoto() async {
+    final picked = await pickProfileImage(context);
+    if (picked == null) return;
+    setState(() => _uploadingPhoto = true);
+    try {
+      final repo = ref.read(partnerRepositoryProvider);
+      await repo.updatePartnerWithImage(_partnerId, const {},
+          imagePath: picked.path);
+      final fresh = await repo.getPartner(_partnerId);
+      if (!mounted) return;
+      setState(() {
+        _currentImage = fresh.uploadFile;
+        _pickedImagePath = null;
+      });
+      ref.read(profileImageProvider.notifier).setFromFilename(fresh.uploadFile);
+      AppToast.success('Photo updated');
+    } catch (_) {
+      AppToast.error('Couldn\'t update photo. Try again.');
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
   }
 
   int get _partnerId => ref.read(authControllerProvider).user?.partnerId ?? 0;
@@ -69,24 +92,38 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
     final results = await Future.wait([
       repo.getPartner(_partnerId),
       repo.zones().catchError((_) => <Zone>[]),
+      repo
+          .availabilityRules('partner', _partnerId)
+          .catchError((_) => <AvailabilityRule>[]),
+      repo.myServices().catchError((_) => <MyService>[]),
     ]);
     final p = results[0] as Partner;
     _name.text = p.name;
     _contact.text = p.contactPerson;
     _website.text = p.website;
-    _phone = p.phones.isNotEmpty ? p.phones.first : '+971';
+    _phones = p.phones.isNotEmpty ? List<String>.from(p.phones) : ['+971'];
     _status = p.status == 'not_working' ? 'not_working' : 'active';
     _autoAssign = p.acceptAutoAssign;
     _zoneId = p.primaryZoneId;
     _serviceZoneIds = p.serviceZoneIds;
     _currentImage = p.uploadFile;
     _pickedImagePath = null;
-    final bank = p.bankDetails.isNotEmpty ? p.bankDetails.first : null;
-    _bankName.text = bank?.bankName ?? '';
-    _bankBranch.text = bank?.branchName ?? '';
-    _bankAcc.text = bank?.accountNumber ?? '';
-    _bankIban.text = bank?.ibanNumber ?? '';
-    return _Data(p, results[1] as List<Zone>);
+    // Keep the shared avatar (app bar + hub) in sync with fresh server data.
+    ref.read(profileImageProvider.notifier).setFromFilename(p.uploadFile);
+    for (final e in _banks) {
+      e.dispose();
+    }
+    _banks
+      ..clear()
+      ..addAll(p.bankDetails.isEmpty
+          ? [_BankEntry()]
+          : p.bankDetails.map(_BankEntry.from));
+    return _Data(
+      p,
+      results[1] as List<Zone>,
+      results[2] as List<AvailabilityRule>,
+      results[3] as List<MyService>,
+    );
   }
 
   void _reload() => setState(() {
@@ -96,16 +133,11 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
 
   @override
   void dispose() {
-    for (final c in [
-      _name,
-      _contact,
-      _website,
-      _bankName,
-      _bankBranch,
-      _bankAcc,
-      _bankIban
-    ]) {
+    for (final c in [_name, _contact, _website]) {
       c.dispose();
+    }
+    for (final e in _banks) {
+      e.dispose();
     }
     super.dispose();
   }
@@ -116,12 +148,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
       return;
     }
     setState(() => _busy = true);
-    final bank = BankAccount(
-      bankName: _bankName.text.trim(),
-      branchName: _bankBranch.text.trim(),
-      accountNumber: _bankAcc.text.trim(),
-      ibanNumber: _bankIban.text.trim(),
-    );
+    // Payload mirrors the web's partner-update body exactly so nothing is lost.
     final body = {
       'partnerName': _name.text.trim(),
       'contactPerson': _contact.text.trim(),
@@ -129,11 +156,16 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
       'status': _status,
       'acceptAutoAssign': _autoAssign,
       if (_zoneId != null) 'primaryZoneId': _zoneId,
-      'serviceZoneIds': _serviceZoneIds,
+      'serviceZoneIds':
+          _serviceZoneIds.where((z) => z != _zoneId).toList(),
       'partnerPhones': [
-        if (_phone.trim().length > 4) {'number': _phone.trim()}
+        for (final p in _phones)
+          if (p.trim().length > 4) {'number': p.trim()}
       ],
-      'bankDetails': [if (!bank.isEmpty) bank.toJson()],
+      'bankDetails': [
+        for (final e in _banks)
+          if (!e.isEmpty) e.toJson(),
+      ],
     };
     try {
       final repo = ref.read(partnerRepositoryProvider);
@@ -173,14 +205,52 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
           }
           final p = snap.data!.partner;
           final zones = {for (final z in snap.data!.zones) z.id: z.label};
-          return _editing ? _editView(p, snap.data!.zones) : _readView(p, zones);
+          return _editing
+              ? _editView(p, snap.data!.zones)
+              : _readView(p, zones, snap.data!.rules, snap.data!.services);
         },
       ),
+      bottomNavigationBar: _editing
+          ? SafeArea(
+              minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 50,
+                      child: OutlinedButton(
+                          onPressed: _busy ? null : _reload,
+                          child: const Text('Cancel')),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: SizedBox(
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _busy ? null : _save,
+                        child: _busy
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2.2, color: Colors.white))
+                            : const Text('Save changes'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : null,
     );
   }
 
   // ---------- READ ----------
-  Widget _readView(Partner p, Map<int, String> zones) => ListView(
+  Widget _readView(Partner p, Map<int, String> zones,
+          List<AvailabilityRule> rules, List<MyService> services) =>
+      ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _hero(p),
@@ -206,6 +276,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
                     .map((id) => zones[id] ?? '#$id')
                     .join('\n')),
           ]),
+          _hoursSection(rules),
           _section('Commercial', [
             _kv('Commission',
                 p.commissionPct > 0 ? '${p.commissionPct}%' : '—'),
@@ -219,6 +290,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
             _kv('Has TRN', p.hasTRN ? 'Yes' : 'No'),
             _kv('TRN', p.trn),
           ]),
+          _servicesSection(services),
           if (p.bankDetails.isNotEmpty)
             _section(
                 'Bank details',
@@ -234,62 +306,65 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
       );
 
   Widget _avatar(String name, {bool editable = false}) {
-    ImageProvider? img;
+    final initials = Text((name.isNotEmpty ? name[0] : '?').toUpperCase(),
+        style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.w800, fontSize: 22));
+    Widget avatar;
     if (_pickedImagePath != null) {
-      img = FileImage(File(_pickedImagePath!));
+      avatar = Container(
+        width: 64,
+        height: 64,
+        clipBehavior: Clip.antiAlias,
+        decoration: const BoxDecoration(shape: BoxShape.circle),
+        child: Image.file(File(_pickedImagePath!), fit: BoxFit.cover),
+      );
     } else {
-      final u = imageUrl(_currentImage);
-      if (u != null) img = NetworkImage(u);
+      avatar = ProfileAvatar(
+        url: imageUrl(_currentImage),
+        size: 64,
+        backgroundColor: AppColors.brand600,
+        placeholder: initials,
+      );
     }
-    final avatar = CircleAvatar(
-      radius: 32,
-      backgroundColor: AppColors.brand600,
-      backgroundImage: img,
-      child: img == null
-          ? Text((name.isNotEmpty ? name[0] : '?').toUpperCase(),
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 22))
-          : null,
-    );
     if (!editable) return avatar;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        GestureDetector(
-          onTap: _pickImage,
-          child: Stack(
-            children: [
-              avatar,
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: AppColors.brand600,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.surface, width: 2),
+    // Tapping the avatar opens the Camera/Gallery sheet and uploads
+    // immediately — no Save needed for the photo.
+    return GestureDetector(
+      onTap: _uploadingPhoto ? null : _changePhoto,
+      child: Stack(
+        children: [
+          avatar,
+          if (_uploadingPhoto)
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(
+                    color: Colors.black38, shape: BoxShape.circle),
+                child: const Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.4, color: Colors.white),
                   ),
-                  child: const Icon(Icons.camera_alt,
-                      size: 13, color: Colors.white),
                 ),
               ),
-            ],
+            ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: AppColors.brand600,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.surface, width: 2),
+              ),
+              child:
+                  const Icon(Icons.camera_alt, size: 13, color: Colors.white),
+            ),
           ),
-        ),
-        TextButton.icon(
-          onPressed: _pickImage,
-          style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: const Size(0, 32)),
-          icon: const Icon(Icons.photo_library_outlined, size: 16),
-          label: Text(_pickedImagePath == null && _currentImage.isEmpty
-              ? 'Upload photo'
-              : 'Change photo'),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -400,6 +475,148 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
 
   _KV _kv(String label, String value) => _KV(label, value);
 
+  Widget _sectionHeader(String title) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 20, 2, 8),
+        child: Text(title.toUpperCase(),
+            style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.6,
+                color: AppColors.textMuted)),
+      );
+
+  Widget _card(Widget child) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: child,
+      );
+
+  // ---------- OPERATING HOURS ----------
+  Widget _hoursSection(List<AvailabilityRule> rules) {
+    final active = rules.where((r) => r.isActive).toList();
+    if (active.isEmpty) return const SizedBox.shrink();
+    final activeDays = active.map((r) => r.dayOfWeek).toSet();
+    const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    String fmt(String t) => t.length >= 5 ? t.substring(0, 5) : t;
+    final ranges = active
+        .map((r) => '${fmt(r.startTime)} – ${fmt(r.endTime)}')
+        .toSet()
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader('Operating hours'),
+        _card(Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                for (var i = 0; i < 7; i++) ...[
+                  if (i > 0) const SizedBox(width: 5),
+                  Expanded(
+                    child: _dayPill(labels[i], activeDays.contains(i)),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.schedule, size: 16, color: AppColors.brand600),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(ranges.join(', '),
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+          ],
+        )),
+      ],
+    );
+  }
+
+  Widget _dayPill(String label, bool on) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: on ? AppColors.brand600 : AppColors.bg,
+          borderRadius: BorderRadius.circular(8),
+          border:
+              Border.all(color: on ? AppColors.brand600 : AppColors.border),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: on ? Colors.white : AppColors.textMuted)),
+        ),
+      );
+
+  // ---------- SERVICES I PROVIDE ----------
+  Widget _servicesSection(List<MyService> services) {
+    if (services.isEmpty) return const SizedBox.shrink();
+    final byVertical = <String, List<MyService>>{};
+    for (final s in services) {
+      final key = s.verticalName.isNotEmpty
+          ? s.verticalName
+          : (s.categoryName.isNotEmpty ? s.categoryName : 'Services');
+      byVertical.putIfAbsent(key, () => []).add(s);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader('Services I provide'),
+        _card(Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                'Linked from the catalog — dispatch picks you for matching bookings.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            const SizedBox(height: 12),
+            for (final entry in byVertical.entries) ...[
+              Text(entry.key,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 13)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final s in entry.value) _serviceChip(s.name),
+                ],
+              ),
+              if (entry.key != byVertical.keys.last)
+                const SizedBox(height: 14),
+            ],
+          ],
+        )),
+      ],
+    );
+  }
+
+  Widget _serviceChip(String name) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppColors.brand50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.brand600.withValues(alpha: 0.3)),
+        ),
+        child: Text(name,
+            style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.brand700)),
+      );
+
   // ---------- EDIT ----------
   Widget _editView(Partner p, List<Zone> zones) {
     _zoneId ??= zones.isNotEmpty ? zones.first.id : null;
@@ -411,12 +628,9 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
             children: [
               _avatar(_name.text, editable: true),
               const SizedBox(height: 6),
-              TextButton.icon(
-                onPressed: _pickImage,
-                icon: const Icon(Icons.photo_camera_outlined, size: 16),
-                label: Text(
-                    _pickedImagePath != null ? 'Change photo' : 'Add photo'),
-              ),
+              Text('Tap the photo to change it',
+                  style:
+                      TextStyle(color: AppColors.textMuted, fontSize: 12)),
             ],
           ),
         ),
@@ -427,19 +641,138 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
         _editField(_contact),
         _editLabel('Website'),
         _editField(_website),
-        _editLabel('Phone'),
-        PhoneField(label: '', initial: _phone, onChanged: (v) => _phone = v),
+        _editLabel('Phone numbers'),
+        for (var i = 0; i < _phones.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: PhoneField(
+                    key: ValueKey('phone$i'),
+                    label: '',
+                    initial: _phones[i],
+                    onChanged: (v) => _phones[i] = v,
+                  ),
+                ),
+                if (_phones.length > 1)
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline,
+                        color: AppColors.rose),
+                    onPressed: () => setState(() => _phones.removeAt(i)),
+                  ),
+              ],
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _phones.add('+971')),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add phone number'),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _editLabel('Primary zone *'),
+        // Two-step (Emirate → Area), matching the web's ZonePicker.
+        Builder(builder: (_) {
+          final emirates = <String>[];
+          for (final z in zones) {
+            if (z.emirate.isNotEmpty && !emirates.contains(z.emirate)) {
+              emirates.add(z.emirate);
+            }
+          }
+          final sel = zones.where((z) => z.id == _zoneId).toList();
+          final curEmirate = sel.isNotEmpty ? sel.first.emirate : '';
+          final areas =
+              zones.where((z) => z.emirate == curEmirate).toList();
+          return Row(
+            children: [
+              Expanded(
+                child: PickerField(
+                  value: curEmirate,
+                  hint: 'Emirate',
+                  onTap: () async {
+                    final picked = await showSearchablePicker<String>(
+                      context: context,
+                      title: 'Emirate',
+                      items: emirates,
+                      labelOf: (e) => e,
+                      selected: curEmirate.isEmpty ? null : curEmirate,
+                    );
+                    if (picked != null) {
+                      final first =
+                          zones.where((z) => z.emirate == picked).toList();
+                      if (first.isNotEmpty) {
+                        setState(() => _zoneId = first.first.id);
+                      }
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: PickerField(
+                  value: sel.isNotEmpty ? sel.first.name : '',
+                  hint: 'Area',
+                  onTap: () async {
+                    if (areas.isEmpty) return;
+                    final picked = await showSearchablePicker<Zone>(
+                      context: context,
+                      title: 'Area',
+                      items: areas,
+                      labelOf: (z) => z.name,
+                      selected: sel.isNotEmpty ? sel.first : null,
+                      equals: (a, b) => a.id == b.id,
+                    );
+                    if (picked != null) setState(() => _zoneId = picked.id);
+                  },
+                ),
+              ),
+            ],
+          );
+        }),
+        const SizedBox(height: 4),
+        Text('Default operating zone — drives dispatch + scheduling.',
+            style: TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
         const SizedBox(height: 14),
-        _editLabel('Primary zone'),
-        DropdownButtonFormField<int>(
-          initialValue: _zoneId,
-          isExpanded: true,
-          items: zones
-              .map((z) => DropdownMenuItem(
-                  value: z.id,
-                  child: Text(z.label, overflow: TextOverflow.ellipsis)))
-              .toList(),
-          onChanged: (v) => setState(() => _zoneId = v),
+        _editLabel('Additional service zones'),
+        Builder(builder: (_) {
+          final selectable = zones.where((z) => z.id != _zoneId).toList();
+          final sel = zones
+              .where((z) => _serviceZoneIds.contains(z.id) && z.id != _zoneId)
+              .toList();
+          return PickerField(
+            value: sel.isEmpty ? '' : sel.map((z) => z.label).join(', '),
+            hint: 'None (primary zone only)',
+            onTap: () async {
+              final picked = await showMultiSearchablePicker<Zone>(
+                context: context,
+                title: 'Additional service zones',
+                items: selectable,
+                labelOf: (z) => z.label,
+                keyOf: (z) => z.id,
+                selected: sel,
+              );
+              if (picked != null) {
+                setState(() =>
+                    _serviceZoneIds = picked.map((z) => z.id).toList());
+              }
+            },
+          );
+        }),
+        const SizedBox(height: 14),
+        _editLabel('Operating hours'),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => AvailabilityEditor(
+                  ownerType: 'partner',
+                  ownerId: _partnerId,
+                  title: 'Operating hours'))),
+          icon: const Icon(Icons.schedule, size: 18),
+          label: const Text('Edit working days & hours'),
+          style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(46)),
         ),
         const SizedBox(height: 14),
         _editLabel('Status'),
@@ -465,36 +798,49 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
                   letterSpacing: 0.6,
                   color: AppColors.textMuted)),
         ),
-        _editField(_bankName, hint: 'Bank name'),
-        _editField(_bankBranch, hint: 'Branch'),
-        _editField(_bankAcc, hint: 'Account number'),
-        _editField(_bankIban, hint: 'IBAN'),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                  onPressed: _busy ? null : _reload,
-                  child: const Text('Cancel')),
+        for (var i = 0; i < _banks.length; i++)
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 2,
-              child: SizedBox(
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _busy ? null : _save,
-                  child: _busy
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.2, color: Colors.white))
-                      : const Text('Save changes'),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Text('Bank #${i + 1}',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                            color: AppColors.textMuted)),
+                    const Spacer(),
+                    if (_banks.length > 1)
+                      InkWell(
+                        onTap: () => setState(() {
+                          _banks.removeAt(i).dispose();
+                        }),
+                        child: const Icon(Icons.remove_circle_outline,
+                            color: AppColors.rose, size: 20),
+                      ),
+                  ],
                 ),
-              ),
+                _editField(_banks[i].name, hint: 'Bank name'),
+                _editField(_banks[i].branch, hint: 'Branch'),
+                _editField(_banks[i].account, hint: 'Account number'),
+                _editField(_banks[i].iban, hint: 'IBAN'),
+              ],
             ),
-          ],
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _banks.add(_BankEntry())),
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('Add bank account'),
+          ),
         ),
         const SizedBox(height: 8),
         Center(
@@ -578,5 +924,48 @@ class _KV extends StatelessWidget {
 class _Data {
   final Partner partner;
   final List<Zone> zones;
-  _Data(this.partner, this.zones);
+  final List<AvailabilityRule> rules;
+  final List<MyService> services;
+  _Data(this.partner, this.zones, this.rules, this.services);
+}
+
+/// One editable bank-account row (its own controllers) so the partner can
+/// keep several accounts — sent as the `bankDetails` array, like the web.
+class _BankEntry {
+  final TextEditingController name;
+  final TextEditingController branch;
+  final TextEditingController account;
+  final TextEditingController iban;
+
+  _BankEntry({String? name, String? branch, String? account, String? iban})
+      : name = TextEditingController(text: name ?? ''),
+        branch = TextEditingController(text: branch ?? ''),
+        account = TextEditingController(text: account ?? ''),
+        iban = TextEditingController(text: iban ?? '');
+
+  factory _BankEntry.from(BankAccount b) => _BankEntry(
+        name: b.bankName,
+        branch: b.branchName,
+        account: b.accountNumber,
+        iban: b.ibanNumber,
+      );
+
+  bool get isEmpty =>
+      name.text.trim().isEmpty &&
+      account.text.trim().isEmpty &&
+      iban.text.trim().isEmpty;
+
+  Map<String, dynamic> toJson() => {
+        'bankName': name.text.trim(),
+        'branchName': branch.text.trim(),
+        'accountNumber': account.text.trim(),
+        'ibanNumber': iban.text.trim(),
+      };
+
+  void dispose() {
+    name.dispose();
+    branch.dispose();
+    account.dispose();
+    iban.dispose();
+  }
 }

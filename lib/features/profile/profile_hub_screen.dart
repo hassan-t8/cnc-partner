@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/profile/profile_image_provider.dart';
 import '../../core/theme/app_colors.dart';
+import '../../widgets/app_toast.dart';
+import '../../widgets/image_source_sheet.dart';
+import '../../widgets/profile_avatar.dart';
+import '../partner/partner_repository.dart';
 import '../auth/change_password_screen.dart';
 import '../legal/delete_account_screen.dart';
 import '../legal/legal_screen.dart';
@@ -35,28 +40,70 @@ class ProfileHubScreen extends ConsumerStatefulWidget {
 
 class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
   Map<String, dynamic>? _worker;
+  bool _uploadingPhoto = false;
 
   @override
   void initState() {
     super.initState();
+    _seedPhoto();
     final u = ref.read(authControllerProvider).user;
     if (u != null && !u.isPartner) {
       ref.read(workerRepositoryProvider).myProfile().then((p) {
         if (!mounted) return;
-        setState(() => _worker = p['worker'] is Map
+        final w = p['worker'] is Map
             ? Map<String, dynamic>.from(p['worker'])
-            : null);
+            : null;
+        setState(() => _worker = w);
+        // Seed the shared avatar from the worker's photo if present.
+        final img = p['profileImage'] ?? w?['profileImage'] ?? w?['uploadFile'];
+        if (img != null) {
+          ref.read(profileImageProvider.notifier).setFromFilename('$img');
+        }
       }).catchError((_) {});
+    }
+  }
+
+  /// Pull the current photo fresh from the backend so the avatar reflects the
+  /// latest server state whenever the Profile tab is shown.
+  Future<void> _seedPhoto() async {
+    final u = ref.read(authControllerProvider).user;
+    if (u == null || !u.isPartner || u.partnerId == null) return;
+    try {
+      final p = await ref.read(partnerRepositoryProvider).getPartner(u.partnerId!);
+      if (mounted) {
+        ref.read(profileImageProvider.notifier).setFromFilename(p.uploadFile);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _changePhoto() async {
+    final u = ref.read(authControllerProvider).user;
+    if (u == null || !u.isPartner || u.partnerId == null) return;
+    final picked = await pickProfileImage(context);
+    if (picked == null) return;
+    setState(() => _uploadingPhoto = true);
+    try {
+      final repo = ref.read(partnerRepositoryProvider);
+      // Image-only multipart update (backend updates just uploadFile).
+      await repo.updatePartnerWithImage(u.partnerId!, const {},
+          imagePath: picked.path);
+      final fresh = await repo.getPartner(u.partnerId!);
+      ref.read(profileImageProvider.notifier).setFromFilename(fresh.uploadFile);
+      AppToast.success('Photo updated');
+    } catch (_) {
+      AppToast.error('Couldn\'t update photo. Try again.');
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
     }
   }
 
   void _push(Widget s) =>
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => s));
 
-  void _openMyProfile() {
+  void _openMyProfile({bool edit = false}) {
     final isPartner = ref.read(authControllerProvider).user?.isPartner ?? false;
     _push(isPartner
-        ? const PartnerProfileScreen()
+        ? PartnerProfileScreen(startInEdit: edit)
         : const WorkerProfileScreen());
   }
 
@@ -128,10 +175,11 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
           screen: const DeleteAccountScreen()),
     ];
 
+    final photo = ref.watch(profileImageProvider);
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          SliverToBoxAdapter(child: _header(user)),
+          SliverToBoxAdapter(child: _header(user, photo)),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
@@ -181,7 +229,7 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
     );
   }
 
-  Widget _header(dynamic user) => GestureDetector(
+  Widget _header(dynamic user, String? photo) => GestureDetector(
         onTap: _openMyProfile,
         child: Container(
         width: double.infinity,
@@ -196,26 +244,52 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
         ),
         child: Row(
           children: [
-            Container(
-              width: 64,
-              height: 64,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
-                shape: BoxShape.circle,
-                border:
-                    Border.all(color: Colors.white.withValues(alpha: 0.5)),
-              ),
-              child: Text(
-                (user?.greetingName.isNotEmpty == true
-                        ? user!.greetingName[0]
-                        : '?')
-                    .toUpperCase(),
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900),
-              ),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                ProfileAvatar(
+                  url: photo,
+                  size: 64,
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
+                  placeholder: Text(
+                    (user?.greetingName.isNotEmpty == true
+                            ? user!.greetingName[0]
+                            : '?')
+                        .toUpperCase(),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900),
+                  ),
+                ),
+                if (user?.isPartner == true)
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: GestureDetector(
+                      onTap: _uploadingPhoto ? null : _changePhoto,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: AppColors.brand600, width: 1.5),
+                        ),
+                        child: _uploadingPhoto
+                            ? const SizedBox(
+                                width: 13,
+                                height: 13,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.brand600))
+                            : const Icon(Icons.photo_camera,
+                                size: 13, color: AppColors.brand600),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(width: 16),
             Expanded(

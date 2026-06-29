@@ -63,9 +63,31 @@ class _OtpDialogState extends State<_OtpDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Booking # + customer block — mirrors the web StartOtpModal so the
+          // worker can confirm which job they're starting.
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _infoRow('Booking', widget.bookingRef),
+                if (widget.customerName != null &&
+                    widget.customerName!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _infoRow('Customer', widget.customerName!),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           Text(
-            'Ask ${widget.customerName ?? 'the customer'} for the 6-digit code '
-            'for ${widget.bookingRef}.',
+            'Ask the customer for the 6-digit start code shown in their app.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 13),
           ),
           const SizedBox(height: 16),
@@ -116,4 +138,20 @@ class _OtpDialogState extends State<_OtpDialog> {
       ],
     );
   }
+
+  Widget _infoRow(String label, String value) => Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(label,
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12.5)),
+          ),
+          Expanded(
+            child: Text(value,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 13.5)),
+          ),
+        ],
+      );
 }

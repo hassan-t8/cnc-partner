@@ -6,6 +6,7 @@ import '../../core/auth/jwt_user.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../driver/driver_route_screen.dart';
+import '../driver/driver_schedule_screen.dart';
 import '../partner/partner_bookings_screen.dart';
 import '../partner/partner_dashboard_screen.dart';
 import '../partner/partner_requests_screen.dart';
@@ -42,6 +43,8 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     if (user.isDriver) {
       dests.add(
           const _Dest('Route', Icons.map_rounded, DriverRouteScreen()));
+      dests.add(const _Dest(
+          'Schedule', Icons.calendar_month_rounded, DriverScheduleScreen()));
     }
     if (user.isCrew || !user.isDriver) {
       dests.add(const _Dest('Jobs', Icons.checklist_rounded, CrewJobsScreen()));
@@ -89,8 +92,11 @@ class _RoleShellState extends ConsumerState<RoleShell> {
           ),
           child: NavigationBar(
             selectedIndex: index,
-            onDestinationSelected: (i) =>
-                ref.read(shellIndexProvider.notifier).state = i,
+            onDestinationSelected: (i) {
+              ref.read(shellIndexProvider.notifier).state = i;
+              // Signal the kept-alive tab screens to refetch fresh data.
+              ref.read(tabRefreshProvider.notifier).state++;
+            },
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             elevation: 0,

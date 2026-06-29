@@ -55,6 +55,7 @@ class ServiceRequest {
 class MyService {
   final int id; // PartnerService id (used to unlink legacy whole-service rows)
   final int? catalogServiceId;
+  final int? basePriceId; // links a worker/van to this service row
   final String name;
   final String? heroImage;
   final String shortDescription;
@@ -64,6 +65,7 @@ class MyService {
   const MyService({
     required this.id,
     this.catalogServiceId,
+    this.basePriceId,
     this.name = '',
     this.heroImage,
     this.shortDescription = '',
@@ -85,6 +87,7 @@ class MyService {
     return MyService(
       id: _i(j['id']) ?? 0,
       catalogServiceId: _i(j['catalogServiceId'] ?? c['id']),
+      basePriceId: _i(j['basePriceId']),
       name: _s(c['name'] ?? j['name']),
       heroImage: (c['heroImage'])?.toString(),
       shortDescription: _s(c['shortDescription']),
@@ -441,6 +444,7 @@ class Van {
   final int? homeZoneId;
   final bool acceptAutoAssign;
   final int? driverWorkerId;
+  final List<int> serviceZoneIds; // additional zones beyond the primary
 
   const Van({
     required this.id,
@@ -456,6 +460,7 @@ class Van {
     this.homeZoneId,
     this.acceptAutoAssign = true,
     this.driverWorkerId,
+    this.serviceZoneIds = const [],
   });
 
   Van copyWith({String? status, bool? acceptAutoAssign}) => Van(
@@ -472,10 +477,18 @@ class Van {
         homeZoneId: homeZoneId,
         acceptAutoAssign: acceptAutoAssign ?? this.acceptAutoAssign,
         driverWorkerId: driverWorkerId,
+        serviceZoneIds: serviceZoneIds,
       );
 
   factory Van.fromJson(Map<String, dynamic> j) {
     final drv = j['driver'] is Map ? Map<String, dynamic>.from(j['driver']) : const {};
+    final szRaw = j['serviceZoneIds'] ?? j['serviceZones'];
+    final serviceZones = szRaw is List
+        ? szRaw
+            .map((e) => e is Map ? _i(e['zoneId'] ?? e['id']) : _i(e))
+            .whereType<int>()
+            .toList()
+        : <int>[];
     return Van(
       id: _i(j['id']) ?? 0,
       name: _s(j['name']),
@@ -491,6 +504,7 @@ class Van {
       acceptAutoAssign:
           j['acceptAutoAssign'] == null ? true : _b(j['acceptAutoAssign']),
       driverWorkerId: _i(j['driverWorkerId'] ?? drv['id']),
+      serviceZoneIds: serviceZones,
     );
   }
 }
@@ -533,7 +547,14 @@ class Offer {
       customerName: _s(cust['name'] ?? j['customerName']),
       customerPhone: (cust['phone'])?.toString(),
       address: _s(b['address'] ?? j['address']),
-      earnings: _d(j['earnings'] ?? j['partnerCost'] ?? b['partnerCost']),
+      // Partner take-home: the web reads booking.partnerEarnings (preferred),
+      // falling back to cncChargesExclVat on older deploys.
+      earnings: _d(b['partnerEarnings'] ??
+          b['cncChargesExclVat'] ??
+          j['partnerEarnings'] ??
+          j['earnings'] ??
+          j['partnerCost'] ??
+          b['partnerCost']),
       rank: _i(j['rank']) ?? 1,
       expiresAt: _dt(j['expiresAt'] ?? j['expiry']),
       crewRequired: _i(j['crewRequired'] ?? b['crewRequired']) ?? 0,

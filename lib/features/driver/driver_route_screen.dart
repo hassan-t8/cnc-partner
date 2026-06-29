@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/env.dart';
+import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../worker/today_summary.dart';
@@ -58,6 +59,8 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Refetch when this tab is (re)tapped on the bottom nav.
+    ref.listen(tabRefreshProvider, (_, __) => _reload());
     final isToday = DateUtils.isSameDay(_date, DateTime.now());
     return Scaffold(
       appBar: MainAppBar('My route', actions: [

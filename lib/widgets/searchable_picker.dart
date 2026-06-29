@@ -125,6 +125,145 @@ Future<T?> showSearchablePicker<T>({
   );
 }
 
+/// Multi-select variant: search + checkboxes + a Done button. Returns the
+/// chosen items (or null if dismissed without confirming).
+Future<List<T>?> showMultiSearchablePicker<T>({
+  required BuildContext context,
+  required String title,
+  required List<T> items,
+  required String Function(T) labelOf,
+  required Object Function(T) keyOf,
+  List<T> selected = const [],
+  String hint = 'Search…',
+}) {
+  return showModalBottomSheet<List<T>>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) {
+      String query = '';
+      final chosen = {for (final s in selected) keyOf(s)};
+      return StatefulBuilder(
+        builder: (ctx, setS) {
+          final q = query.trim().toLowerCase();
+          final filtered = q.isEmpty
+              ? items
+              : items
+                  .where((it) => labelOf(it).toLowerCase().contains(q))
+                  .toList();
+          final maxH = MediaQuery.of(ctx).size.height * 0.55;
+          final listH = (items.length * 52.0).clamp(120.0, maxH).toDouble();
+          return SafeArea(
+            child: Padding(
+              padding:
+                  EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(4)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(title,
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w800)),
+                        ),
+                        Text('${chosen.length} selected',
+                            style: TextStyle(
+                                color: AppColors.textMuted, fontSize: 12.5)),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      autofocus: true,
+                      onChanged: (v) => setS(() => query = v),
+                      decoration: InputDecoration(
+                        hintText: hint,
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: listH,
+                    child: filtered.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.search_off_rounded,
+                                    size: 38, color: Colors.grey.shade400),
+                                const SizedBox(height: 8),
+                                Text('No matches',
+                                    style: TextStyle(
+                                        color: AppColors.textMuted,
+                                        fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            itemCount: filtered.length,
+                            itemBuilder: (_, i) {
+                              final it = filtered[i];
+                              final k = keyOf(it);
+                              final sel = chosen.contains(k);
+                              return CheckboxListTile(
+                                dense: true,
+                                value: sel,
+                                activeColor: AppColors.brand600,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                title: Text(labelOf(it),
+                                    overflow: TextOverflow.ellipsis),
+                                onChanged: (_) => setS(() {
+                                  sel ? chosen.remove(k) : chosen.add(k);
+                                }),
+                              );
+                            },
+                          ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(
+                            ctx,
+                            items
+                                .where((it) => chosen.contains(keyOf(it)))
+                                .toList()),
+                        child: const Text('Done'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
 /// A read-only field that looks like a dropdown but opens [onTap]. Use with
 /// [showSearchablePicker].
 class PickerField extends StatelessWidget {

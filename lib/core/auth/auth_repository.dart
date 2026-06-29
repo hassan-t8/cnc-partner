@@ -46,8 +46,11 @@ class AuthRepository {
   /// PUT /api/users/update-password — change password while signed in.
   Future<void> changePassword(String current, String next) async {
     try {
+      // skipAuthRedirect: a 401 here means "wrong current password", not an
+      // expired session — don't let the global handler sign the user out.
       await _api.put('/api/users/update-password',
-          body: {'currentPassword': current, 'newPassword': next});
+          body: {'currentPassword': current, 'newPassword': next},
+          skipAuthRedirect: true);
     } on ApiException catch (e) {
       if (e.status == 401) {
         throw ApiException('Your current password is incorrect.', status: 401);
