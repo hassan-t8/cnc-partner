@@ -1,16 +1,16 @@
 name: Build Android
 
-# When this runs:
-#  - every push to main           -> builds APKs, uploads them as artifacts
-#  - every pull request to main   -> builds APKs (a safety check before merge)
-#  - pushing a tag like v1.0.0    -> also publishes a GitHub Release with the APKs
-#  - the "Run workflow" button     -> manual build on demand
+# Auto-build is DISABLED for now — this workflow only runs when triggered
+# manually from the Actions tab ("Run workflow"). No build on push, pull
+# request, merge, or tag.
+#
+# To re-enable auto-build later, restore the triggers below:
+#   push:
+#     branches: [main]
+#     tags: ['v*']
+#   pull_request:
+#     branches: [main]
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
