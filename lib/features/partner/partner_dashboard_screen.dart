@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
+import '../../core/providers.dart';
 import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
@@ -51,7 +52,13 @@ class _PartnerDashboardScreenState
     );
   }
 
-  void _reload() => setState(() => _future = _load());
+  void _reload() => _refresh();
+
+  Future<void> _refresh() {
+    final f = _load();
+    setState(() => _future = f);
+    return f;
+  }
 
   Future<void> _act(PartnerBooking b, bool accept) async {
     setState(() => _acting = b.id);
@@ -78,11 +85,15 @@ class _PartnerDashboardScreenState
     ref.listen(bookingRealtimeProvider, (_, __) {
       if (mounted) _reload();
     });
+    // Refetch when the bottom-nav tab is (re)tapped.
+    ref.listen(tabRefreshProvider, (_, __) {
+      if (mounted) _reload();
+    });
     final name = ref.watch(authControllerProvider).user?.greetingName ?? '';
     return Scaffold(
       appBar: const MainAppBar('Dashboard'),
       body: RefreshIndicator(
-        onRefresh: () async => _reload(),
+        onRefresh: _refresh,
         child: FutureBuilder<_Dash>(
           future: _future,
           builder: (context, snap) {

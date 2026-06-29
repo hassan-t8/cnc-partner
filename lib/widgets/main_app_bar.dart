@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/profile/profile_image_provider.dart';
 import '../core/providers.dart';
 import '../core/theme/app_colors.dart';
 import 'notification_bell.dart';
+import 'profile_avatar.dart';
 
 /// Shared top bar for the main bottom-nav screens: a circular profile avatar on
 /// the left (opens the Profile tab), a centered title, and the notification bell
@@ -35,18 +37,23 @@ class MainAppBar extends ConsumerWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final canPop = Navigator.of(context).canPop();
+    // Show the back button only on genuinely *pushed* screens. The bottom-nav
+    // tabs live under the shell's first route, so `isFirst` stays true for
+    // them even while a sub-screen is pushed elsewhere — using Navigator.canPop
+    // here wrongly flipped the tabs to a back arrow whenever any sub-screen
+    // (or even a modal sheet) was on the stack.
+    final isRootTab = ModalRoute.of(context)?.isFirst ?? true;
     return AppBar(
       centerTitle: true,
       title: Text(title, overflow: TextOverflow.ellipsis),
       leadingWidth: 60,
-      leading: canPop
-          ? IconButton(
+      leading: isRootTab
+          ? Center(child: _avatar(ref, ref.watch(profileImageProvider)))
+          : IconButton(
               icon: const Icon(Icons.arrow_back_ios_new, size: 20),
               color: AppColors.textPrimary,
               onPressed: () => Navigator.of(context).maybePop(),
-            )
-          : Center(child: _avatar(ref)),
+            ),
       actions: [
         ...actions,
         if (showBell) const NotificationBell(),
@@ -55,21 +62,17 @@ class MainAppBar extends ConsumerWidget implements PreferredSizeWidget {
     );
   }
 
-  Widget _avatar(WidgetRef ref) => InkWell(
+  Widget _avatar(WidgetRef ref, String? imageUrl) => InkWell(
         customBorder: const CircleBorder(),
         // Land on the last (Profile) tab — RoleShell clamps the index.
         onTap: () => ref.read(shellIndexProvider.notifier).state = 1 << 20,
-        child: Container(
-          width: 34,
-          height: 34,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: AppColors.brand50,
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.brand600, width: 1.4),
-          ),
-          // No profile image in the global session — show a person placeholder.
-          child: const Icon(Icons.person, size: 19, color: AppColors.brand600),
+        child: ProfileAvatar(
+          url: imageUrl,
+          size: 34,
+          backgroundColor: AppColors.brand50,
+          border: Border.all(color: AppColors.brand600, width: 1.4),
+          placeholder:
+              const Icon(Icons.person, size: 19, color: AppColors.brand600),
         ),
       );
 }

@@ -12,6 +12,7 @@ DateTime? _dt(dynamic v) {
 class Assignment {
   final int id;
   final int? bookingId;
+  final String bookingCode; // human reference, e.g. "CNC-B-2070"
   final String status;
   final String serviceName;
   final String customerName;
@@ -29,6 +30,7 @@ class Assignment {
   const Assignment({
     required this.id,
     this.bookingId,
+    this.bookingCode = '',
     this.status = '',
     this.serviceName = '',
     this.customerName = '',
@@ -50,6 +52,7 @@ class Assignment {
     return Assignment(
       id: _i(j['id']) ?? 0,
       bookingId: _i(j['bookingId'] ?? b['id']),
+      bookingCode: _s(b['bookingId'] ?? j['bookingCode'] ?? j['bookingRef']),
       status: _s(j['status']),
       serviceName: _s(b['serviceName'] ?? b['service'] ?? j['serviceName']),
       customerName: _s(cust['name'] ?? b['customerName'] ?? j['customerName']),
@@ -68,6 +71,11 @@ class Assignment {
 
   String get fullAddress =>
       [address, area].where((s) => s.trim().isNotEmpty).join(', ');
+
+  /// Human-facing booking reference: the "CNC-B-…" code when present,
+  /// otherwise the numeric id prefixed with '#'.
+  String get bookingRef =>
+      bookingCode.isNotEmpty ? bookingCode : '#${bookingId ?? id}';
 }
 
 /// A partner-side booking row.

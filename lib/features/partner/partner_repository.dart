@@ -85,8 +85,14 @@ class PartnerRepository {
     return pickList(res.data).map(Worker.fromJson).toList();
   }
 
-  Future<void> createWorker(Map<String, dynamic> body) =>
-      _api.post('/workers', body: body);
+  Future<int?> createWorker(Map<String, dynamic> body) async {
+    final res = await _api.post('/workers', body: body);
+    final d = res.data;
+    final w = (d is Map && d['worker'] is Map) ? d['worker'] : d;
+    final id = w is Map ? w['id'] : null;
+    return id is num ? id.toInt() : int.tryParse('$id');
+  }
+
   Future<void> updateWorker(int id, Map<String, dynamic> body) =>
       _api.put('/workers/$id', body: body);
   Future<void> deleteWorker(int id) => _api.delete('/workers/$id');
@@ -106,18 +112,18 @@ class PartnerRepository {
   }
 
   // ----- worker zones / services -----
-  Future<Map<String, dynamic>> workerZones(int id) async {
+  Future<List<Map<String, dynamic>>> workerZones(int id) async {
     final res = await _api.get('/workers/$id/zones');
-    return res.data is Map ? Map<String, dynamic>.from(res.data) : {};
+    return pickList(res.data);
   }
 
   Future<void> syncWorkerZones(int id, List<int> zoneIds, int? primaryZoneId) =>
       _api.post('/workers/$id/zones',
           body: {'zoneIds': zoneIds, 'primaryZoneId': primaryZoneId});
 
-  Future<Map<String, dynamic>> workerServices(int id) async {
+  Future<List<Map<String, dynamic>>> workerServices(int id) async {
     final res = await _api.get('/workers/$id/services');
-    return res.data is Map ? Map<String, dynamic>.from(res.data) : {};
+    return pickList(res.data);
   }
 
   Future<void> syncWorkerServices(int id, List<int> basePriceIds) =>

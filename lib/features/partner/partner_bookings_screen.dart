@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/providers.dart';
 import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
@@ -334,6 +335,10 @@ class _PartnerBookingsScreenState
   Widget build(BuildContext context) {
     // Live updates: reload when any booking status/dispatch event arrives.
     ref.listen(bookingRealtimeProvider, (_, __) {
+      if (mounted) _load();
+    });
+    // Refetch when the bottom-nav tab is (re)tapped.
+    ref.listen(tabRefreshProvider, (_, __) {
       if (mounted) _load();
     });
     return Scaffold(

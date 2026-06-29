@@ -29,12 +29,23 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   String _role = 'crew';
   String _status = 'active';
   int? _zoneId;
+  String _emirate = ''; // tracks emirate when no area is picked yet
+  final Set<int> _workingDays = {}; // 0=Sun..6=Sat (create-only quick set)
+  String _startTime = '09:00';
+  String _endTime = '18:00';
+  List<int> _serviceZoneIds = const []; // additional zones beyond primary
+  List<int> _serviceBasePriceIds = const []; // services (crew)
+  int? _assignedVanId; // van (driver)
   bool _autoAssign = true;
   bool _busy = false;
   bool _dirty = false; // enables Save only after a change/entry
   late Future<List<Zone>> _zones;
+  late Future<List<Van>> _vans;
+  late Future<List<MyService>> _myServices;
 
   bool get _isEdit => widget.worker != null;
+
+  int? _toInt(dynamic v) => v is num ? v.toInt() : int.tryParse('$v');
 
   void _markDirty() {
     if (!_dirty) setState(() => _dirty = true);
@@ -53,7 +64,35 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     _status = w?.status.isNotEmpty == true ? w!.status : 'active';
     _autoAssign = w?.acceptAutoAssign ?? true;
     _zoneId = w?.primaryZoneId;
-    _zones = ref.read(partnerRepositoryProvider).zones();
+    final repo = ref.read(partnerRepositoryProvider);
+    _zones = repo.zones();
+    _vans = repo.vans().catchError((_) => <Van>[]);
+    _myServices = repo.myServices().catchError((_) => <MyService>[]);
+    // On edit, hydrate the additional zones, linked services, and assigned van.
+    if (_isEdit) {
+      repo.workerZones(w!.id).then((rows) {
+        final secondary = rows
+            .where((r) => r['isPrimary'] != true)
+            .map((r) => _toInt(r['zoneId']))
+            .whereType<int>()
+            .where((z) => z != _zoneId)
+            .toList();
+        if (mounted) setState(() => _serviceZoneIds = secondary);
+      }).catchError((_) {});
+      repo.workerServices(w.id).then((rows) {
+        final bps = rows
+            .map((r) => _toInt(r['basePriceId']))
+            .whereType<int>()
+            .toList();
+        if (mounted) setState(() => _serviceBasePriceIds = bps);
+      }).catchError((_) {});
+      _vans.then((vans) {
+        final mine = vans.where((v) => v.driverWorkerId == w.id).toList();
+        if (mine.isNotEmpty && mounted) {
+          setState(() => _assignedVanId = mine.first.id);
+        }
+      }).catchError((_) {});
+    }
     // Track edits to enable Save (listeners added AFTER initial text is set).
     for (final c in [_first, _last, _email, _address]) {
       c.addListener(_markDirty);
@@ -109,10 +148,15 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     };
     try {
       final repo = ref.read(partnerRepositoryProvider);
+      int? workerId;
       if (_isEdit) {
         await repo.updateWorker(widget.worker!.id, body);
+        workerId = widget.worker!.id;
       } else {
-        await repo.createWorker(body);
+        workerId = await repo.createWorker(body);
+      }
+      if (workerId != null) {
+        await _syncRelations(repo, workerId);
       }
       AppToast.success(_isEdit ? 'Worker updated' : 'Worker added');
       if (mounted) Navigator.pop(context, true);
@@ -120,6 +164,50 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       AppToast.error(e.message);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Persist the additional zones, linked services (crew) and van (driver)
+  /// after the worker row itself is saved — these use dedicated endpoints.
+  Future<void> _syncRelations(PartnerRepository repo, int workerId) async {
+    // Zones — always send primary + the additional ones.
+    final zoneIds = <int>{
+      if (_zoneId != null) _zoneId!,
+      ..._serviceZoneIds,
+    }.toList();
+    await repo.syncWorkerZones(workerId, zoneIds, _zoneId);
+
+    if (_role == 'crew') {
+      // Services only apply to crew; drivers don't deliver services.
+      await repo.syncWorkerServices(workerId, _serviceBasePriceIds);
+    } else if (_role == 'driver') {
+      // Re-point van assignment: clear any van this worker used to drive,
+      // then attach the newly chosen one.
+      final vans = await _vans;
+      for (final v in vans) {
+        if (v.driverWorkerId == workerId && v.id != _assignedVanId) {
+          await repo.updateVan(v.id, {'driverWorkerId': null});
+        }
+      }
+      if (_assignedVanId != null) {
+        await repo.updateVan(_assignedVanId!, {'driverWorkerId': workerId});
+      }
+    }
+
+    // Working hours quick-set on create — one availability rule per day.
+    if (!_isEdit && _workingDays.isNotEmpty) {
+      String pad(String t) =>
+          RegExp(r'^\d{2}:\d{2}$').hasMatch(t) ? '$t:00' : t;
+      for (final dow in _workingDays) {
+        await repo.createAvailabilityRule({
+          'ownerType': 'worker',
+          'ownerId': workerId,
+          'dayOfWeek': dow,
+          'startTime': pad(_startTime),
+          'endTime': pad(_endTime),
+          'isActive': true,
+        });
+      }
     }
   }
 
@@ -164,38 +252,191 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
               ],
             ),
             const SizedBox(height: 14),
-            _label('Primary zone'),
+            _label('Primary zone *'),
+            // Two-step (Emirate → Area), matching the web's ZonePicker.
             FutureBuilder<List<Zone>>(
               future: _zones,
               builder: (context, snap) {
                 final zones = snap.data ?? const <Zone>[];
-                final ids = zones.map((z) => z.id).toSet();
-                if (_zoneId == null || !ids.contains(_zoneId)) {
-                  _zoneId = zones.isNotEmpty ? zones.first.id : null;
+                final emirates = <String>[];
+                for (final z in zones) {
+                  if (z.emirate.isNotEmpty && !emirates.contains(z.emirate)) {
+                    emirates.add(z.emirate);
+                  }
                 }
                 final sel = zones.where((z) => z.id == _zoneId).toList();
+                final curEmirate =
+                    sel.isNotEmpty ? sel.first.emirate : _emirate;
+                final areas =
+                    zones.where((z) => z.emirate == curEmirate).toList();
+                return Row(
+                  children: [
+                    Expanded(
+                      child: PickerField(
+                        value: curEmirate,
+                        hint: 'Emirate',
+                        onTap: () async {
+                          final picked = await showSearchablePicker<String>(
+                            context: context,
+                            title: 'Emirate',
+                            items: emirates,
+                            labelOf: (e) => e,
+                            selected: curEmirate.isEmpty ? null : curEmirate,
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _emirate = picked;
+                              _zoneId = null;
+                            });
+                            _markDirty();
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: PickerField(
+                        value: sel.isNotEmpty ? sel.first.name : '',
+                        hint: '— Select area —',
+                        onTap: () async {
+                          if (areas.isEmpty) return;
+                          final picked = await showSearchablePicker<Zone>(
+                            context: context,
+                            title: 'Area',
+                            items: areas,
+                            labelOf: (z) => z.name,
+                            selected: sel.isNotEmpty ? sel.first : null,
+                            equals: (a, b) => a.id == b.id,
+                          );
+                          if (picked != null) {
+                            setState(() => _zoneId = picked.id);
+                            _markDirty();
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            _hint('Default operating zone — drives dispatch + scheduling.'),
+            const SizedBox(height: 14),
+            _label('Additional service zones'),
+            FutureBuilder<List<Zone>>(
+              future: _zones,
+              builder: (context, snap) {
+                final zones = snap.data ?? const <Zone>[];
+                final selectable =
+                    zones.where((z) => z.id != _zoneId).toList();
+                final sel = zones
+                    .where((z) =>
+                        _serviceZoneIds.contains(z.id) && z.id != _zoneId)
+                    .toList();
                 return PickerField(
-                  value: sel.isNotEmpty ? sel.first.label : '',
-                  hint: 'Select a zone',
+                  value: sel.isEmpty ? '' : sel.map((z) => z.label).join(', '),
+                  hint: 'None (primary zone only)',
                   onTap: () async {
-                    final picked = await showSearchablePicker<Zone>(
+                    final picked = await showMultiSearchablePicker<Zone>(
                       context: context,
-                      title: 'Primary zone',
-                      items: zones,
+                      title: 'Additional service zones',
+                      items: selectable,
                       labelOf: (z) => z.label,
-                      selected: sel.isNotEmpty ? sel.first : null,
-                      equals: (a, b) => a.id == b.id,
+                      keyOf: (z) => z.id,
+                      selected: sel,
                     );
                     if (picked != null) {
-                      setState(() => _zoneId = picked.id);
+                      setState(() =>
+                          _serviceZoneIds = picked.map((z) => z.id).toList());
                       _markDirty();
                     }
                   },
                 );
               },
             ),
+            _hint('Extra zones to serve beyond the primary zone. Primary is auto-included and locked here.'),
             const SizedBox(height: 14),
+            if (_role == 'crew') ...[
+              _label('Services delivered'),
+              FutureBuilder<List<MyService>>(
+                future: _myServices,
+                builder: (context, snap) {
+                  final services = (snap.data ?? const <MyService>[])
+                      .where((s) => s.basePriceId != null)
+                      .toList();
+                  final sel = services
+                      .where((s) => _serviceBasePriceIds.contains(s.basePriceId))
+                      .toList();
+                  return PickerField(
+                    value: sel.isEmpty
+                        ? ''
+                        : sel.map((s) => s.name).join(', '),
+                    hint: 'None linked',
+                    onTap: () async {
+                      final picked =
+                          await showMultiSearchablePicker<MyService>(
+                        context: context,
+                        title: 'Services delivered',
+                        items: services,
+                        labelOf: (s) => s.categoryName.isEmpty
+                            ? s.name
+                            : '${s.name} · ${s.categoryName}',
+                        keyOf: (s) => s.basePriceId!,
+                        selected: sel,
+                      );
+                      if (picked != null) {
+                        setState(() => _serviceBasePriceIds =
+                            picked.map((s) => s.basePriceId!).toList());
+                        _markDirty();
+                      }
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+            ],
+            if (_role == 'driver') ...[
+              _label('Assigned van'),
+              FutureBuilder<List<Van>>(
+                future: _vans,
+                builder: (context, snap) {
+                  final vans = snap.data ?? const <Van>[];
+                  const noVan = Van(id: -1);
+                  final options = <Van>[noVan, ...vans];
+                  final cur = vans.where((v) => v.id == _assignedVanId);
+                  final label = _assignedVanId == null
+                      ? 'No van'
+                      : (cur.isNotEmpty
+                          ? '${cur.first.name} · ${cur.first.plate}'
+                          : 'Current van');
+                  return PickerField(
+                    value: label,
+                    hint: 'No van',
+                    onTap: () async {
+                      final picked = await showSearchablePicker<Van>(
+                        context: context,
+                        title: 'Assigned van',
+                        items: options,
+                        labelOf: (v) => v.id == -1
+                            ? 'No van'
+                            : '${v.name} · ${v.plate}'
+                                '${v.driverWorkerId != null && v.driverWorkerId != widget.worker?.id ? ' (taken)' : ''}',
+                        selected: _assignedVanId == null
+                            ? noVan
+                            : (cur.isNotEmpty ? cur.first : null),
+                        equals: (a, b) => a.id == b.id,
+                      );
+                      if (picked == null) return;
+                      setState(() =>
+                          _assignedVanId = picked.id == -1 ? null : picked.id);
+                      _markDirty();
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+            ],
             _field('Home address', _address),
+            _hint('Exact pickup point for the daily van route. Leave blank to use the primary zone centre as a fallback.'),
             const SizedBox(height: 4),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -210,6 +451,25 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
               onChanged: _saveAutoAssign,
             ),
+            // Working hours — inline quick-set on create (web parity); edit
+            // mode uses the full availability editor below.
+            if (!_isEdit) ...[
+              const SizedBox(height: 10),
+              _label('Working hours (optional)'),
+              _daysWrap(),
+              const SizedBox(height: 8),
+              _presetsRow(),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: _timeField('Start', _startTime, true)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _timeField('End', _endTime, false)),
+                ],
+              ),
+              _hint(
+                  'Pick at least one day to define working hours, or leave empty — worker can set this later.'),
+            ],
             if (_isEdit) ...[
               const SizedBox(height: 10),
               _label('Status'),
@@ -296,6 +556,121 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textMuted)),
+      );
+
+  Widget _hint(String t) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(t,
+            style: TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
+      );
+
+  // ----- working-hours quick set (create) -----
+  Widget _daysWrap() {
+    const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (var i = 0; i < 7; i++)
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _workingDays.contains(i)
+                    ? _workingDays.remove(i)
+                    : _workingDays.add(i);
+              });
+              _markDirty();
+            },
+            child: Container(
+              width: 42,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: _workingDays.contains(i)
+                    ? AppColors.brand600
+                    : AppColors.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: _workingDays.contains(i)
+                        ? AppColors.brand600
+                        : AppColors.border),
+              ),
+              child: Text(labels[i],
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _workingDays.contains(i)
+                          ? Colors.white
+                          : AppColors.textMuted)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _presetsRow() {
+    void apply(Set<int> days) {
+      setState(() {
+        _workingDays
+          ..clear()
+          ..addAll(days);
+      });
+      _markDirty();
+    }
+
+    Widget chip(String label, VoidCallback onTap) => GestureDetector(
+          onTap: onTap,
+          child: Text(label,
+              style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.brand600)),
+        );
+    return Wrap(
+      spacing: 12,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        chip('Mon–Fri', () => apply({1, 2, 3, 4, 5})),
+        chip('Mon–Sat', () => apply({1, 2, 3, 4, 5, 6})),
+        chip('All week', () => apply({0, 1, 2, 3, 4, 5, 6})),
+        chip('Clear', () => apply({})),
+      ],
+    );
+  }
+
+  Widget _timeField(String label, String value, bool isStart) => InkWell(
+        onTap: () async {
+          final parts = value.split(':');
+          final picked = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay(
+                hour: int.tryParse(parts.first) ?? 9,
+                minute: int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0),
+          );
+          if (picked != null) {
+            final t =
+                '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
+            setState(() => isStart ? _startTime = t : _endTime = t);
+            _markDirty();
+          }
+        },
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            border: const OutlineInputBorder(),
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.schedule, size: 16),
+              const SizedBox(width: 8),
+              Text(value, style: const TextStyle(fontSize: 15)),
+            ],
+          ),
+        ),
       );
 
   Widget _field(String label, TextEditingController ctrl,

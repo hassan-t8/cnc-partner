@@ -29,11 +29,54 @@ class RouteStop {
   }
 }
 
+/// One step in the driver's day timeline (depart, pickup, job, travel,
+/// dropoff, return) — the data behind the Schedule screen.
+class RouteLeg {
+  final String type; // depart | pickup | job | travel | dropoff | return
+  final String atLabel; // start time, e.g. "08:30"
+  final String endAtLabel; // end time
+  final String service;
+  final String address;
+  final String bookingRef;
+  final String customerName;
+  final String? customerPhone;
+  final String note;
+  final String fromLabel;
+  final String toLabel;
+  const RouteLeg({
+    this.type = '',
+    this.atLabel = '',
+    this.endAtLabel = '',
+    this.service = '',
+    this.address = '',
+    this.bookingRef = '',
+    this.customerName = '',
+    this.customerPhone,
+    this.note = '',
+    this.fromLabel = '',
+    this.toLabel = '',
+  });
+  factory RouteLeg.fromJson(Map<String, dynamic> j) => RouteLeg(
+        type: (j['type'] ?? j['kind'] ?? '').toString(),
+        atLabel: (j['atLabel'] ?? j['at'] ?? '').toString(),
+        endAtLabel: (j['endAtLabel'] ?? j['endAt'] ?? '').toString(),
+        service: (j['service'] ?? j['serviceName'] ?? '').toString(),
+        address: (j['address'] ?? '').toString(),
+        bookingRef: (j['bookingRef'] ?? j['bookingId'] ?? '').toString(),
+        customerName: (j['customerName'] ?? '').toString(),
+        customerPhone: j['customerPhone']?.toString(),
+        note: (j['note'] ?? '').toString(),
+        fromLabel: (j['fromLabel'] ?? '').toString(),
+        toLabel: (j['toLabel'] ?? '').toString(),
+      );
+}
+
 class DriverDayPlan {
   final String vanName;
   final int vanSeats;
   final String homeZone;
   final List<RouteStop> stops;
+  final List<RouteLeg> legs;
   final List<String> warnings;
   final List<String> subPolylines; // encoded route polylines (Routes API)
   final double totalDistanceMeters;
@@ -43,6 +86,7 @@ class DriverDayPlan {
       this.vanSeats = 0,
       this.homeZone = '',
       this.stops = const [],
+      this.legs = const [],
       this.warnings = const [],
       this.subPolylines = const [],
       this.totalDistanceMeters = 0,
@@ -50,6 +94,12 @@ class DriverDayPlan {
   factory DriverDayPlan.fromJson(Map<String, dynamic> j) {
     final plan = j['plan'] is Map ? Map<String, dynamic>.from(j['plan']) : j;
     final legs = (plan['legs'] ?? plan['stops']);
+    final timeline = legs is List
+        ? legs
+            .whereType<Map>()
+            .map((e) => RouteLeg.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <RouteLeg>[];
     final stops = legs is List
         ? legs
             .whereType<Map>()
@@ -66,6 +116,7 @@ class DriverDayPlan {
           : 0,
       homeZone: (plan['homeZone'] ?? '').toString(),
       stops: stops,
+      legs: timeline,
       warnings: warns is List ? warns.map((e) => '$e').toList() : const [],
       subPolylines:
           polys is List ? polys.map((e) => '$e').toList() : const [],

@@ -37,9 +37,9 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
       });
 
   Future<void> _openForm([Van? van]) async {
-    final saved = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
         MaterialPageRoute(builder: (_) => VanForm(van: van)));
-    if (saved == true) _reload();
+    if (mounted) _reload();
   }
 
   Future<void> _delete(Van v) async {

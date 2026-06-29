@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/searchable_picker.dart';
@@ -102,6 +103,10 @@ class _PartnerRequestsScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Refetch when the bottom-nav tab is (re)tapped.
+    ref.listen(tabRefreshProvider, (_, __) {
+      if (mounted) _fetch();
+    });
     return Scaffold(
       appBar: const MainAppBar('Requests'),
       body: _loading

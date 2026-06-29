@@ -40,9 +40,11 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       });
 
   Future<void> _openForm([Worker? w]) async {
-    final saved = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
         MaterialPageRoute(builder: (_) => WorkerForm(worker: w)));
-    if (saved == true) _reload();
+    // Always refresh — the form may have saved the auto-assign toggle
+    // immediately without returning a "saved" flag.
+    if (mounted) _reload();
   }
 
   Future<void> _delete(Worker w) async {
