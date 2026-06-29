@@ -8,8 +8,11 @@ class Env {
   );
 
   /// Google Maps key for the driver route map.
-  static const String googleMapsApiKey =
-      String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
+  // Defaults to the shared CNC Maps key (used for reverse-geocoding); can be
+  // overridden with --dart-define=GOOGLE_MAPS_API_KEY=...
+  static const String googleMapsApiKey = String.fromEnvironment(
+      'GOOGLE_MAPS_API_KEY',
+      defaultValue: 'AIzaSyDBUAiCAGzjDCSH1MG4JwAAfGuSw38kcZw');
 
   /// Login portal scope — the backend uses this to restrict to partner/worker.
   static const String loginPortal = 'partner';

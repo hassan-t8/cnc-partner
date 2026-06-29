@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../core/config/env.dart';
 import '../core/theme/app_colors.dart';
@@ -39,6 +40,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   late final TextEditingController _addr;
   bool _hasPin = false;
   bool _geocoding = false;
+  bool _myLocation = false; // enabled once location permission is granted
 
   @override
   void initState() {
@@ -48,6 +50,17 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         ? LatLng(widget.initialLat!, widget.initialLng!)
         : _uaeCenter;
     _addr = TextEditingController(text: widget.initialAddress ?? '');
+    _requestLocation();
+  }
+
+  // Enable the blue "my location" dot + button only if permission is granted.
+  Future<void> _requestLocation() async {
+    try {
+      final status = await Permission.locationWhenInUse.request();
+      if (mounted && status.isGranted) {
+        setState(() => _myLocation = true);
+      }
+    } catch (_) {}
   }
 
   @override
@@ -89,97 +102,92 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final keyMissing = Env.googleMapsApiKey.isEmpty;
     return Scaffold(
       appBar: MainAppBar(widget.title),
       body: Column(
         children: [
-          Expanded(
-            child: keyMissing
-                ? Container(
-                    color: AppColors.bg,
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                        'Map unavailable — enter the address manually below.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.textMuted)),
-                  )
-                : Stack(
-                    children: [
-                      GoogleMap(
-                        initialCameraPosition:
-                            CameraPosition(target: _pos, zoom: _hasPin ? 15 : 10),
-                        onTap: _move,
-                        markers: _hasPin
-                            ? {
-                                Marker(
-                                  markerId: const MarkerId('pick'),
-                                  position: _pos,
-                                  draggable: true,
-                                  onDragEnd: _move,
-                                ),
-                              }
-                            : {},
-                        myLocationButtonEnabled: false,
-                      ),
-                      if (!_hasPin)
-                        const Positioned(
-                          top: 12,
-                          left: 12,
-                          right: 12,
-                          child: _Banner('Tap the map to drop a pin'),
-                        ),
-                      if (_geocoding)
-                        const Positioned(
-                          top: 12,
-                          right: 12,
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2.4),
-                          ),
-                        ),
-                    ],
-                  ),
-          ),
-          // Address + confirm
+          // Address field — at the TOP.
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              border: Border(bottom: BorderSide(color: AppColors.border)),
+            ),
+            child: TextField(
+              controller: _addr,
+              minLines: 1,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Address',
+                hintText: 'Tap the map to drop a pin, or type the address',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Stack(
+              children: [
+                GoogleMap(
+                  // Default to a UAE country-wide view until a pin is dropped.
+                  initialCameraPosition: CameraPosition(
+                      target: _pos, zoom: _hasPin ? 15 : 6.5),
+                  onTap: _move,
+                  markers: _hasPin
+                      ? {
+                          Marker(
+                            markerId: const MarkerId('pick'),
+                            position: _pos,
+                            draggable: true,
+                            onDragEnd: _move,
+                          ),
+                        }
+                      : {},
+                  zoomControlsEnabled: true, // +/- buttons
+                  myLocationEnabled: _myLocation, // blue current-location dot
+                  myLocationButtonEnabled: _myLocation, // recenter button
+                ),
+                if (!_hasPin)
+                  const Positioned(
+                    top: 12,
+                    left: 12,
+                    right: 12,
+                    child: _Banner('Tap the map to drop a pin'),
+                  ),
+                if (_geocoding)
+                  const Positioned(
+                    top: 12,
+                    right: 12,
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.4),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // Confirm button at the bottom.
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
             decoration: BoxDecoration(
               color: AppColors.surface,
               border: Border(top: BorderSide(color: AppColors.border)),
             ),
             child: SafeArea(
               top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: _addr,
-                    minLines: 1,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Address',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: (_hasPin || _addr.text.trim().isNotEmpty)
-                          ? () => Navigator.pop(
-                              context,
-                              PickedLocation(
-                                  _pos.latitude, _pos.longitude, _addr.text.trim()))
-                          : null,
-                      child: const Text('Use this location'),
-                    ),
-                  ),
-                ],
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: (_hasPin || _addr.text.trim().isNotEmpty)
+                      ? () => Navigator.pop(
+                          context,
+                          PickedLocation(_pos.latitude, _pos.longitude,
+                              _addr.text.trim()))
+                      : null,
+                  child: const Text('Use this location'),
+                ),
               ),
             ),
           ),
