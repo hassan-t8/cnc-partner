@@ -30,11 +30,33 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   bool _error = false;
   int _acting = -1;
   DateTime _date = DateUtils.dateOnly(DateTime.now());
+  // Date-only days (across all the worker's jobs) that have at least one job →
+  // drives the dot markers on the day strip.
+  Set<DateTime> _jobDays = {};
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadJobDays();
+  }
+
+  /// All days the worker has jobs on — for the day-strip dots. Best-effort.
+  Future<void> _loadJobDays() async {
+    try {
+      final all =
+          await ref.read(workerRepositoryProvider).myBookings(status: 'all');
+      if (!mounted) return;
+      setState(() {
+        _jobDays = {
+          for (final a in all)
+            if (a.scheduledStart != null &&
+                a.status != 'cancelled' &&
+                a.status != 'declined')
+              DateUtils.dateOnly(a.scheduledStart!)
+        };
+      });
+    } catch (_) {}
   }
 
   Future<List<Assignment>> _fetch() {
@@ -73,6 +95,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   // Pull-to-refresh: refetch in place WITHOUT dropping to the skeleton, so the
   // spinner ends as soon as fresh data lands and the list stays visible.
   Future<void> _refresh() async {
+    _loadJobDays();
     try {
       final jobs = await _fetch();
       if (mounted) setState(() {
@@ -316,6 +339,18 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
                       height: 1.1,
                       fontWeight: FontWeight.w800,
                       color: on ? Colors.white : AppColors.textPrimary)),
+              const SizedBox(height: 3),
+              // Dot marker when this day has at least one job.
+              Container(
+                width: 5,
+                height: 5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _jobDays.contains(day)
+                      ? (on ? Colors.white : AppColors.brand600)
+                      : Colors.transparent,
+                ),
+              ),
             ],
           ),
         ),
