@@ -95,13 +95,9 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     final action = await showOfferAlert(context, ref, fresh.first);
     _popupOpen = false;
     if (!mounted) return;
-    // Acted or dismissed — land the partner on the Requests tab so the offer
-    // (or its result) is right there.
-    final reqIndex =
-        _destsFor(user).indexWhere((d) => d.label == 'Requests');
-    if (reqIndex >= 0) {
-      ref.read(shellIndexProvider.notifier).state = reqIndex;
-    }
+    // The popup is only an alert: on accept/decline refresh the data in place,
+    // but on timeout/close ("later") do NOT navigate — the offer stays in the
+    // Requests tab, which the user opens via "See all" when they choose to.
     if (action != 'later') {
       ref.read(tabRefreshProvider.notifier).state++;
     }

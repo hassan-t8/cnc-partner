@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
@@ -84,40 +85,81 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
               ),
             ),
             const SizedBox(height: 14),
-            ServiceTitle(o.serviceName, titleSize: 18),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: ServiceTitle(o.serviceName, titleSize: 18)),
+                if (o.ref.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                        color: AppColors.brand50,
+                        borderRadius: BorderRadius.circular(8)),
+                    child: Text(o.ref,
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.brand700)),
+                  ),
+                ],
+              ],
+            ),
             const SizedBox(height: 14),
-            _row(Icons.person_outline, 'Customer',
-                o.customerName.isEmpty ? '—' : o.customerName),
-            if (o.address.isNotEmpty)
-              _row(Icons.place_outlined, 'Location', o.address),
-            if (schedule != null)
-              _row(Icons.schedule_outlined, 'Schedule', schedule),
-            _row(
-                Icons.payments_outlined,
-                'You earn',
-                'AED ${o.earnings.toStringAsFixed(2)}'
-                '${o.commissionPct != null ? '  ·  comm ${o.commissionPct!.toStringAsFixed(0)}%' : ''}',
-                valueColor: AppColors.brand700,
-                bold: true),
-            const SizedBox(height: 14),
-            // Auto-assigned team (read-only — created automatically on dispatch).
-            Text('Assigned team',
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textMuted)),
-            const SizedBox(height: 8),
-            if (o.workerNames.isEmpty && o.driverName.isEmpty && o.vanName.isEmpty)
-              Text('Auto-assigned on accept.',
-                  style: TextStyle(fontSize: 12.5, color: AppColors.textMuted))
-            else ...[
-              for (final w in o.workerNames)
-                _row(Icons.engineering_outlined, 'Worker', w),
-              if (o.driverName.isNotEmpty)
-                _row(Icons.directions_car_outlined, 'Driver', o.driverName),
-              if (o.vanName.isNotEmpty)
-                _row(Icons.local_shipping_outlined, 'Van', o.vanName),
-            ],
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _row(Icons.person_outline, 'Customer',
+                        o.customerName.isEmpty ? '—' : o.customerName),
+                    if ((o.customerPhone ?? '').isNotEmpty)
+                      _row(Icons.call_outlined, 'Phone', o.customerPhone!,
+                          onTap: () => launchUrl(
+                              Uri.parse('tel:${o.customerPhone}')),
+                          valueColor: AppColors.brand700),
+                    if (o.address.isNotEmpty)
+                      _row(Icons.place_outlined, 'Location', o.address),
+                    if (schedule != null)
+                      _row(Icons.schedule_outlined, 'Schedule', schedule),
+                    if (o.crewRequired > 0)
+                      _row(Icons.groups_outlined, 'Crew',
+                          '${o.crewRequired} required'),
+                    _row(
+                        Icons.payments_outlined,
+                        'You earn',
+                        'AED ${o.earnings.toStringAsFixed(2)}'
+                        '${o.commissionPct != null ? '  ·  comm ${o.commissionPct!.toStringAsFixed(0)}%' : ''}',
+                        valueColor: AppColors.brand700,
+                        bold: true),
+                    const SizedBox(height: 8),
+                    // Auto-assigned team (read-only — created on dispatch).
+                    Text('Assigned team',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textMuted)),
+                    const SizedBox(height: 8),
+                    if (o.workerNames.isEmpty &&
+                        o.driverName.isEmpty &&
+                        o.vanName.isEmpty)
+                      Text('Auto-assigned on accept.',
+                          style: TextStyle(
+                              fontSize: 12.5, color: AppColors.textMuted))
+                    else ...[
+                      for (final w in o.workerNames)
+                        _row(Icons.engineering_outlined, 'Worker', w),
+                      if (o.driverName.isNotEmpty)
+                        _row(Icons.directions_car_outlined, 'Driver',
+                            o.driverName),
+                      if (o.vanName.isNotEmpty)
+                        _row(Icons.local_shipping_outlined, 'Van', o.vanName),
+                    ],
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 18),
             Row(
               children: [
@@ -156,27 +198,33 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
   }
 
   Widget _row(IconData icon, String label, String value,
-          {Color? valueColor, bool bold = false}) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 18, color: AppColors.textMuted),
-            const SizedBox(width: 10),
-            SizedBox(
-              width: 76,
-              child: Text(label,
-                  style: TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
-            ),
-            Expanded(
-              child: Text(value,
-                  style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
-                      color: valueColor)),
-            ),
-          ],
-        ),
-      );
+      {Color? valueColor, bool bold = false, VoidCallback? onTap}) {
+    final row = Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.textMuted),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 76,
+            child: Text(label,
+                style: TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+                    color: valueColor)),
+          ),
+          if (onTap != null)
+            Icon(Icons.call, size: 16, color: AppColors.brand600),
+        ],
+      ),
+    );
+    return onTap == null
+        ? row
+        : InkWell(onTap: onTap, child: row);
+  }
 }

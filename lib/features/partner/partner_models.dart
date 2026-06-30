@@ -534,6 +534,7 @@ class Van {
 class Offer {
   final int id;
   final int? bookingId;
+  final String ref; // human booking code e.g. CNC-B-2275
   final String serviceName;
   final String customerName;
   final String? customerPhone;
@@ -553,6 +554,7 @@ class Offer {
   const Offer({
     required this.id,
     this.bookingId,
+    this.ref = '',
     this.serviceName = '',
     this.customerName = '',
     this.customerPhone,
@@ -584,6 +586,7 @@ class Offer {
     return Offer(
       id: _i(j['id']) ?? 0,
       bookingId: _i(j['bookingId'] ?? b['id']),
+      ref: _s(b['bookingId'] ?? j['bookingRef']),
       serviceName: _s(b['serviceName'] ?? j['serviceName']),
       // Customer name/phone are on the booking row directly (booking.customerName),
       // not nested under booking.customer.
