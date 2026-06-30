@@ -297,27 +297,17 @@ class _WorkerBookingDetailScreenState
     final isDriver = a.role.toLowerCase() == 'driver';
     if (isDriver && (_status == 'accepted' || _status == 'in_progress')) {
       return _liftedBar(
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.bg,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.visibility_outlined,
-                  size: 18, color: AppColors.textMuted),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                    'View only — the crew or partner starts this job.',
-                    style:
-                        TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
-              ),
-            ],
-          ),
+        Row(
+          children: [
+            Icon(Icons.visibility_outlined,
+                size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('View only — the crew or partner starts this job.',
+                  style:
+                      TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
+            ),
+          ],
         ),
       );
     }
@@ -384,22 +374,25 @@ class _WorkerBookingDetailScreenState
     );
   }
 
-  /// A lifted bottom bar — top border + shadow + comfortable padding so the
-  /// buttons sit above the gesture/nav area instead of jammed at the edge.
-  Widget _liftedBar(Widget child) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border)),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 12,
-                offset: const Offset(0, -2)),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+  /// A floating bottom bar — a rounded, shadowed card lifted off the bottom
+  /// edge (margin all around) so the buttons/note sit clearly raised, not
+  /// jammed against the screen/gesture edge.
+  Widget _liftedBar(Widget child) => SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.07),
+                  blurRadius: 18,
+                  offset: const Offset(0, 4)),
+            ],
+          ),
           child: child,
         ),
       );
