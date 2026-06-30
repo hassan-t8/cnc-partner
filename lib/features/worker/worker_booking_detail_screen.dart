@@ -248,9 +248,12 @@ class _WorkerBookingDetailScreenState
                 ],
               ],
             ),
-            if (_status == 'accepted' ||
-                _status == 'in_progress' ||
-                _status == 'completed') ...[
+            // Before/after photos are for the crew/partner who run the job —
+            // not the driver.
+            if (a.role.toLowerCase() != 'driver' &&
+                (_status == 'accepted' ||
+                    _status == 'in_progress' ||
+                    _status == 'completed')) ...[
               const SizedBox(height: 18),
               const Divider(height: 1),
               const SizedBox(height: 14),

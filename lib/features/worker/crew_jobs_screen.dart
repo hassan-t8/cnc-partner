@@ -424,9 +424,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           ),
           const SizedBox(height: 10),
           _actions(a, busy),
-          if (a.status == 'accepted' ||
-              a.status == 'in_progress' ||
-              a.status == 'completed') ...[
+          if (a.role.toLowerCase() != 'driver' &&
+              (a.status == 'accepted' ||
+                  a.status == 'in_progress' ||
+                  a.status == 'completed')) ...[
             const Divider(height: 20),
             BookingPhotos(
               key: ValueKey('photos-${a.id}-${a.status}'),
