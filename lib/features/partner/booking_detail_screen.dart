@@ -48,6 +48,24 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   PartnerRepository get _repo => ref.read(partnerRepositoryProvider);
 
+  /// Re-fetch this booking (no single-booking endpoint, so pull the list and
+  /// pick it out) so socket events — payment collected, completed from the web,
+  /// status changes — update the header + action buttons live.
+  Future<void> _reloadBooking() async {
+    try {
+      final list = await _repo.bookings();
+      final fresh = list.where((x) => x.id == b.id);
+      if (fresh.isNotEmpty && mounted) {
+        final next = fresh.first;
+        if (next.status != b.status ||
+            next.cashCollected != b.cashCollected) {
+          _changed = true;
+        }
+        setState(() => b = next);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadTeam() async {
     setState(() {
       _team = null;
@@ -317,7 +335,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     // Live: refresh team when this booking changes (status/dispatch/assign).
     ref.listen(bookingRealtimeProvider, (_, __) {
       final lid = ref.read(bookingRealtimeProvider.notifier).lastBookingId;
-      if (mounted && (lid == null || lid == b.id)) _loadTeam();
+      if (mounted && (lid == null || lid == b.id)) {
+        _loadTeam();
+        _reloadBooking();
+      }
     });
     final actions = _actions();
     final canManageTeam = b.status == 'awaiting_acceptance' ||

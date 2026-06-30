@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
@@ -33,6 +34,39 @@ class _WorkerBookingDetailScreenState
   Assignment get a => widget.assignment;
   bool get _cashPending =>
       a.payment.toLowerCase() == 'cash' && a.cashDue > 0 && !_cashCollected;
+
+  @override
+  void initState() {
+    super.initState();
+    final bid = widget.assignment.bookingId;
+    if (bid != null) {
+      ref.read(bookingRealtimeProvider.notifier).joinBooking(bid);
+    }
+  }
+
+  @override
+  void dispose() {
+    final bid = widget.assignment.bookingId;
+    if (bid != null) {
+      ref.read(bookingRealtimeProvider.notifier).leaveBooking(bid);
+    }
+    super.dispose();
+  }
+
+  /// Pull fresh state for this job so socket events (cash collected / completed
+  /// from the web or another device) update the UI live.
+  Future<void> _refresh() async {
+    try {
+      final list = await ref.read(workerRepositoryProvider).myBookings();
+      final fresh = list.where((x) => x.id == a.id);
+      if (fresh.isNotEmpty && mounted) {
+        setState(() {
+          _status = fresh.first.status;
+          _cashCollected = fresh.first.cashCollected;
+        });
+      }
+    } catch (_) {}
+  }
 
   Future<void> _act(String action) async {
     final repo = ref.read(workerRepositoryProvider);
@@ -120,6 +154,11 @@ class _WorkerBookingDetailScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Live: refresh this job when its booking changes (payment/status).
+    ref.listen(bookingRealtimeProvider, (_, __) {
+      final lid = ref.read(bookingRealtimeProvider.notifier).lastBookingId;
+      if (mounted && (lid == null || lid == a.bookingId)) _refresh();
+    });
     final time = a.scheduledStart != null
         ? DateFormat('EEE d MMM y · h:mm a').format(a.scheduledStart!)
         : 'Time to be confirmed';
