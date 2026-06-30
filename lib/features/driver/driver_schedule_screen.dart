@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import 'driver_repository.dart';
 
 /// Driver's day-by-day schedule: the route as a timeline of legs (depart,
@@ -291,7 +292,7 @@ class _DriverScheduleScreenState extends ConsumerState<DriverScheduleScreen> {
                   if (isJob && leg.service.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(leg.service,
+                      child: Text(ServiceTitle.specific(leg.service),
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                     ),

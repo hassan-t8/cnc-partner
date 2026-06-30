@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'partner_models.dart';
@@ -399,7 +400,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
       for (final b in bookings)
         _upcomingRow(
           ref: b.ref.isNotEmpty ? b.ref : '#${b.id}',
-          title: [b.serviceName, b.customerName]
+          title: [ServiceTitle.specific(b.serviceName), b.customerName]
               .where((s) => s.isNotEmpty)
               .join(' · '),
           statusBadge: StatusBadge(b.status),

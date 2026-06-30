@@ -191,7 +191,16 @@ class PartnerBooking {
       requiresStartOtp: j['requiresStartOtp'] == true,
       paymentStatus: _s(j['paymentStatus']),
       payment: _s(j['payment'] ?? j['paymentMethod']),
-      cashDue: _d(j['cashDue'] ?? j['cashOwed'] ?? j['amountDue']),
+      // getPartnerBookings returns total/coins (no explicit cashDue), so derive
+      // the cash owed at the door = total − coins, clamped.
+      cashDue: () {
+        final explicit = _d(j['cashDue'] ?? j['cashOwed'] ?? j['amountDue']);
+        if (explicit > 0) return explicit;
+        final owed =
+            _d(j['totalPrice'] ?? j['cncChargesInclVat'] ?? j['price']) -
+                _d(j['coinsApplied']);
+        return owed > 0 ? owed : 0.0;
+      }(),
       cashCollected: j['cashCollected'] == true,
     );
   }

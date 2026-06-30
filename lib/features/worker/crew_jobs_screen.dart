@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'otp_dialog.dart';
@@ -340,10 +341,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           Row(
             children: [
               Expanded(
-                child: Text(
-                    a.serviceName.isEmpty ? 'Service' : a.serviceName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 15.5)),
+                child: ServiceTitle(a.serviceName, titleSize: 15.5),
               ),
               StatusBadge(a.status, worker: true),
             ],

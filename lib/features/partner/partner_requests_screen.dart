@@ -10,6 +10,7 @@ import '../../widgets/app_states.dart';
 import '../../widgets/searchable_picker.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -164,9 +165,7 @@ class _PartnerRequestsScreenState
           Row(
             children: [
               Expanded(
-                child: Text(o.serviceName.isEmpty ? 'Service' : o.serviceName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 15)),
+                child: ServiceTitle(o.serviceName),
               ),
               Container(
                 padding:

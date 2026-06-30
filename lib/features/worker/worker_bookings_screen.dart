@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'otp_dialog.dart';
@@ -210,10 +211,7 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                        a.serviceName.isEmpty ? 'Service' : a.serviceName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 14.5)),
+                    child: ServiceTitle(a.serviceName, titleSize: 14.5),
                   ),
                   StatusBadge(a.status, worker: true),
                 ],

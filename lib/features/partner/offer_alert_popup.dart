@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/service_title.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -215,9 +216,7 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text(o.serviceName.isEmpty ? 'Service' : o.serviceName,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 18)),
+                  ServiceTitle(o.serviceName, titleSize: 18),
                   const SizedBox(height: 8),
                   if (o.address.isNotEmpty)
                     _row(Icons.place_outlined, o.address),

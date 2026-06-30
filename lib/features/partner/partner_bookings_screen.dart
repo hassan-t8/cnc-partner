@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import '../worker/otp_dialog.dart';
@@ -772,7 +773,7 @@ class _PartnerBookingsScreenState
                         Divider(height: 1, color: AppColors.border),
                         const SizedBox(height: 8),
                         _metaRow(Icons.cleaning_services_outlined,
-                            b.serviceName.isEmpty ? 'Service' : b.serviceName),
+                            ServiceTitle.specific(b.serviceName)),
                         _metaRow(Icons.schedule_outlined, time),
                         if (b.area.isNotEmpty)
                           _metaRow(Icons.place_outlined, b.area),

@@ -10,6 +10,7 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'booking_detail_screen.dart';
@@ -366,10 +367,7 @@ class _PartnerDashboardScreenState
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                        b.serviceName.isEmpty ? 'Service' : b.serviceName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 14.5)),
+                    child: ServiceTitle(b.serviceName, titleSize: 14.5),
                   ),
                   StatusBadge(b.status),
                 ],

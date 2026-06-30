@@ -7,6 +7,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'otp_dialog.dart';
@@ -147,12 +148,11 @@ class _WorkerBookingDetailScreenState
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                            a.serviceName.isEmpty ? 'Service' : a.serviceName,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w900)),
+                        child: ServiceTitle(
+                            a.serviceName,
+                            titleSize: 19,
+                            titleColor: Colors.white,
+                            crumbColor: Colors.white.withValues(alpha: 0.8)),
                       ),
                       StatusBadge(_status, worker: true),
                     ],

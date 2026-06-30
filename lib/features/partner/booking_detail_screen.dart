@@ -7,6 +7,7 @@ import '../../core/network/api_client.dart';
 import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import '../worker/otp_dialog.dart';
@@ -332,45 +333,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Builder(builder: (_) {
-              // serviceName comes as "Category - Subcategory — Service". Show the
-              // specific service as the title and the rest as a small breadcrumb.
-              final parts = b.serviceName
-                  .split(RegExp(r'\s*[—–-]\s*'))
-                  .map((p) => p.trim())
-                  .where((p) => p.isNotEmpty)
-                  .toList();
-              final title = parts.isNotEmpty ? parts.last : 'Service';
-              final crumb = parts.length > 1
-                  ? parts.sublist(0, parts.length - 1).join(' · ')
-                  : '';
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (crumb.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: Text(crumb,
-                                style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600)),
-                          ),
-                        Text(title,
-                            style: const TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.w800)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  StatusBadge(b.status),
-                ],
-              );
-            }),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: ServiceTitle(b.serviceName, titleSize: 20)),
+                const SizedBox(width: 8),
+                StatusBadge(b.status),
+              ],
+            ),
             if (b.ref.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
