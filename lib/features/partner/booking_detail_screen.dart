@@ -11,6 +11,7 @@ import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import '../worker/otp_dialog.dart';
+import 'assign_team_sheet.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -29,7 +30,6 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   List<BookingAssignment>? _team; // null = loading
   bool _teamError = false;
   bool _busy = false; // lifecycle actions only (start / complete / cash)
-  bool _assigning = false; // the Assign button
   final Set<int> _removing = {}; // assignment ids being unassigned
   bool _changed = false;
 
@@ -188,66 +188,18 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   }
 
   // ---- team ----
-  Future<void> _assign() async {
-    final workers = await _repo.workers();
-    if (!mounted) return;
-    final picked = await showModalBottomSheet<Worker>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          maxChildSize: 0.9,
-          builder: (_, controller) => ListView(
-            controller: controller,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 16, 20, 6),
-                child: Text('Assign a worker',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-              ),
-              if (workers.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('No workers yet. Add workers first.'),
-                ),
-              for (final w in workers.where((w) => w.status == 'active'))
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.brand50,
-                    child: Text(
-                        (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
-                        style: const TextStyle(
-                            color: AppColors.brand700,
-                            fontWeight: FontWeight.w800)),
-                  ),
-                  title: Text(w.name.isEmpty ? 'Worker' : w.name),
-                  subtitle: Text(w.roles.join(', ')),
-                  onTap: () => Navigator.pop(context, w),
-                ),
-              const SizedBox(height: 10),
-            ],
-          ),
-        ),
-      ),
+  Future<void> _openAssignTeam() async {
+    final changed = await showAssignTeamSheet(
+      context,
+      ref,
+      bookingId: b.id,
+      ref0: b.ref,
+      scheduledStart: b.scheduledStart,
+      zoneId: b.zoneId,
     );
-    if (picked == null) return;
-    final role = picked.roles.contains('driver') ? 'driver' : 'crew';
-    setState(() => _assigning = true);
-    try {
-      await _repo.assignWorker(b.id, picked.id, role: role);
-      AppToast.success('${picked.name} assigned');
+    if (changed && mounted) {
       _changed = true;
-      await _loadTeam();
-    } on ApiException catch (e) {
-      AppToast.error(e.message);
-    } finally {
-      if (mounted) setState(() => _assigning = false);
+      _loadTeam();
     }
   }
 
@@ -401,14 +353,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 const Spacer(),
                 if (canManageTeam)
                   TextButton.icon(
-                    onPressed: _assigning ? null : _assign,
-                    icon: _assigning
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.person_add_alt_1, size: 18),
+                    onPressed: _openAssignTeam,
+                    icon: const Icon(Icons.person_add_alt_1, size: 18),
                     label: const Text('Assign'),
                   ),
               ],

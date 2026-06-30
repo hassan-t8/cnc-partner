@@ -57,13 +57,14 @@ class PartnerRepository {
   }
 
   Future<void> assignWorker(int bookingId, int workerId,
-      {String role = 'crew'}) {
+      {String role = 'crew', int? vanId}) {
     final isDriver = role == 'driver';
     return _api.post('/booking-assignments', body: {
       'bookingId': bookingId,
       if (isDriver) 'driverWorkerId': workerId,
       if (!isDriver) 'workerId': workerId,
       'role': role,
+      if (vanId != null) 'vanId': vanId,
     });
   }
 

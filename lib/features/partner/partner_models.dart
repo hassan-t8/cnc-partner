@@ -773,15 +773,19 @@ class RatingSummary {
 /// A worker (or driver) assigned to a booking, from /booking-assignments.
 class BookingAssignment {
   final int id;
+  final int? workerId;
   final String workerName;
   final String role;
   final String status;
+  final String vanLabel; // e.g. "cli · 234"
 
   const BookingAssignment({
     required this.id,
+    this.workerId,
     this.workerName = '',
     this.role = '',
     this.status = '',
+    this.vanLabel = '',
   });
 
   factory BookingAssignment.fromJson(Map<String, dynamic> j) {
@@ -789,15 +793,22 @@ class BookingAssignment {
     final dw = j['driverWorker'] is Map
         ? Map<String, dynamic>.from(j['driverWorker'])
         : const {};
+    final van = j['van'] is Map ? Map<String, dynamic>.from(j['van']) : const {};
     final who = w.isNotEmpty ? w : dw;
     final name = [who['firstName'], who['lastName']]
         .where((s) => '${s ?? ''}'.isNotEmpty)
         .join(' ');
     return BookingAssignment(
       id: _i(j['id']) ?? 0,
+      workerId: _i(who['id'] ?? j['workerId'] ?? j['driverWorkerId']),
       workerName: name.isNotEmpty ? name : _s(j['workerName'] ?? who['name']),
       role: _s(j['role'] ?? (dw.isNotEmpty ? 'driver' : 'crew')),
       status: _s(j['status'] ?? j['acceptanceStatus']),
+      vanLabel: van.isEmpty
+          ? ''
+          : [van['name'], van['plate']]
+              .where((s) => '${s ?? ''}'.isNotEmpty)
+              .join(' · '),
     );
   }
 }

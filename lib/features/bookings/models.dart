@@ -138,10 +138,12 @@ class PartnerBooking {
   final String payment; // cash | card | ...
   final double cashDue;
   final bool cashCollected;
+  final int? zoneId;
 
   const PartnerBooking({
     required this.id,
     this.ref = '',
+    this.zoneId,
     this.customerName = '',
     this.serviceName = '',
     this.area = '',
@@ -202,6 +204,7 @@ class PartnerBooking {
         return owed > 0 ? owed : 0.0;
       }(),
       cashCollected: j['cashCollected'] == true,
+      zoneId: _i(j['zoneId']),
     );
   }
 }
