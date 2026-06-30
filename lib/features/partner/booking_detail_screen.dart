@@ -124,6 +124,25 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     }
   }
 
+  /// Mark the door cash as collected. Required before completing a cash
+  /// booking with money still owed (mirrors the web "Mark as collected").
+  Future<void> _collectCash() async {
+    setState(() => _busy = true);
+    try {
+      await _repo.cashCollect(b.id);
+      if (!mounted) return;
+      setState(() {
+        b = b.copyWith(cashCollected: true);
+        _busy = false;
+      });
+      _changed = true;
+      AppToast.success('Cash collected — you can complete the job now');
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<String?> _reasonDialog() {
     final ctrl = TextEditingController();
     return showDialog<String>(
@@ -225,32 +244,39 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   List<Widget> _actions() {
     Widget btn(String label, IconData icon, Color color, String action,
-            {bool outlined = false}) =>
-        SizedBox(
-          height: 46,
-          child: outlined
-              ? OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _act(action),
-                  icon: Icon(icon, size: 18, color: color),
-                  label: Text(label,
-                      style: TextStyle(
-                          color: color, fontWeight: FontWeight.w700)),
-                  style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: color.withValues(alpha: 0.5))),
-                )
-              : ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: color),
-                  onPressed: _busy ? null : () => _act(action),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.2, color: Colors.white))
-                      : Icon(icon, size: 18),
-                  label: Text(label),
+        {bool outlined = false, VoidCallback? onTap, bool enabled = true}) {
+      final handler = (!enabled || _busy) ? null : (onTap ?? () => _act(action));
+      final showSpinner = _busy && handler != null;
+      return SizedBox(
+        height: 46,
+        child: outlined
+            ? OutlinedButton.icon(
+                onPressed: handler,
+                icon: Icon(icon, size: 18, color: color),
+                label: Text(label,
+                    style: TextStyle(
+                        color: color, fontWeight: FontWeight.w700)),
+                style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: color.withValues(alpha: 0.5))),
+              )
+            : ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  disabledBackgroundColor: color.withValues(alpha: 0.35),
+                  disabledForegroundColor: Colors.white.withValues(alpha: 0.8),
                 ),
-        );
+                onPressed: handler,
+                icon: showSpinner
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2.2, color: Colors.white))
+                    : Icon(icon, size: 18),
+                label: Text(label),
+              ),
+      );
+    }
     switch (b.status) {
       case 'awaiting_acceptance':
         return [
@@ -264,6 +290,18 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               'start'),
         ];
       case 'in_progress':
+        // Cash still owed at the door → must collect before completing, like
+        // the web. The Complete button stays disabled until cash is collected.
+        if (b.cashPending) {
+          return [
+            btn('Collect AED ${b.cashDue.toStringAsFixed(0)}',
+                Icons.payments_rounded, AppColors.amber, 'collect',
+                onTap: _collectCash),
+            btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
+                'complete',
+                enabled: false),
+          ];
+        }
         return [
           btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
               'complete'),
@@ -376,6 +414,33 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             ),
             const SizedBox(height: 4),
             _teamBody(canManageTeam),
+            if (b.cashPending && b.status == 'in_progress') ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.account_balance_wallet_outlined,
+                        size: 18, color: AppColors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Collect AED ${b.cashDue.toStringAsFixed(2)} in cash from '
+                        'the customer, then mark it collected to complete the job.',
+                        style: TextStyle(
+                            fontSize: 12.5, color: AppColors.textMuted),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 24),
               Row(
