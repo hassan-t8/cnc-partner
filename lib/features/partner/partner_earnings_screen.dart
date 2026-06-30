@@ -384,12 +384,12 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           ref: _refFor(t, bMap),
           title: () {
             final b = bMap[int.tryParse(t.bookingRef ?? '')];
-            final svc = [b?.serviceName ?? '', b?.customerName ?? '']
-                .where((s) => s.isNotEmpty)
-                .join(' · ');
-            return svc.isNotEmpty
-                ? svc
-                : (t.description.isNotEmpty ? t.description : 'Booking earning');
+            final svcName = (b?.serviceName ?? '').trim();
+            final parts = [
+              if (svcName.isNotEmpty) ServiceTitle.specific(svcName),
+              if ((b?.customerName ?? '').isNotEmpty) b!.customerName,
+            ];
+            return parts.isNotEmpty ? parts.join(' · ') : _settledTitle(t);
           }(),
           statusText: 'Pending clearance',
           statusColor: AppColors.amber,
@@ -521,9 +521,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     final color = info
         ? AppColors.textMuted
         : (credit ? AppColors.brand600 : AppColors.rose);
-    final desc = t.description.isNotEmpty
-        ? t.description
-        : t.type.replaceAll('_', ' ');
+    final subtitle = _settledSubtitle(t);
     final when = t.createdAt != null
         ? DateFormat('d MMM y · h:mm a').format(t.createdAt!)
         : '';
@@ -561,12 +559,21 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                    desc.isEmpty
-                        ? 'Transaction'
-                        : '${desc[0].toUpperCase()}${desc.substring(1)}',
+                Text(_settledTitle(t),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontWeight: FontWeight.w700, fontSize: 13.5)),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textMuted,
+                          height: 1.25)),
+                ],
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 6,
@@ -618,24 +625,61 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         ),
       );
 
+  // Friendly title per transaction type — mirrors the backend TYPE_LABELS so
+  // the card shows a clean line ("Cash collected from customer") instead of the
+  // long raw description.
+  static const _titleLabels = {
+    'earning': 'Earnings',
+    'cash_commission': 'Cash commission to CNC',
+    'cash_collected': 'Cash collected from customer',
+    'partner_unassign_penalty': 'Unassign penalty',
+    'payout': 'Payout to bank',
+    'adjustment': 'Manual adjustment',
+    'commission': 'Commission',
+    'commission_correction': 'Commission correction',
+    'reversal': 'Reversal',
+  };
+
+  String _settledTitle(WalletTransaction t) {
+    if (t.isReversal || t.isReversed) return 'Reversal';
+    return _titleLabels[t.type] ??
+        (t.type.isEmpty
+            ? (t.isCredit ? 'Credit' : 'Debit')
+            : t.type
+                .replaceAll('_', ' ')
+                .replaceFirstMapped(RegExp(r'^.'), (m) => m[0]!.toUpperCase()));
+  }
+
+  // One short line of context under the title (only where it helps).
+  String _settledSubtitle(WalletTransaction t) {
+    switch (t.type) {
+      case 'cash_collected':
+        return 'Physical cash you already hold — not added to your wallet.';
+      case 'cash_commission':
+        return 'What you owe CNC on the cash you collected.';
+      default:
+        return '';
+    }
+  }
+
+  // Short TYPE pill (web: "cash in hand", "commission", …).
   String _typeLabel(WalletTransaction t) {
-    if (t.isReversed || t.isReversal || t.type == 'reversal') return 'Reversal';
+    if (t.isReversed || t.isReversal || t.type == 'reversal') return 'reversal';
     switch (t.type) {
       case 'earning':
-        return 'Settlement'; // central settlement helper (web parity)
+        return 'earnings';
       case 'payout':
-        return 'Payout';
+        return 'payout';
       case 'adjustment':
-        return 'Adjustment';
+        return 'adjustment';
       case 'commission':
-        return 'Commission';
       case 'cash_commission':
-        return 'Cash commission';
+        return 'commission';
       case 'cash_collected':
-        return 'Cash collected · info';
+        return 'cash in hand';
       default:
         return t.type.isEmpty
-            ? (t.isCredit ? 'Credit' : 'Debit')
+            ? (t.isCredit ? 'credit' : 'debit')
             : t.type.replaceAll('_', ' ');
     }
   }
