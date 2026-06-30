@@ -28,7 +28,9 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   late PartnerBooking b;
   List<BookingAssignment>? _team; // null = loading
   bool _teamError = false;
-  bool _busy = false;
+  bool _busy = false; // lifecycle actions only (start / complete / cash)
+  bool _assigning = false; // the Assign button
+  final Set<int> _removing = {}; // assignment ids being unassigned
   bool _changed = false;
 
   @override
@@ -67,17 +69,17 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   }
 
   Future<void> _loadTeam() async {
-    setState(() {
-      _team = null;
-      _teamError = false;
-    });
+    // Only show the skeleton on the FIRST load — on reloads (socket / after
+    // assign-unassign) keep the current team visible so it doesn't flash a
+    // loader that looks like the job is starting.
+    if (_team == null) setState(() => _teamError = false);
     try {
       final list = await _repo.bookingAssignments(b.id);
       if (mounted) setState(() => _team = list);
     } catch (_) {
       if (mounted) {
         setState(() {
-          _team = const [];
+          _team ??= const [];
           _teamError = true;
         });
       }
@@ -236,6 +238,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     );
     if (picked == null) return;
     final role = picked.roles.contains('driver') ? 'driver' : 'crew';
+    setState(() => _assigning = true);
     try {
       await _repo.assignWorker(b.id, picked.id, role: role);
       AppToast.success('${picked.name} assigned');
@@ -243,21 +246,22 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       await _loadTeam();
     } on ApiException catch (e) {
       AppToast.error(e.message);
+    } finally {
+      if (mounted) setState(() => _assigning = false);
     }
   }
 
   Future<void> _unassign(BookingAssignment a) async {
-    // Optimistic: drop it from the list immediately, restore on failure.
-    final previous = _team;
-    setState(() => _team =
-        (_team ?? const []).where((x) => x.id != a.id).toList());
+    setState(() => _removing.add(a.id));
     try {
       await _repo.unassign(a.id);
       AppToast.success('Removed from job');
       _changed = true;
+      await _loadTeam();
     } on ApiException catch (e) {
       AppToast.error(e.message);
-      if (mounted) setState(() => _team = previous);
+    } finally {
+      if (mounted) setState(() => _removing.remove(a.id));
     }
   }
 
@@ -397,8 +401,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 const Spacer(),
                 if (canManageTeam)
                   TextButton.icon(
-                    onPressed: _assign,
-                    icon: const Icon(Icons.person_add_alt_1, size: 18),
+                    onPressed: _assigning ? null : _assign,
+                    icon: _assigning
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.person_add_alt_1, size: 18),
                     label: const Text('Assign'),
                   ),
               ],
@@ -544,11 +554,21 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               ),
             ),
             if (canManage)
-              IconButton(
-                onPressed: () => _unassign(a),
-                icon: const Icon(Icons.close, size: 18, color: AppColors.rose),
-                tooltip: 'Remove',
-              ),
+              _removing.contains(a.id)
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2.2)),
+                    )
+                  : IconButton(
+                      onPressed: () => _unassign(a),
+                      icon: const Icon(Icons.close,
+                          size: 18, color: AppColors.rose),
+                      tooltip: 'Remove',
+                    ),
           ],
         ),
       );
