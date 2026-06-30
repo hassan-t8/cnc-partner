@@ -13,6 +13,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
 import '../bookings/models.dart';
+import 'offer_details_sheet.dart';
 import 'partner_bookings_screen.dart';
 import 'partner_earnings_screen.dart';
 import 'partner_models.dart';
@@ -393,7 +394,15 @@ class _PartnerDashboardScreenState
     final countdown =
         remaining <= 0 ? 'Expired' : '$mm:${ss.toString().padLeft(2, '0')}';
 
-    return Container(
+    return InkWell(
+      onTap: busy
+          ? null
+          : () async {
+              final action = await showOfferDetailsSheet(context, ref, o);
+              if (action != null && mounted) _reload();
+            },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -487,6 +496,7 @@ class _PartnerDashboardScreenState
           ),
         ],
       ),
+    ),
     );
   }
 

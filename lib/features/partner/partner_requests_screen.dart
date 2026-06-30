@@ -11,6 +11,7 @@ import '../../widgets/searchable_picker.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
+import 'offer_details_sheet.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -132,11 +133,19 @@ class _PartnerRequestsScreenState
     return AppColors.amber;
   }
 
+  Future<void> _openDetails(Offer o) async {
+    final action = await showOfferDetailsSheet(context, ref, o);
+    if (action != null && mounted) _fetch();
+  }
+
   Widget _card(Offer o) {
     final busy = _acting == o.id;
     final expired =
         o.expiresAt != null && o.expiresAt!.isBefore(DateTime.now());
-    return Container(
+    return InkWell(
+      onTap: busy ? null : () => _openDetails(o),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -220,6 +229,7 @@ class _PartnerRequestsScreenState
           ),
         ],
       ),
+    ),
     );
   }
 

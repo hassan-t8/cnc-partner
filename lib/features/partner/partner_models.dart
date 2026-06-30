@@ -5,6 +5,14 @@ double _d(dynamic v) =>
 String _s(dynamic v) => v?.toString() ?? '';
 bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
+// First value that parses to a positive number (skips null AND 0), else 0.
+double _firstPositive(List<dynamic> vs) {
+  for (final v in vs) {
+    final d = _d(v);
+    if (d > 0) return d;
+  }
+  return 0;
+}
 
 class ServiceRequest {
   final int id;
@@ -531,10 +539,16 @@ class Offer {
   final String? customerPhone;
   final String address;
   final double earnings;
+  final double? commissionPct;
   final int rank;
   final DateTime? expiresAt;
+  final DateTime? scheduledStart;
   final int crewRequired;
   final String vanName;
+  // Auto-assigned team from the dispatch snapshot (web parity — shown, not
+  // editable, on accept).
+  final List<String> workerNames;
+  final String driverName;
 
   const Offer({
     required this.id,
@@ -544,15 +558,29 @@ class Offer {
     this.customerPhone,
     this.address = '',
     this.earnings = 0,
+    this.commissionPct,
     this.rank = 1,
     this.expiresAt,
+    this.scheduledStart,
     this.crewRequired = 0,
     this.vanName = '',
+    this.workerNames = const [],
+    this.driverName = '',
   });
 
   factory Offer.fromJson(Map<String, dynamic> j) {
     final b = j['booking'] is Map ? Map<String, dynamic>.from(j['booking']) : const {};
     final cust = b['customer'] is Map ? Map<String, dynamic>.from(b['customer']) : const {};
+    final snap = j['snapshotHydrated'] is Map
+        ? Map<String, dynamic>.from(j['snapshotHydrated'])
+        : const {};
+    String personName(dynamic w) {
+      if (w is! Map) return '';
+      final n =
+          ('${w['firstName'] ?? ''} ${w['lastName'] ?? ''}').trim();
+      return n.isNotEmpty ? n : _s(w['name']);
+    }
+
     return Offer(
       id: _i(j['id']) ?? 0,
       bookingId: _i(j['bookingId'] ?? b['id']),
@@ -560,18 +588,35 @@ class Offer {
       customerName: _s(cust['name'] ?? j['customerName']),
       customerPhone: (cust['phone'])?.toString(),
       address: _s(b['address'] ?? j['address']),
-      // Partner take-home: the web reads booking.partnerEarnings (preferred),
-      // falling back to cncChargesExclVat on older deploys.
-      earnings: _d(b['partnerEarnings'] ??
-          b['cncChargesExclVat'] ??
-          j['partnerEarnings'] ??
-          j['earnings'] ??
-          j['partnerCost'] ??
-          b['partnerCost']),
+      // Partner take-home: prefer the first POSITIVE figure — partnerEarnings
+      // can be 0 (cap edge / not yet computed), in which case we show the
+      // booking amount rather than a misleading "AED 0.00".
+      earnings: _firstPositive([
+        b['partnerEarnings'],
+        b['cncChargesExclVat'],
+        b['cncChargesInclVat'],
+        b['totalPrice'],
+        j['partnerEarnings'],
+        j['earnings'],
+        j['partnerCost'],
+        b['partnerCost'],
+      ]),
+      commissionPct: b['commissionPct'] == null ? null : _d(b['commissionPct']),
       rank: _i(j['rank']) ?? 1,
       expiresAt: _dt(j['expiresAt'] ?? j['expiry']),
+      scheduledStart: _dt(b['scheduledStart'] ?? j['scheduledStart']),
       crewRequired: _i(j['crewRequired'] ?? b['crewRequired']) ?? 0,
-      vanName: _s(j['vanName']),
+      vanName: _s((snap['van'] is Map
+              ? (snap['van']['name'] ?? snap['van']['label'])
+              : null) ??
+          j['vanName']),
+      workerNames: (snap['workers'] is List)
+          ? (snap['workers'] as List)
+              .map(personName)
+              .where((s) => s.isNotEmpty)
+              .toList()
+          : const [],
+      driverName: personName(snap['driver']),
     );
   }
 }
