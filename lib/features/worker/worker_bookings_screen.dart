@@ -76,6 +76,24 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     }
   }
 
+  Future<void> _collectCash(Assignment a) async {
+    final bookingId = a.bookingId;
+    if (bookingId == null) {
+      AppToast.error('Missing booking reference');
+      return;
+    }
+    setState(() => _acting = a.id);
+    try {
+      await ref.read(workerRepositoryProvider).cashCollect(bookingId);
+      AppToast.success('Cash collected — you can complete the job now');
+      _reloadAll();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    } finally {
+      if (mounted) setState(() => _acting = -1);
+    }
+  }
+
   Future<void> _start(Assignment a) async {
     final repo = ref.read(workerRepositoryProvider);
     try {
@@ -238,27 +256,52 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
 
   /// Inline lifecycle action(s) for the card, gated by status.
   List<Widget> _cardActions(Assignment a, bool busy) {
-    Widget btn(String label, Color color, String action) => SizedBox(
-          height: 42,
-          width: double.infinity,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: color),
-            onPressed: busy ? null : () => _act(a, action),
-            child: busy
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2.2, color: Colors.white))
-                : Text(label),
+    Widget btn(String label, Color color, String action,
+        {VoidCallback? onTap, bool enabled = true}) {
+      final handler =
+          (!enabled || busy) ? null : (onTap ?? () => _act(a, action));
+      final showSpinner = busy && handler != null;
+      return SizedBox(
+        height: 42,
+        width: double.infinity,
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: color,
+            disabledBackgroundColor: color.withValues(alpha: 0.35),
+            disabledForegroundColor: Colors.white.withValues(alpha: 0.8),
           ),
-        );
+          onPressed: handler,
+          child: showSpinner
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.2, color: Colors.white))
+              : Text(label),
+        ),
+      );
+    }
+
     switch (a.status) {
       case 'pending_acceptance':
         return [const SizedBox(height: 10), btn('Accept', AppColors.brand600, 'accept')];
       case 'accepted':
         return [const SizedBox(height: 10), btn('Start job', AppColors.violet, 'start')];
       case 'in_progress':
+        // Cash still owed → collect before completing (backend enforces it too).
+        if (a.cashPending) {
+          return [
+            const SizedBox(height: 10),
+            _cashNote(a),
+            const SizedBox(height: 8),
+            btn('Collect AED ${a.cashDue.toStringAsFixed(0)}', AppColors.amber,
+                'collect',
+                onTap: () => _collectCash(a)),
+            const SizedBox(height: 8),
+            btn('Complete job', AppColors.brand600, 'complete',
+                enabled: false),
+          ];
+        }
         return [
           const SizedBox(height: 10),
           btn('Complete job', AppColors.brand600, 'complete')
@@ -267,4 +310,19 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
         return const [];
     }
   }
+
+  Widget _cashNote(Assignment a) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: AppColors.amber.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
+        ),
+        child: Text(
+          'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark it '
+          'collected to complete.',
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+        ),
+      );
 }

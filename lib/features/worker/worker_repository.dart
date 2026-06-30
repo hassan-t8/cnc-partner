@@ -66,6 +66,12 @@ class WorkerRepository {
   Future<void> complete(int assignmentId) =>
       _api.post('/booking-assignments/$assignmentId/complete');
 
+  /// Mark the door cash as collected. Required before completing a cash
+  /// booking with money owed. Keyed by the BOOKING id (not the assignment id).
+  Future<void> cashCollect(int bookingId, {String? notes}) => _api.post(
+      '/booking/$bookingId/cash-collect',
+      body: {if (notes != null) 'notes': notes});
+
   /// GET /booking-assignments/{id}/attachments — list before/after photos.
   Future<List<Map<String, dynamic>>> attachments(int assignmentId) async {
     final res =

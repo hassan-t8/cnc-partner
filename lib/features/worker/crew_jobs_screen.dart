@@ -124,6 +124,24 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     }
   }
 
+  Future<void> _collectCash(Assignment a) async {
+    final bookingId = a.bookingId;
+    if (bookingId == null) {
+      AppToast.error('Missing booking reference');
+      return;
+    }
+    setState(() => _acting = a.id);
+    try {
+      await ref.read(workerRepositoryProvider).cashCollect(bookingId);
+      AppToast.success('Cash collected — you can complete the job now');
+      _reload();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    } finally {
+      if (mounted) setState(() => _acting = -1);
+    }
+  }
+
   Future<void> _start(Assignment a) async {
     final repo = ref.read(workerRepositoryProvider);
     try {
@@ -422,12 +440,20 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
             busy ? null : () => _act(a, 'start')));
         break;
       case 'in_progress':
-        children.add(_primary('Complete', AppColors.brand600,
-            busy ? null : () => _act(a, 'complete')));
+        // Cash still owed → collect before completing (backend enforces it).
+        if (a.cashPending) {
+          children.add(_primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
+              AppColors.amber, busy ? null : () => _collectCash(a)));
+          children.add(
+              _primary('Complete', AppColors.brand600, null)); // disabled
+        } else {
+          children.add(_primary('Complete', AppColors.brand600,
+              busy ? null : () => _act(a, 'complete')));
+        }
         break;
     }
     if (children.isEmpty) return const SizedBox.shrink();
-    return Row(
+    final row = Row(
       children: [
         for (var i = 0; i < children.length; i++) ...[
           if (i > 0) const SizedBox(width: 8),
@@ -435,6 +461,29 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         ],
       ],
     );
+    if (a.status == 'in_progress' && a.cashPending) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.amber.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
+            ),
+            child: Text(
+              'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark it '
+              'collected to complete.',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ),
+          const SizedBox(height: 8),
+          row,
+        ],
+      );
+    }
+    return row;
   }
 
   Widget _primary(String label, Color color, VoidCallback? onTap) => SizedBox(

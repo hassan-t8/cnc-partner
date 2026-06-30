@@ -26,6 +26,11 @@ class Assignment {
   final String role;
   final double? lat;
   final double? lng;
+  // Cash-collection (worker gates the Complete button on these, like the
+  // partner flow + the web).
+  final String payment; // cash | card | ...
+  final double cashDue;
+  final bool cashCollected;
 
   const Assignment({
     required this.id,
@@ -44,7 +49,36 @@ class Assignment {
     this.role = '',
     this.lat,
     this.lng,
+    this.payment = '',
+    this.cashDue = 0,
+    this.cashCollected = false,
   });
+
+  /// Cash booking with money still owed at the door.
+  bool get cashPending =>
+      payment.toLowerCase() == 'cash' && cashDue > 0 && !cashCollected;
+
+  Assignment copyWith({String? status, bool? cashCollected}) => Assignment(
+        id: id,
+        bookingId: bookingId,
+        bookingCode: bookingCode,
+        status: status ?? this.status,
+        serviceName: serviceName,
+        customerName: customerName,
+        customerPhone: customerPhone,
+        partnerPhone: partnerPhone,
+        address: address,
+        area: area,
+        scheduledStart: scheduledStart,
+        scheduledEnd: scheduledEnd,
+        completedAt: completedAt,
+        role: role,
+        lat: lat,
+        lng: lng,
+        payment: payment,
+        cashDue: cashDue,
+        cashCollected: cashCollected ?? this.cashCollected,
+      );
 
   factory Assignment.fromJson(Map<String, dynamic> j) {
     final b = j['booking'] is Map ? Map<String, dynamic>.from(j['booking']) : j;
@@ -66,6 +100,17 @@ class Assignment {
       role: _s(j['role']),
       lat: j['lat'] == null ? null : _d(j['lat']),
       lng: j['lng'] == null ? null : _d(j['lng']),
+      payment: _s(b['payment'] ?? b['paymentMethod'] ?? j['payment']),
+      // The worker bookings response ships payment/cashCollected/totalPrice/
+      // coinsApplied; cash owed at the door = total − coins (clamped) unless an
+      // explicit due is provided.
+      cashDue: () {
+        final explicit = _d(b['cashDue'] ?? b['cashOwed'] ?? b['amountDue']);
+        if (explicit > 0) return explicit;
+        final owed = _d(b['totalPrice'] ?? b['price']) - _d(b['coinsApplied']);
+        return owed > 0 ? owed : 0.0;
+      }(),
+      cashCollected: (b['cashCollected'] ?? j['cashCollected']) == true,
     );
   }
 
