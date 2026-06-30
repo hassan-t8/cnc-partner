@@ -585,8 +585,12 @@ class Offer {
       id: _i(j['id']) ?? 0,
       bookingId: _i(j['bookingId'] ?? b['id']),
       serviceName: _s(b['serviceName'] ?? j['serviceName']),
-      customerName: _s(cust['name'] ?? j['customerName']),
-      customerPhone: (cust['phone'])?.toString(),
+      // Customer name/phone are on the booking row directly (booking.customerName),
+      // not nested under booking.customer.
+      customerName: _s(b['customerName'] ?? cust['name'] ?? j['customerName']),
+      customerPhone:
+          (b['customerPhone'] ?? cust['phone'] ?? j['customerPhone'])
+              ?.toString(),
       address: _s(b['address'] ?? j['address']),
       // Partner take-home: prefer the first POSITIVE figure — partnerEarnings
       // can be 0 (cap edge / not yet computed), in which case we show the
