@@ -196,7 +196,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
       appBar: const MainAppBar('My jobs'),
       body: Column(
         children: [
-          const TodaySummary(),
+          TodaySummary(jobs: _jobs),
           _dateStrip(),
           Expanded(
             child: RefreshIndicator(
