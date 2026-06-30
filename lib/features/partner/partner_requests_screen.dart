@@ -85,22 +85,6 @@ class _PartnerRequestsScreenState
     }
   }
 
-  /// Show the proposed team and let the partner swap the van/driver before
-  /// accepting (substitutions). "Accept as proposed" sends no substitutions.
-  Future<void> _reviewAccept(Offer o) async {
-    final repo = ref.read(partnerRepositoryProvider);
-    final result = await showModalBottomSheet<Map<String, dynamic>?>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _OfferAcceptSheet(offerId: o.id, repo: repo),
-    );
-    // result == null -> cancelled. {} -> accept as proposed. {...} -> subs.
-    if (result == null) return;
-    await _act(o, true, substitutions: result.isEmpty ? null : result);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,8 +194,10 @@ class _PartnerRequestsScreenState
                 child: SizedBox(
                   height: 42,
                   child: ElevatedButton(
+                    // Accept as auto-assigned (no worker/van/driver editing) —
+                    // matches the web: the team is auto-assigned on accept.
                     onPressed:
-                        (busy || expired) ? null : () => _reviewAccept(o),
+                        (busy || expired) ? null : () => _act(o, true),
                     child: const Text('Accept'),
                   ),
                 ),
