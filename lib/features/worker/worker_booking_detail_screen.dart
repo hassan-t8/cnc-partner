@@ -11,6 +11,7 @@ import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
+import 'booking_photos.dart';
 import 'otp_dialog.dart';
 import 'worker_repository.dart';
 
@@ -247,6 +248,19 @@ class _WorkerBookingDetailScreenState
                 ],
               ],
             ),
+            if (_status == 'accepted' ||
+                _status == 'in_progress' ||
+                _status == 'completed') ...[
+              const SizedBox(height: 18),
+              const Divider(height: 1),
+              const SizedBox(height: 14),
+              BookingPhotos(
+                key: ValueKey('photos-detail-${a.id}-$_status'),
+                assignmentId: a.id,
+                showAfter:
+                    _status == 'in_progress' || _status == 'completed',
+              ),
+            ],
           ],
         ),
         bottomNavigationBar: _actionBar(),
