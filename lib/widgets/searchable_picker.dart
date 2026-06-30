@@ -37,7 +37,11 @@ Future<T?> showSearchablePicker<T>({
               : items
                   .where((it) => labelOf(it).toLowerCase().contains(q))
                   .toList();
-          final maxH = MediaQuery.of(ctx).size.height * 0.55;
+          // Keyboard-aware: shrink the list so the sheet never overflows when
+          // the search keyboard is open.
+          final mq = MediaQuery.of(ctx);
+          final maxH = (mq.size.height - mq.viewInsets.bottom - 200)
+              .clamp(120.0, mq.size.height * 0.55);
           // Size the list area to the FULL list (not the filtered one) so the
           // sheet height stays CONSTANT while the user types/searches.
           final listH = (items.length * 50.0).clamp(120.0, maxH).toDouble();
@@ -195,7 +199,9 @@ Future<List<T>?> showMultiSearchablePicker<T>({
           } else {
             rows.addAll(filtered);
           }
-          final maxH = MediaQuery.of(ctx).size.height * 0.55;
+          final mq = MediaQuery.of(ctx);
+          final maxH = (mq.size.height - mq.viewInsets.bottom - 240)
+              .clamp(120.0, mq.size.height * 0.55);
           final listH = (items.length * 52.0).clamp(120.0, maxH).toDouble();
           return SafeArea(
             child: Padding(

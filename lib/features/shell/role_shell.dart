@@ -1,14 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/auth/jwt_user.dart';
 import '../../core/providers.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../driver/driver_route_screen.dart';
 import '../driver/driver_schedule_screen.dart';
+import '../partner/offer_alert_popup.dart';
 import '../partner/partner_bookings_screen.dart';
 import '../partner/partner_dashboard_screen.dart';
+import '../partner/partner_repository.dart';
 import '../partner/partner_requests_screen.dart';
 import '../profile/profile_hub_screen.dart';
 import '../worker/crew_jobs_screen.dart';
@@ -29,6 +34,79 @@ class RoleShell extends ConsumerStatefulWidget {
 }
 
 class _RoleShellState extends ConsumerState<RoleShell> {
+  // ── Live offer alert (partners only) ──────────────────────────────────────
+  // Pops an inDrive-style alert the moment a new dispatch offer arrives while
+  // the partner is in the app. Driven by the realtime socket (instant) with a
+  // periodic poll as a fallback. The Requests tab stays the source of truth.
+  final Set<int> _seenOffers = {};
+  bool _seeded = false; // first sweep just records existing offers (no popup)
+  bool _popupOpen = false;
+  Timer? _offerPoll;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkOffers());
+    _offerPoll =
+        Timer.periodic(const Duration(seconds: 12), (_) => _checkOffers());
+  }
+
+  @override
+  void dispose() {
+    _offerPoll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkOffers() async {
+    if (!mounted || _popupOpen) return;
+    final user = ref.read(authControllerProvider).user;
+    if (user == null || !user.isPartner) return;
+
+    List offers;
+    try {
+      offers = await ref.read(partnerRepositoryProvider).offers();
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+
+    final now = DateTime.now();
+    final live = offers
+        .where((o) => o.expiresAt == null || o.expiresAt!.isAfter(now))
+        .toList();
+
+    // First sweep: remember what's already pending so we don't alert for
+    // offers that arrived before the app opened.
+    if (!_seeded) {
+      for (final o in live) {
+        _seenOffers.add(o.id);
+      }
+      _seeded = true;
+      return;
+    }
+
+    final fresh = live.where((o) => !_seenOffers.contains(o.id)).toList();
+    if (fresh.isEmpty) return;
+    for (final o in live) {
+      _seenOffers.add(o.id);
+    }
+
+    _popupOpen = true;
+    final action = await showOfferAlert(context, ref, fresh.first);
+    _popupOpen = false;
+    if (!mounted) return;
+    // Acted or dismissed — land the partner on the Requests tab so the offer
+    // (or its result) is right there.
+    final reqIndex =
+        _destsFor(user).indexWhere((d) => d.label == 'Requests');
+    if (reqIndex >= 0) {
+      ref.read(shellIndexProvider.notifier).state = reqIndex;
+    }
+    if (action != 'later') {
+      ref.read(tabRefreshProvider.notifier).state++;
+    }
+  }
+
   List<_Dest> _destsFor(JwtUser user) {
     if (user.isPartner) {
       return const [
@@ -61,6 +139,9 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     if (user == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    // A realtime dispatch/assignment event likely means a new offer — check
+    // immediately instead of waiting for the next poll.
+    ref.listen(bookingRealtimeProvider, (_, __) => _checkOffers());
     final dests = _destsFor(user);
     final index = ref.watch(shellIndexProvider).clamp(0, dests.length - 1);
     return Scaffold(

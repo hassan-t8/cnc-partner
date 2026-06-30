@@ -167,7 +167,10 @@ class _PartnerBookingsScreenState
           final pct = await _loadPenaltyPct();
           if (!mounted) return;
           final reason = await showUnassignSheet(context,
-              partnerCost: b.partnerCost, penaltyPct: pct);
+              bookingRef: b.ref.isNotEmpty ? b.ref : '#${b.id}',
+              customerName: b.customerName,
+              partnerCost: b.partnerCost,
+              penaltyPct: pct);
           if (reason == null) {
             setState(() => _acting = -1);
             return;

@@ -29,19 +29,21 @@ class PartnerDashboardScreen extends ConsumerStatefulWidget {
 
 class _PartnerDashboardScreenState
     extends ConsumerState<PartnerDashboardScreen> {
-  late Future<_Dash> _future;
+  _Dash? _data;
+  bool _loading = true;
+  bool _error = false;
   int _acting = -1;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _load();
   }
 
-  Future<_Dash> _load() async {
+  Future<_Dash> _fetch() async {
     final repo = ref.read(partnerRepositoryProvider);
     final results = await Future.wait([
-      repo.bookings(),
+      repo.bookings().catchError((_) => <PartnerBooking>[]),
       repo.workers().catchError((_) => <Worker>[]),
       repo.vans().catchError((_) => <Van>[]),
     ]);
@@ -52,12 +54,42 @@ class _PartnerDashboardScreenState
     );
   }
 
+  // Initial / tab load — shows the skeleton.
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
+    try {
+      final d = await _fetch();
+      if (!mounted) return;
+      setState(() {
+        _data = d;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = true;
+        _loading = false;
+      });
+    }
+  }
+
   void _reload() => _refresh();
 
-  Future<void> _refresh() {
-    final f = _load();
-    setState(() => _future = f);
-    return f;
+  // Pull-to-refresh / realtime: refetch in place — the spinner ends as soon
+  // as data lands and the list stays visible (no skeleton flash / hang).
+  Future<void> _refresh() async {
+    try {
+      final d = await _fetch();
+      if (mounted) setState(() {
+        _data = d;
+        _error = false;
+      });
+    } catch (_) {
+      if (mounted && _data == null) setState(() => _error = true);
+    }
   }
 
   Future<void> _act(PartnerBooking b, bool accept) async {
@@ -94,17 +126,17 @@ class _PartnerDashboardScreenState
       appBar: const MainAppBar('Dashboard'),
       body: RefreshIndicator(
         onRefresh: _refresh,
-        child: FutureBuilder<_Dash>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const LoadingList(count: 4, height: 96);
-            }
-            if (snap.hasError) {
-              return ErrorRetry(
-                  message: 'Couldn\'t load the dashboard.', onRetry: _reload);
-            }
-            final d = snap.data!;
+        child: _loading
+            ? const LoadingList(count: 4, height: 96)
+            : (_error && _data == null)
+                ? ListView(children: [
+                    const SizedBox(height: 60),
+                    ErrorRetry(
+                        message: 'Couldn\'t load the dashboard.',
+                        onRetry: _load),
+                  ])
+                : Builder(builder: (context) {
+                    final d = _data!;
             final now = DateTime.now();
             final today = d.bookings
                 .where((b) =>
@@ -205,8 +237,7 @@ class _PartnerDashboardScreenState
                   ...pending.map(_pendingCard),
               ],
             );
-          },
-        ),
+          }),
       ),
     );
   }

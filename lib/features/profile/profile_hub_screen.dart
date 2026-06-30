@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
@@ -176,7 +177,15 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
     ];
 
     final photo = ref.watch(profileImageProvider);
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      // Green hero behind the status bar → use light (white) status-bar icons
+      // so the time/battery stay visible, consistent across the app.
+      value: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+      child: Scaffold(
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(child: _header(user, photo)),
@@ -226,6 +235,7 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 
