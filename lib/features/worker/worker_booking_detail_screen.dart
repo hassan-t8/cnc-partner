@@ -289,6 +289,36 @@ class _WorkerBookingDetailScreenState
   }
 
   Widget? _actionBar() {
+    // Drivers transport the team — they don't run the job. Show a view-only
+    // note instead of Start/Complete (the crew or partner starts it).
+    final isDriver = a.role.toLowerCase() == 'driver';
+    if (isDriver && (_status == 'accepted' || _status == 'in_progress')) {
+      return _liftedBar(
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.visibility_outlined,
+                  size: 18, color: AppColors.textMuted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                    'View only — the crew or partner starts this job.',
+                    style:
+                        TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final buttons = <Widget>[];
     switch (_status) {
       case 'pending_acceptance':
@@ -323,9 +353,8 @@ class _WorkerBookingDetailScreenState
         ],
       ],
     );
-    return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: (_status == 'in_progress' && _cashPending)
+    return _liftedBar(
+      (_status == 'in_progress' && _cashPending)
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -351,6 +380,26 @@ class _WorkerBookingDetailScreenState
           : row,
     );
   }
+
+  /// A lifted bottom bar — top border + shadow + comfortable padding so the
+  /// buttons sit above the gesture/nav area instead of jammed at the edge.
+  Widget _liftedBar(Widget child) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.border)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, -2)),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: child,
+        ),
+      );
 
   Widget _primary(String label, Color color, VoidCallback? onTap) => SizedBox(
         height: 50,

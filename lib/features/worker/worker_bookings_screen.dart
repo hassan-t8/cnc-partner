@@ -26,13 +26,30 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   static const _statuses = ['upcoming', 'completed', 'all'];
-  late List<Future<List<Assignment>>> _futures;
+  // Cached rows per tab (null = first load). Keeping data across refreshes
+  // means pull-to-refresh updates in place instead of flashing a loader.
+  final List<List<Assignment>?> _data = [null, null, null];
+  final List<bool> _err = [false, false, false];
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
-    _futures = _statuses.map(_load).toList();
+    for (var i = 0; i < _statuses.length; i++) {
+      _fetchInto(i);
+    }
+  }
+
+  Future<void> _fetchInto(int i) async {
+    try {
+      final rows = await _load(_statuses[i]);
+      if (mounted) setState(() {
+            _data[i] = rows;
+            _err[i] = false;
+          });
+    } catch (_) {
+      if (mounted) setState(() => _err[i] = true);
+    }
   }
 
   @override
@@ -115,20 +132,16 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     }
   }
 
-  void _reload(int i) => _refresh(i);
+  void _reload(int i) => _fetchInto(i);
 
-  // Await-able for pull-to-refresh.
-  Future<void> _refresh(int i) {
-    final f = _load(_statuses[i]);
-    setState(() => _futures[i] = f);
-    return f;
-  }
+  // Await-able for pull-to-refresh — keeps the current rows visible while it
+  // fetches, then updates in place.
+  Future<void> _refresh(int i) => _fetchInto(i);
 
   void _reloadAll() {
     for (var i = 0; i < _statuses.length; i++) {
-      _futures[i] = _load(_statuses[i]);
+      _fetchInto(i);
     }
-    setState(() {});
   }
 
   @override
@@ -158,34 +171,41 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   }
 
   Widget _list(int i) {
+    final rows = _data[i];
+    Widget child;
+    if (rows == null) {
+      // First load (no cached data yet).
+      child = _err[i]
+          ? ListView(children: [
+              const SizedBox(height: 80),
+              ErrorRetry(
+                  message: 'Couldn\'t load bookings.',
+                  onRetry: () => _reload(i)),
+            ])
+          : const LoadingList();
+    } else if (rows.isEmpty) {
+      child = ListView(children: const [
+        SizedBox(height: 80),
+        EmptyState(icon: Icons.event_note_outlined, title: 'Nothing here yet'),
+      ]);
+    } else {
+      child = ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: rows.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (_, k) => _row(rows[k]),
+      );
+    }
     return RefreshIndicator(
       onRefresh: () => _refresh(i),
-      child: FutureBuilder<List<Assignment>>(
-        future: _futures[i],
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const LoadingList();
-          }
-          if (snap.hasError) {
-            return ErrorRetry(
-                message: 'Couldn\'t load bookings.', onRetry: () => _reload(i));
-          }
-          final rows = snap.data ?? const [];
-          if (rows.isEmpty) {
-            return ListView(children: const [
-              SizedBox(height: 80),
-              EmptyState(
-                  icon: Icons.event_note_outlined, title: 'Nothing here yet'),
-            ]);
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (_, k) => _row(rows[k]),
-          );
-        },
-      ),
+      // Always scrollable so pull-to-refresh works even when empty/loading.
+      child: child is ListView
+          ? child
+          : ListView(children: [
+              SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.6,
+                  child: child),
+            ]),
     );
   }
 
@@ -280,6 +300,24 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
       );
     }
 
+    // Drivers don't run the job — view only (the crew/partner starts it).
+    if (a.role.toLowerCase() == 'driver' &&
+        (a.status == 'accepted' || a.status == 'in_progress')) {
+      return [
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(Icons.visibility_outlined,
+                size: 15, color: AppColors.textMuted),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text('View only — the crew or partner starts this job.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+            ),
+          ],
+        ),
+      ];
+    }
     switch (a.status) {
       case 'pending_acceptance':
         return [const SizedBox(height: 10), btn('Accept', AppColors.brand600, 'accept')];

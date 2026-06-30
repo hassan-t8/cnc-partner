@@ -10,7 +10,6 @@ import '../../core/config/env.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
-import '../worker/today_summary.dart';
 import 'driver_repository.dart';
 
 class DriverRouteScreen extends ConsumerStatefulWidget {
@@ -20,14 +19,17 @@ class DriverRouteScreen extends ConsumerStatefulWidget {
 }
 
 class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
-  late Future<DriverDayPlan> _future;
   GoogleMapController? _map;
   DateTime _date = DateTime.now();
+  // Cached plan (null = loading). Kept across refreshes so pull-to-refresh
+  // updates in place instead of flashing a loader.
+  DriverDayPlan? _plan;
+  bool _planErr = false;
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _fetch();
   }
 
   Future<DriverDayPlan> _load() {
@@ -35,12 +37,31 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
     return ref.read(driverRepositoryProvider).day(workerId, _date);
   }
 
-  void _reload() => setState(() => _future = _load());
+  // Refresh in place — keeps the current plan visible while fetching.
+  Future<void> _fetch() async {
+    try {
+      final p = await _load();
+      if (mounted) setState(() {
+            _plan = p;
+            _planErr = false;
+          });
+    } catch (_) {
+      if (mounted) setState(() => _planErr = true);
+    }
+  }
 
-  void _shift(int days) => setState(() {
-        _date = _date.add(Duration(days: days));
-        _future = _load();
-      });
+  void _reload() => _fetch();
+
+  void _changeDate(DateTime d) {
+    setState(() {
+      _date = d;
+      _plan = null; // new date → show the loader for it
+      _planErr = false;
+    });
+    _fetch();
+  }
+
+  void _shift(int days) => _changeDate(_date.add(Duration(days: days)));
 
   Future<void> _pickDate() async {
     final d = await showDatePicker(
@@ -49,12 +70,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
       firstDate: DateTime.now().subtract(const Duration(days: 60)),
       lastDate: DateTime.now().add(const Duration(days: 60)),
     );
-    if (d != null) {
-      setState(() {
-        _date = d;
-        _future = _load();
-      });
-    }
+    if (d != null) _changeDate(d);
   }
 
   @override
@@ -89,10 +105,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
               ),
               if (!isToday)
                 TextButton(
-                    onPressed: () => setState(() {
-                          _date = DateTime.now();
-                          _future = _load();
-                        }),
+                    onPressed: () => _changeDate(DateTime.now()),
                     child: const Text('Today')),
               IconButton(
                   onPressed: () => _shift(1),
@@ -102,34 +115,51 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
         ),
         const Divider(height: 1),
         Expanded(
-          child: FutureBuilder<DriverDayPlan>(
-            future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const LoadingList(height: 120);
-          }
-          if (snap.hasError) {
-            return ErrorRetry(
-                message: 'Couldn\'t load today\'s route.', onRetry: _reload);
-          }
-          final plan = snap.data!;
-          final located =
-              plan.stops.where((s) => s.lat != null && s.lng != null).toList();
-          if (plan.stops.isEmpty) {
-            return const EmptyState(
-                icon: Icons.map_outlined,
-                title: 'No stops today',
-                subtitle: 'Enjoy the day — your route will appear here.');
-          }
-          return Column(
-            children: [
-              const TodaySummary(),
-              if (plan.vanName.isNotEmpty || plan.totalDistanceMeters > 0)
-                Container(
-                  width: double.infinity,
-                  color: AppColors.brand50,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: RefreshIndicator(
+            onRefresh: _fetch,
+            child: _routeBody(),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _routeBody() {
+    final plan = _plan;
+    if (plan == null) {
+      return _planErr
+          ? ListView(children: [
+              const SizedBox(height: 60),
+              ErrorRetry(
+                  message: 'Couldn\'t load the route.', onRetry: _reload),
+            ])
+          : const LoadingList(height: 120);
+    }
+    if (plan.stops.isEmpty) {
+      return ListView(children: const [
+        SizedBox(height: 60),
+        EmptyState(
+            icon: Icons.map_outlined,
+            title: 'No stops',
+            subtitle: 'Enjoy the day — your route will appear here.'),
+      ]);
+    }
+    final located =
+        plan.stops.where((s) => s.lat != null && s.lng != null).toList();
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        if (plan.vanName.isNotEmpty || plan.totalDistanceMeters > 0)
+          Container(
+            width: double.infinity,
+            color: AppColors.brand50,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Icon(Icons.local_shipping_rounded,
+                    size: 16, color: AppColors.brand700),
+                const SizedBox(width: 8),
+                Expanded(
                   child: Text(
                     [
                       if (plan.vanName.isNotEmpty)
@@ -138,29 +168,35 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
                       if (plan.totalDistanceMeters > 0)
                         '${(plan.totalDistanceMeters / 1000).toStringAsFixed(1)} km'
                             '${plan.totalDurationSeconds > 0 ? ' · ${(plan.totalDurationSeconds / 60).round()} min' : ''}',
-                    ].join(' · '),
+                    ].join('  ·  '),
                     style: const TextStyle(
                         color: AppColors.brand700,
                         fontWeight: FontWeight.w700,
                         fontSize: 12.5),
                   ),
                 ),
-              if (located.isNotEmpty)
-                SizedBox(height: 240, child: _buildMap(plan)),
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: plan.stops.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) => _stopRow(i + 1, plan.stops[i]),
-                ),
-              ),
+              ],
+            ),
+          ),
+        if (located.isNotEmpty)
+          SizedBox(height: 240, child: _buildMap(plan)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+          child: Row(
+            children: [
+              Text('${plan.stops.length} stop${plan.stops.length == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w800)),
             ],
-          );
-          },
           ),
         ),
-      ]),
+        for (var i = 0; i < plan.stops.length; i++)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: _stopRow(i + 1, plan.stops[i]),
+          ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 
