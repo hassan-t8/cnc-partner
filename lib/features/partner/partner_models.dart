@@ -5,6 +5,14 @@ double _d(dynamic v) =>
 String _s(dynamic v) => v?.toString() ?? '';
 bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 DateTime? _dt(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
+// First value that parses to a positive number (skips null AND 0), else 0.
+double _firstPositive(List<dynamic> vs) {
+  for (final v in vs) {
+    final d = _d(v);
+    if (d > 0) return d;
+  }
+  return 0;
+}
 
 class ServiceRequest {
   final int id;
@@ -232,6 +240,9 @@ class Partner {
   final List<int> serviceZoneIds;
   final List<BankAccount> bankDetails;
   final String uploadFile; // image filename or URL
+  // Self-unassign penalty as a PERCENT of partnerCost. null = legacy (no
+  // penalty), 0 = explicitly waived, > 0 = active penalty config.
+  final double? unassignPenaltyPct;
 
   const Partner({
     required this.id,
@@ -260,6 +271,7 @@ class Partner {
     this.serviceZoneIds = const [],
     this.bankDetails = const [],
     this.uploadFile = '',
+    this.unassignPenaltyPct,
   });
 
   factory Partner.fromJson(Map<String, dynamic> j) {
@@ -316,6 +328,9 @@ class Partner {
       serviceZoneIds: zones,
       bankDetails: banks,
       uploadFile: _s(j['uploadFile']),
+      unassignPenaltyPct: j['unassignPenaltyPct'] == null
+          ? null
+          : _d(j['unassignPenaltyPct']),
     );
   }
 }
@@ -348,6 +363,8 @@ class Worker {
   final bool pendingActivation;
   final bool acceptAutoAssign;
   final String homeAddress;
+  final double? homeLat;
+  final double? homeLng;
   final int? primaryZoneId;
 
   const Worker({
@@ -365,6 +382,8 @@ class Worker {
     this.pendingActivation = false,
     this.acceptAutoAssign = true,
     this.homeAddress = '',
+    this.homeLat,
+    this.homeLng,
     this.primaryZoneId,
   });
 
@@ -425,6 +444,8 @@ class Worker {
           ? true
           : _b(j['acceptAutoAssign']),
       homeAddress: _s(j['homeAddress']),
+      homeLat: j['homeLat'] == null ? null : _d(j['homeLat']),
+      homeLng: j['homeLng'] == null ? null : _d(j['homeLng']),
       primaryZoneId: _i(j['primaryZoneId']),
     );
   }
@@ -513,52 +534,96 @@ class Van {
 class Offer {
   final int id;
   final int? bookingId;
+  final String ref; // human booking code e.g. CNC-B-2275
   final String serviceName;
   final String customerName;
   final String? customerPhone;
   final String address;
   final double earnings;
+  final double? commissionPct;
   final int rank;
   final DateTime? expiresAt;
+  final DateTime? scheduledStart;
   final int crewRequired;
   final String vanName;
+  // Auto-assigned team from the dispatch snapshot (web parity — shown, not
+  // editable, on accept).
+  final List<String> workerNames;
+  final String driverName;
 
   const Offer({
     required this.id,
     this.bookingId,
+    this.ref = '',
     this.serviceName = '',
     this.customerName = '',
     this.customerPhone,
     this.address = '',
     this.earnings = 0,
+    this.commissionPct,
     this.rank = 1,
     this.expiresAt,
+    this.scheduledStart,
     this.crewRequired = 0,
     this.vanName = '',
+    this.workerNames = const [],
+    this.driverName = '',
   });
 
   factory Offer.fromJson(Map<String, dynamic> j) {
     final b = j['booking'] is Map ? Map<String, dynamic>.from(j['booking']) : const {};
     final cust = b['customer'] is Map ? Map<String, dynamic>.from(b['customer']) : const {};
+    final snap = j['snapshotHydrated'] is Map
+        ? Map<String, dynamic>.from(j['snapshotHydrated'])
+        : const {};
+    String personName(dynamic w) {
+      if (w is! Map) return '';
+      final n =
+          ('${w['firstName'] ?? ''} ${w['lastName'] ?? ''}').trim();
+      return n.isNotEmpty ? n : _s(w['name']);
+    }
+
     return Offer(
       id: _i(j['id']) ?? 0,
       bookingId: _i(j['bookingId'] ?? b['id']),
+      ref: _s(b['bookingId'] ?? j['bookingRef']),
       serviceName: _s(b['serviceName'] ?? j['serviceName']),
-      customerName: _s(cust['name'] ?? j['customerName']),
-      customerPhone: (cust['phone'])?.toString(),
+      // Customer name/phone are on the booking row directly (booking.customerName),
+      // not nested under booking.customer.
+      customerName: _s(b['customerName'] ?? cust['name'] ?? j['customerName']),
+      customerPhone:
+          (b['customerPhone'] ?? cust['phone'] ?? j['customerPhone'])
+              ?.toString(),
       address: _s(b['address'] ?? j['address']),
-      // Partner take-home: the web reads booking.partnerEarnings (preferred),
-      // falling back to cncChargesExclVat on older deploys.
-      earnings: _d(b['partnerEarnings'] ??
-          b['cncChargesExclVat'] ??
-          j['partnerEarnings'] ??
-          j['earnings'] ??
-          j['partnerCost'] ??
-          b['partnerCost']),
+      // Partner take-home: prefer the first POSITIVE figure — partnerEarnings
+      // can be 0 (cap edge / not yet computed), in which case we show the
+      // booking amount rather than a misleading "AED 0.00".
+      earnings: _firstPositive([
+        b['partnerEarnings'],
+        b['cncChargesExclVat'],
+        b['cncChargesInclVat'],
+        b['totalPrice'],
+        j['partnerEarnings'],
+        j['earnings'],
+        j['partnerCost'],
+        b['partnerCost'],
+      ]),
+      commissionPct: b['commissionPct'] == null ? null : _d(b['commissionPct']),
       rank: _i(j['rank']) ?? 1,
       expiresAt: _dt(j['expiresAt'] ?? j['expiry']),
+      scheduledStart: _dt(b['scheduledStart'] ?? j['scheduledStart']),
       crewRequired: _i(j['crewRequired'] ?? b['crewRequired']) ?? 0,
-      vanName: _s(j['vanName']),
+      vanName: _s((snap['van'] is Map
+              ? (snap['van']['name'] ?? snap['van']['label'])
+              : null) ??
+          j['vanName']),
+      workerNames: (snap['workers'] is List)
+          ? (snap['workers'] as List)
+              .map(personName)
+              .where((s) => s.isNotEmpty)
+              .toList()
+          : const [],
+      driverName: personName(snap['driver']),
     );
   }
 }
@@ -708,15 +773,19 @@ class RatingSummary {
 /// A worker (or driver) assigned to a booking, from /booking-assignments.
 class BookingAssignment {
   final int id;
+  final int? workerId;
   final String workerName;
   final String role;
   final String status;
+  final String vanLabel; // e.g. "cli · 234"
 
   const BookingAssignment({
     required this.id,
+    this.workerId,
     this.workerName = '',
     this.role = '',
     this.status = '',
+    this.vanLabel = '',
   });
 
   factory BookingAssignment.fromJson(Map<String, dynamic> j) {
@@ -724,15 +793,22 @@ class BookingAssignment {
     final dw = j['driverWorker'] is Map
         ? Map<String, dynamic>.from(j['driverWorker'])
         : const {};
+    final van = j['van'] is Map ? Map<String, dynamic>.from(j['van']) : const {};
     final who = w.isNotEmpty ? w : dw;
     final name = [who['firstName'], who['lastName']]
         .where((s) => '${s ?? ''}'.isNotEmpty)
         .join(' ');
     return BookingAssignment(
       id: _i(j['id']) ?? 0,
+      workerId: _i(who['id'] ?? j['workerId'] ?? j['driverWorkerId']),
       workerName: name.isNotEmpty ? name : _s(j['workerName'] ?? who['name']),
       role: _s(j['role'] ?? (dw.isNotEmpty ? 'driver' : 'crew')),
       status: _s(j['status'] ?? j['acceptanceStatus']),
+      vanLabel: van.isEmpty
+          ? ''
+          : [van['name'], van['plate']]
+              .where((s) => '${s ?? ''}'.isNotEmpty)
+              .join(' · '),
     );
   }
 }

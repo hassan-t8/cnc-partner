@@ -1,7 +1,7 @@
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
+import 'booking_photos.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'otp_dialog.dart';
@@ -29,11 +30,33 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   bool _error = false;
   int _acting = -1;
   DateTime _date = DateUtils.dateOnly(DateTime.now());
+  // Job count per date-only day (across all the worker's jobs) → drives the
+  // dot markers on the day strip (more jobs = more dots).
+  Map<DateTime, int> _jobCounts = {};
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadJobDays();
+  }
+
+  /// Count of jobs per day — for the day-strip dots. Best-effort.
+  Future<void> _loadJobDays() async {
+    try {
+      final all =
+          await ref.read(workerRepositoryProvider).myBookings(status: 'all');
+      if (!mounted) return;
+      final counts = <DateTime, int>{};
+      for (final a in all) {
+        if (a.scheduledStart == null ||
+            a.status == 'cancelled' ||
+            a.status == 'declined') continue;
+        final d = DateUtils.dateOnly(a.scheduledStart!);
+        counts[d] = (counts[d] ?? 0) + 1;
+      }
+      setState(() => _jobCounts = counts);
+    } catch (_) {}
   }
 
   Future<List<Assignment>> _fetch() {
@@ -72,6 +95,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   // Pull-to-refresh: refetch in place WITHOUT dropping to the skeleton, so the
   // spinner ends as soon as fresh data lands and the list stays visible.
   Future<void> _refresh() async {
+    _loadJobDays();
     try {
       final jobs = await _fetch();
       if (mounted) setState(() {
@@ -116,6 +140,24 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           AppToast.success('Job completed');
           break;
       }
+      _reload();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    } finally {
+      if (mounted) setState(() => _acting = -1);
+    }
+  }
+
+  Future<void> _collectCash(Assignment a) async {
+    final bookingId = a.bookingId;
+    if (bookingId == null) {
+      AppToast.error('Missing booking reference');
+      return;
+    }
+    setState(() => _acting = a.id);
+    try {
+      await ref.read(workerRepositoryProvider).cashCollect(bookingId);
+      AppToast.success('Cash collected — you can complete the job now');
       _reload();
     } on ApiException catch (e) {
       AppToast.error(e.message);
@@ -177,7 +219,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
       appBar: const MainAppBar('My jobs'),
       body: Column(
         children: [
-          const TodaySummary(),
+          TodaySummary(jobs: _jobs),
           _dateStrip(),
           Expanded(
             child: RefreshIndicator(
@@ -261,6 +303,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
 
   Widget _dayChip(DateTime day, DateTime today) {
     final on = day == _date;
+    final count = _jobCounts[day] ?? 0;
     final label = day == today
         ? 'Today'
         : day == today.add(const Duration(days: 1))
@@ -276,31 +319,60 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: on ? AppColors.brand600 : AppColors.border),
         ),
-        // FittedBox keeps the labels inside the chip on any device / text-scale.
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label,
-                  maxLines: 1,
-                  style: TextStyle(
-                      fontSize: 11,
-                      height: 1.1,
-                      fontWeight: FontWeight.w700,
-                      color: on ? Colors.white : AppColors.textMuted)),
-              const SizedBox(height: 3),
-              Text(DateFormat('d MMM').format(day),
-                  maxLines: 1,
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      height: 1.1,
-                      fontWeight: FontWeight.w800,
-                      color: on ? Colors.white : AppColors.textPrimary)),
-            ],
-          ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // FittedBox keeps the labels inside the chip on any text-scale.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(label,
+                      maxLines: 1,
+                      style: TextStyle(
+                          fontSize: 11,
+                          height: 1.1,
+                          fontWeight: FontWeight.w700,
+                          color: on ? Colors.white : AppColors.textMuted)),
+                  const SizedBox(height: 3),
+                  Text(DateFormat('d MMM').format(day),
+                      maxLines: 1,
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.1,
+                          fontWeight: FontWeight.w800,
+                          color: on ? Colors.white : AppColors.textPrimary)),
+                ],
+              ),
+            ),
+            // Top-right job dots (more jobs → more dots, dark → light).
+            if (count > 0)
+              Positioned(top: -1, right: -1, child: _jobDots(count, on)),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _jobDots(int count, bool on) {
+    final n = count.clamp(1, 3);
+    final base = on ? Colors.white : AppColors.brand600;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < n; i++) ...[
+          if (i > 0) const SizedBox(width: 2),
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: base.withValues(alpha: (1.0 - i * 0.32).clamp(0.3, 1.0)),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -322,10 +394,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           Row(
             children: [
               Expanded(
-                child: Text(
-                    a.serviceName.isEmpty ? 'Service' : a.serviceName,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 15.5)),
+                child: ServiceTitle(a.serviceName, titleSize: 15.5),
               ),
               StatusBadge(a.status, worker: true),
             ],
@@ -355,57 +424,21 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           ),
           const SizedBox(height: 10),
           _actions(a, busy),
-          if (a.status == 'accepted' ||
-              a.status == 'in_progress' ||
-              a.status == 'completed') ...[
+          if (a.role.toLowerCase() != 'driver' &&
+              (a.status == 'accepted' ||
+                  a.status == 'in_progress' ||
+                  a.status == 'completed')) ...[
             const Divider(height: 20),
-            _photoRow(a, 'before', 'Before photos'),
-            if (a.status == 'in_progress' || a.status == 'completed')
-              _photoRow(a, 'after', 'After photos'),
+            BookingPhotos(
+              key: ValueKey('photos-${a.id}-${a.status}'),
+              assignmentId: a.id,
+              showAfter:
+                  a.status == 'in_progress' || a.status == 'completed',
+            ),
           ],
         ],
       ),
     );
-  }
-
-  Widget _photoRow(Assignment a, String type, String label) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 12.5, fontWeight: FontWeight.w700)),
-          ),
-          OutlinedButton.icon(
-            onPressed: () => _uploadPhoto(a, type),
-            icon: const Icon(Icons.camera_alt_outlined, size: 16),
-            label: const Text('Add', style: TextStyle(fontSize: 12.5)),
-            style: OutlinedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _uploadPhoto(Assignment a, String type) async {
-    final picker = ImagePicker();
-    final file = await picker.pickImage(
-        source: ImageSource.camera, preferredCameraDevice: CameraDevice.rear);
-    if (file == null) return;
-    try {
-      await ref
-          .read(workerRepositoryProvider)
-          .uploadAttachment(a.id, file.path, type);
-      AppToast.success('Photo uploaded');
-    } on ApiException catch (e) {
-      AppToast.error(e.message);
-    } catch (_) {
-      AppToast.error('Upload failed.');
-    }
   }
 
   Widget _actions(Assignment a, bool busy) {
@@ -422,12 +455,20 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
             busy ? null : () => _act(a, 'start')));
         break;
       case 'in_progress':
-        children.add(_primary('Complete', AppColors.brand600,
-            busy ? null : () => _act(a, 'complete')));
+        // Cash still owed → collect before completing (backend enforces it).
+        if (a.cashPending) {
+          children.add(_primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
+              AppColors.amber, busy ? null : () => _collectCash(a)));
+          children.add(
+              _primary('Complete', AppColors.brand600, null)); // disabled
+        } else {
+          children.add(_primary('Complete', AppColors.brand600,
+              busy ? null : () => _act(a, 'complete')));
+        }
         break;
     }
     if (children.isEmpty) return const SizedBox.shrink();
-    return Row(
+    final row = Row(
       children: [
         for (var i = 0; i < children.length; i++) ...[
           if (i > 0) const SizedBox(width: 8),
@@ -435,6 +476,29 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         ],
       ],
     );
+    if (a.status == 'in_progress' && a.cashPending) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.amber.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
+            ),
+            child: Text(
+              'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark it '
+              'collected to complete.',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ),
+          const SizedBox(height: 8),
+          row,
+        ],
+      );
+    }
+    return row;
   }
 
   Widget _primary(String label, Color color, VoidCallback? onTap) => SizedBox(

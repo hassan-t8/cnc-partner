@@ -9,11 +9,14 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import '../worker/otp_dialog.dart';
+import '../../core/auth/auth_controller.dart';
 import 'booking_detail_screen.dart';
 import 'partner_repository.dart';
+import 'unassign_confirm_sheet.dart';
 
 const _statusOptions = [
   'all',
@@ -45,6 +48,8 @@ class _PartnerBookingsScreenState
   DateTime? _from;
   DateTime? _to;
   int _acting = -1;
+  double? _penaltyPct; // partner's self-unassign penalty %, fetched lazily
+  bool _penaltyLoaded = false;
 
   bool get _hasFilters => _status != 'all' || _from != null || _to != null;
   int get _filterCount =>
@@ -160,13 +165,26 @@ class _PartnerBookingsScreenState
           AppToast.success('Booking completed');
           break;
         case 'unsign':
-          final ok = await _confirmUnsign();
-          if (ok != true) {
+          final pct = await _loadPenaltyPct();
+          if (!mounted) return;
+          final reason = await showUnassignSheet(context,
+              bookingRef: b.ref.isNotEmpty ? b.ref : '#${b.id}',
+              customerName: b.customerName,
+              partnerCost: b.partnerCost,
+              penaltyPct: pct);
+          if (reason == null) {
             setState(() => _acting = -1);
             return;
           }
-          await repo.unsignBooking(b.id);
-          AppToast.success('Booking released');
+          final res = await repo.partnerUnassign(b.id,
+              reason: reason,
+              clientRequestId:
+                  'app-${DateTime.now().microsecondsSinceEpoch}');
+          final penalty = res['penalty'];
+          final amt = penalty is Map ? penalty['amount'] : null;
+          AppToast.success((amt is num && amt > 0)
+              ? 'Released — penalty AED ${amt.toStringAsFixed(2)}'
+              : 'Booking released');
           break;
         case 'cash':
           final done = await _cashCollectDialog(b);
@@ -221,26 +239,22 @@ class _PartnerBookingsScreenState
     );
   }
 
-  Future<bool?> _confirmUnsign() => showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Unsign this booking?'),
-          content: const Text(
-              'If you unsign, the booking goes back to dispatch and is re-offered '
-              'to another partner. A penalty of AED 100.00 will apply.'),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
-            ElevatedButton(
-              style:
-                  ElevatedButton.styleFrom(backgroundColor: AppColors.rose),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Unsign'),
-            ),
-          ],
-        ),
-      );
+  /// Lazily fetch (and cache) the partner's self-unassign penalty %, so the
+  /// confirm sheet can preview the exact AED penalty.
+  Future<double?> _loadPenaltyPct() async {
+    if (_penaltyLoaded) return _penaltyPct;
+    try {
+      final pid = ref.read(authControllerProvider).user?.partnerId;
+      if (pid != null) {
+        final p = await ref.read(partnerRepositoryProvider).getPartner(pid);
+        _penaltyPct = p.unassignPenaltyPct;
+      }
+    } catch (_) {
+      // Leave null — sheet falls back to "no penalty / preview unavailable".
+    }
+    _penaltyLoaded = true;
+    return _penaltyPct;
+  }
 
   Future<(int, String)?> _reviewCustomerDialog(PartnerBooking b) {
     int stars = 0;
@@ -759,7 +773,7 @@ class _PartnerBookingsScreenState
                         Divider(height: 1, color: AppColors.border),
                         const SizedBox(height: 8),
                         _metaRow(Icons.cleaning_services_outlined,
-                            b.serviceName.isEmpty ? 'Service' : b.serviceName),
+                            ServiceTitle.specific(b.serviceName)),
                         _metaRow(Icons.schedule_outlined, time),
                         if (b.area.isNotEmpty)
                           _metaRow(Icons.place_outlined, b.area),

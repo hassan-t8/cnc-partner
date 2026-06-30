@@ -1,6 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
@@ -10,9 +11,9 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
-import '../../widgets/status_badge.dart';
+import '../../widgets/service_title.dart';
 import '../bookings/models.dart';
-import 'booking_detail_screen.dart';
+import 'offer_details_sheet.dart';
 import 'partner_bookings_screen.dart';
 import 'partner_earnings_screen.dart';
 import 'partner_models.dart';
@@ -29,53 +30,80 @@ class PartnerDashboardScreen extends ConsumerStatefulWidget {
 
 class _PartnerDashboardScreenState
     extends ConsumerState<PartnerDashboardScreen> {
-  late Future<_Dash> _future;
+  _Dash? _data;
+  bool _loading = true;
+  bool _error = false;
   int _acting = -1;
+  Timer? _tick;
+  // First-seen remaining seconds per offer → the timer bar depletes from full.
+  final Map<int, int> _offerStartSecs = {};
 
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _load();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && (_data?.offers.isNotEmpty ?? false)) setState(() {});
+    });
   }
 
-  Future<_Dash> _load() async {
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  Future<_Dash> _fetch() async {
     final repo = ref.read(partnerRepositoryProvider);
     final results = await Future.wait([
-      repo.bookings(),
+      repo.bookings().catchError((_) => <PartnerBooking>[]),
       repo.workers().catchError((_) => <Worker>[]),
       repo.vans().catchError((_) => <Van>[]),
+      repo.offers().catchError((_) => <Offer>[]),
     ]);
     return _Dash(
       bookings: results[0] as List<PartnerBooking>,
       workers: (results[1] as List).length,
       vans: (results[2] as List).length,
+      offers: results[3] as List<Offer>,
     );
+  }
+
+  // Initial / tab load — shows the skeleton.
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
+    try {
+      final d = await _fetch();
+      if (!mounted) return;
+      setState(() {
+        _data = d;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = true;
+        _loading = false;
+      });
+    }
   }
 
   void _reload() => _refresh();
 
-  Future<void> _refresh() {
-    final f = _load();
-    setState(() => _future = f);
-    return f;
-  }
-
-  Future<void> _act(PartnerBooking b, bool accept) async {
-    setState(() => _acting = b.id);
+  // Pull-to-refresh / realtime: refetch in place — the spinner ends as soon
+  // as data lands and the list stays visible (no skeleton flash / hang).
+  Future<void> _refresh() async {
     try {
-      final repo = ref.read(partnerRepositoryProvider);
-      if (accept) {
-        await repo.acceptBooking(b.id);
-        AppToast.success('Booking accepted');
-      } else {
-        await repo.declineBooking(b.id);
-        AppToast.success('Booking declined');
-      }
-      _reload();
-    } on ApiException catch (e) {
-      AppToast.error(e.message);
-    } finally {
-      if (mounted) setState(() => _acting = -1);
+      final d = await _fetch();
+      if (mounted) setState(() {
+        _data = d;
+        _error = false;
+      });
+    } catch (_) {
+      if (mounted && _data == null) setState(() => _error = true);
     }
   }
 
@@ -94,17 +122,17 @@ class _PartnerDashboardScreenState
       appBar: const MainAppBar('Dashboard'),
       body: RefreshIndicator(
         onRefresh: _refresh,
-        child: FutureBuilder<_Dash>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const LoadingList(count: 4, height: 96);
-            }
-            if (snap.hasError) {
-              return ErrorRetry(
-                  message: 'Couldn\'t load the dashboard.', onRetry: _reload);
-            }
-            final d = snap.data!;
+        child: _loading
+            ? const LoadingList(count: 4, height: 96)
+            : (_error && _data == null)
+                ? ListView(children: [
+                    const SizedBox(height: 60),
+                    ErrorRetry(
+                        message: 'Couldn\'t load the dashboard.',
+                        onRetry: _load),
+                  ])
+                : Builder(builder: (context) {
+                    final d = _data!;
             final now = DateTime.now();
             final today = d.bookings
                 .where((b) =>
@@ -118,9 +146,6 @@ class _PartnerDashboardScreenState
                     b.scheduledStart!
                         .isBefore(now.add(const Duration(days: 7))))
                 .length;
-            final pending = d.bookings
-                .where((b) => b.status == 'awaiting_acceptance')
-                .toList();
             final weekEarn = d.bookings
                 .where((b) => b.status == 'completed')
                 .fold<double>(0, (s, b) => s + b.partnerCost);
@@ -173,40 +198,61 @@ class _PartnerDashboardScreenState
                 const SizedBox(height: 20),
                 Row(
                   children: [
-                    const Text('Pending acceptance',
+                    const Text('New requests',
                         style: TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w800)),
                     const SizedBox(width: 8),
-                    if (pending.isNotEmpty)
+                    if (d.offers.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 7, vertical: 1),
                         decoration: BoxDecoration(
-                            color: AppColors.amber.withValues(alpha: 0.15),
+                            color: AppColors.rose.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(20)),
-                        child: Text('${pending.length}',
+                        child: Text('${d.offers.length}',
                             style: const TextStyle(
-                                color: AppColors.amber,
+                                color: AppColors.rose,
                                 fontWeight: FontWeight.w800,
                                 fontSize: 12)),
+                      ),
+                    const Spacer(),
+                    if (d.offers.length > 3)
+                      TextButton(
+                        onPressed: () =>
+                            ref.read(shellIndexProvider.notifier).state = 2,
+                        style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 0),
+                            tapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap),
+                        child: const Text('See all'),
                       ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                if (pending.isEmpty)
+                if (d.offers.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: EmptyState(
                         icon: Icons.check_circle_outline,
                         title: 'All caught up',
-                        subtitle: 'No bookings awaiting your acceptance.'),
+                        subtitle: 'New dispatch offers will appear here.'),
                   )
-                else
-                  ...pending.map(_pendingCard),
+                else ...[
+                  ...d.offers.take(3).map(_offerCard),
+                  if (d.offers.length > 3)
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () =>
+                            ref.read(shellIndexProvider.notifier).state = 2,
+                        child: Text('See all ${d.offers.length} requests'),
+                      ),
+                    ),
+                ],
               ],
             );
-          },
-        ),
+          }),
       ),
     );
   }
@@ -312,12 +358,51 @@ class _PartnerDashboardScreenState
         ),
       );
 
-  Widget _pendingCard(PartnerBooking b) {
-    final busy = _acting == b.id;
-    final time = b.scheduledStart != null
-        ? DateFormat('EEE d MMM · h:mm a').format(b.scheduledStart!)
-        : '';
-    return Container(
+  Future<void> _offerAct(Offer o, bool accept) async {
+    setState(() => _acting = o.id);
+    try {
+      final repo = ref.read(partnerRepositoryProvider);
+      if (accept) {
+        await repo.acceptOffer(o.id);
+        AppToast.success('Booking accepted');
+      } else {
+        await repo.declineOffer(o.id);
+        AppToast.success('Declined — passed to the next partner');
+      }
+      _reload();
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+    } finally {
+      if (mounted) setState(() => _acting = -1);
+    }
+  }
+
+  // A dispatch offer card with a NEW tag, depleting timer bar + accept/decline.
+  Widget _offerCard(Offer o) {
+    final busy = _acting == o.id;
+    final exp = o.expiresAt;
+    final remaining = exp == null ? 0 : exp.difference(DateTime.now()).inSeconds;
+    final start =
+        _offerStartSecs.putIfAbsent(o.id, () => remaining > 0 ? remaining : 1);
+    if (remaining > start) _offerStartSecs[o.id] = remaining;
+    final denom = _offerStartSecs[o.id]!;
+    final frac = denom > 0 ? (remaining / denom).clamp(0.0, 1.0) : 0.0;
+    final barColor = frac < 0.33
+        ? AppColors.rose
+        : (frac < 0.66 ? AppColors.amber : AppColors.brand600);
+    final mm = remaining ~/ 60, ss = remaining % 60;
+    final countdown =
+        remaining <= 0 ? 'Expired' : '$mm:${ss.toString().padLeft(2, '0')}';
+
+    return InkWell(
+      onTap: busy
+          ? null
+          : () async {
+              final action = await showOfferDetailsSheet(context, ref, o);
+              if (action != null && mounted) _reload();
+            },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -325,88 +410,106 @@ class _PartnerDashboardScreenState
         border: Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: busy ? null : () => _openDetail(b),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                        b.serviceName.isEmpty ? 'Service' : b.serviceName,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 14.5)),
-                  ),
-                  StatusBadge(b.status),
-                ],
-              ),
-              const SizedBox(height: 3),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                        [b.customerName, b.area, time]
-                            .where((s) => s.isNotEmpty)
-                            .join(' · '),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LinearProgressIndicator(
+            value: frac,
+            minHeight: 4,
+            backgroundColor: AppColors.border,
+            valueColor: AlwaysStoppedAnimation(barColor),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: AppColors.rose.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20)),
+                      child: const Text('NEW',
+                          style: TextStyle(
+                              color: AppColors.rose,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 10,
+                              letterSpacing: 0.5)),
+                    ),
+                    const Spacer(),
+                    Icon(Icons.timer_outlined, size: 14, color: barColor),
+                    const SizedBox(width: 3),
+                    Text(countdown,
                         style: TextStyle(
-                            fontSize: 12.5, color: AppColors.textMuted)),
-                  ),
-                  Text('Details',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.brand600)),
-                  Icon(Icons.chevron_right,
-                      size: 16, color: AppColors.brand600),
+                            color: barColor,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12.5)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ServiceTitle(o.serviceName, titleSize: 14.5),
+                if (o.address.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(o.address,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          TextStyle(fontSize: 12, color: AppColors.textMuted)),
                 ],
-              ),
-              const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: ElevatedButton(
-                    onPressed: busy ? null : () => _act(b, true),
-                    child: const Text('Accept'),
-                  ),
+                const SizedBox(height: 4),
+                Text('You earn AED ${o.earnings.toStringAsFixed(2)}',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.brand700)),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 40,
+                        child: ElevatedButton(
+                          onPressed: busy ? null : () => _offerAct(o, true),
+                          child: const Text('Accept'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SizedBox(
+                        height: 40,
+                        child: OutlinedButton(
+                          onPressed: busy ? null : () => _offerAct(o, false),
+                          style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.rose,
+                              side: const BorderSide(color: AppColors.rose)),
+                          child: const Text('Decline'),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: OutlinedButton(
-                    onPressed: busy ? null : () => _act(b, false),
-                    style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.rose,
-                        side: const BorderSide(color: AppColors.rose)),
-                    child: const Text('Decline'),
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-            ],
-          ),
-        ),
+        ],
       ),
+    ),
     );
   }
 
-  Future<void> _openDetail(PartnerBooking b) async {
-    await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => BookingDetailScreen(booking: b)));
-    if (mounted) _reload();
-  }
 }
 
 class _Dash {
   final List<PartnerBooking> bookings;
   final int workers;
   final int vans;
-  _Dash({required this.bookings, required this.workers, required this.vans});
+  final List<Offer> offers;
+  _Dash(
+      {required this.bookings,
+      required this.workers,
+      required this.vans,
+      required this.offers});
 }

@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'partner_models.dart';
@@ -140,6 +141,11 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           .compareTo(a.createdAt ?? DateTime(0)));
 
     final completed = e.bookings.where((b) => b.status == 'completed').length;
+    // Physical cash collected at the door this period — canonical source is the
+    // informational `cash_collected` ledger row (incl-VAT), per web parity.
+    final cashCollected = txns
+        .where((t) => t.type == 'cash_collected' && _inRange(t.createdAt))
+        .fold<double>(0, (s, t) => s + t.amount);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -159,6 +165,11 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                     Icons.hourglass_bottom_outlined)),
           ],
         ),
+        if (cashCollected > 0) ...[
+          const SizedBox(height: 12),
+          _stat('Cash collected (period)',
+              'AED ${cashCollected.toStringAsFixed(2)}', Icons.payments_outlined),
+        ],
         const SizedBox(height: 16),
         _dateFilterBar(),
         const SizedBox(height: 12),
@@ -373,12 +384,12 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           ref: _refFor(t, bMap),
           title: () {
             final b = bMap[int.tryParse(t.bookingRef ?? '')];
-            final svc = [b?.serviceName ?? '', b?.customerName ?? '']
-                .where((s) => s.isNotEmpty)
-                .join(' · ');
-            return svc.isNotEmpty
-                ? svc
-                : (t.description.isNotEmpty ? t.description : 'Booking earning');
+            final svcName = (b?.serviceName ?? '').trim();
+            final parts = [
+              if (svcName.isNotEmpty) ServiceTitle.specific(svcName),
+              if ((b?.customerName ?? '').isNotEmpty) b!.customerName,
+            ];
+            return parts.isNotEmpty ? parts.join(' · ') : _settledTitle(t);
           }(),
           statusText: 'Pending clearance',
           statusColor: AppColors.amber,
@@ -389,7 +400,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
       for (final b in bookings)
         _upcomingRow(
           ref: b.ref.isNotEmpty ? b.ref : '#${b.id}',
-          title: [b.serviceName, b.customerName]
+          title: [ServiceTitle.specific(b.serviceName), b.customerName]
               .where((s) => s.isNotEmpty)
               .join(' · '),
           statusBadge: StatusBadge(b.status),
@@ -504,10 +515,13 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
 
   Widget _settledRow(WalletTransaction t, Map<int, PartnerBooking> bMap) {
     final credit = t.isCredit;
-    final color = credit ? AppColors.brand600 : AppColors.rose;
-    final desc = t.description.isNotEmpty
-        ? t.description
-        : t.type.replaceAll('_', ' ');
+    // cash_collected is INFORMATIONAL — it doesn't move the wallet balance, so
+    // render it neutral (no +/- credit/debit styling).
+    final info = t.type == 'cash_collected';
+    final color = info
+        ? AppColors.textMuted
+        : (credit ? AppColors.brand600 : AppColors.rose);
+    final subtitle = _settledSubtitle(t);
     final when = t.createdAt != null
         ? DateFormat('d MMM y · h:mm a').format(t.createdAt!)
         : '';
@@ -531,7 +545,11 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
-                credit ? Icons.south_west_rounded : Icons.north_east_rounded,
+                info
+                    ? Icons.info_outline
+                    : (credit
+                        ? Icons.south_west_rounded
+                        : Icons.north_east_rounded),
                 color: color,
                 size: 18),
           ),
@@ -541,12 +559,21 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                    desc.isEmpty
-                        ? 'Transaction'
-                        : '${desc[0].toUpperCase()}${desc.substring(1)}',
+                Text(_settledTitle(t),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontWeight: FontWeight.w700, fontSize: 13.5)),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textMuted,
+                          height: 1.25)),
+                ],
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 6,
@@ -562,7 +589,10 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Text('${credit ? '+' : '−'} AED ${t.amount.toStringAsFixed(2)}',
+          Text(
+              info
+                  ? 'AED ${t.amount.toStringAsFixed(2)}'
+                  : '${credit ? '+' : '−'} AED ${t.amount.toStringAsFixed(2)}',
               style: TextStyle(
                   color: color,
                   fontWeight: FontWeight.w800,
@@ -595,20 +625,61 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         ),
       );
 
+  // Friendly title per transaction type — mirrors the backend TYPE_LABELS so
+  // the card shows a clean line ("Cash collected from customer") instead of the
+  // long raw description.
+  static const _titleLabels = {
+    'earning': 'Earnings',
+    'cash_commission': 'Cash commission to CNC',
+    'cash_collected': 'Cash collected from customer',
+    'partner_unassign_penalty': 'Unassign penalty',
+    'payout': 'Payout to bank',
+    'adjustment': 'Manual adjustment',
+    'commission': 'Commission',
+    'commission_correction': 'Commission correction',
+    'reversal': 'Reversal',
+  };
+
+  String _settledTitle(WalletTransaction t) {
+    if (t.isReversal || t.isReversed) return 'Reversal';
+    return _titleLabels[t.type] ??
+        (t.type.isEmpty
+            ? (t.isCredit ? 'Credit' : 'Debit')
+            : t.type
+                .replaceAll('_', ' ')
+                .replaceFirstMapped(RegExp(r'^.'), (m) => m[0]!.toUpperCase()));
+  }
+
+  // One short line of context under the title (only where it helps).
+  String _settledSubtitle(WalletTransaction t) {
+    switch (t.type) {
+      case 'cash_collected':
+        return 'Physical cash you already hold — not added to your wallet.';
+      case 'cash_commission':
+        return 'What you owe CNC on the cash you collected.';
+      default:
+        return '';
+    }
+  }
+
+  // Short TYPE pill (web: "cash in hand", "commission", …).
   String _typeLabel(WalletTransaction t) {
-    if (t.isReversed || t.isReversal || t.type == 'reversal') return 'Reversal';
+    if (t.isReversed || t.isReversal || t.type == 'reversal') return 'reversal';
     switch (t.type) {
       case 'earning':
-        return 'Earning';
+        return 'earnings';
       case 'payout':
-        return 'Payout';
+        return 'payout';
       case 'adjustment':
-        return 'Adjustment';
+        return 'adjustment';
       case 'commission':
-        return 'Commission';
+      case 'cash_commission':
+        return 'commission';
+      case 'cash_collected':
+        return 'cash in hand';
       default:
         return t.type.isEmpty
-            ? (t.isCredit ? 'Credit' : 'Debit')
+            ? (t.isCredit ? 'credit' : 'debit')
             : t.type.replaceAll('_', ' ');
     }
   }

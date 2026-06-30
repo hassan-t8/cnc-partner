@@ -4,11 +4,14 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
+import 'booking_photos.dart';
 import 'otp_dialog.dart';
 import 'worker_repository.dart';
 
@@ -27,8 +30,44 @@ class _WorkerBookingDetailScreenState
     extends ConsumerState<WorkerBookingDetailScreen> {
   late String _status = widget.assignment.status;
   bool _busy = false;
+  late bool _cashCollected = widget.assignment.cashCollected;
 
   Assignment get a => widget.assignment;
+  bool get _cashPending =>
+      a.payment.toLowerCase() == 'cash' && a.cashDue > 0 && !_cashCollected;
+
+  @override
+  void initState() {
+    super.initState();
+    final bid = widget.assignment.bookingId;
+    if (bid != null) {
+      ref.read(bookingRealtimeProvider.notifier).joinBooking(bid);
+    }
+  }
+
+  @override
+  void dispose() {
+    final bid = widget.assignment.bookingId;
+    if (bid != null) {
+      ref.read(bookingRealtimeProvider.notifier).leaveBooking(bid);
+    }
+    super.dispose();
+  }
+
+  /// Pull fresh state for this job so socket events (cash collected / completed
+  /// from the web or another device) update the UI live.
+  Future<void> _refresh() async {
+    try {
+      final list = await ref.read(workerRepositoryProvider).myBookings();
+      final fresh = list.where((x) => x.id == a.id);
+      if (fresh.isNotEmpty && mounted) {
+        setState(() {
+          _status = fresh.first.status;
+          _cashCollected = fresh.first.cashCollected;
+        });
+      }
+    } catch (_) {}
+  }
 
   Future<void> _act(String action) async {
     final repo = ref.read(workerRepositoryProvider);
@@ -116,6 +155,11 @@ class _WorkerBookingDetailScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Live: refresh this job when its booking changes (payment/status).
+    ref.listen(bookingRealtimeProvider, (_, __) {
+      final lid = ref.read(bookingRealtimeProvider.notifier).lastBookingId;
+      if (mounted && (lid == null || lid == a.bookingId)) _refresh();
+    });
     final time = a.scheduledStart != null
         ? DateFormat('EEE d MMM y · h:mm a').format(a.scheduledStart!)
         : 'Time to be confirmed';
@@ -144,12 +188,11 @@ class _WorkerBookingDetailScreenState
                   Row(
                     children: [
                       Expanded(
-                        child: Text(
-                            a.serviceName.isEmpty ? 'Service' : a.serviceName,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w900)),
+                        child: ServiceTitle(
+                            a.serviceName,
+                            titleSize: 19,
+                            titleColor: Colors.white,
+                            crumbColor: Colors.white.withValues(alpha: 0.8)),
                       ),
                       StatusBadge(_status, worker: true),
                     ],
@@ -205,13 +248,80 @@ class _WorkerBookingDetailScreenState
                 ],
               ],
             ),
+            // Before/after photos are for the crew/partner who run the job —
+            // not the driver.
+            if (a.role.toLowerCase() != 'driver' &&
+                (_status == 'accepted' ||
+                    _status == 'in_progress' ||
+                    _status == 'completed')) ...[
+              const SizedBox(height: 18),
+              const Divider(height: 1),
+              const SizedBox(height: 14),
+              BookingPhotos(
+                key: ValueKey('photos-detail-${a.id}-$_status'),
+                assignmentId: a.id,
+                showAfter:
+                    _status == 'in_progress' || _status == 'completed',
+              ),
+            ],
           ],
         ),
         bottomNavigationBar: _actionBar(),
     );
   }
 
+  Future<void> _collectCash() async {
+    final bookingId = a.bookingId;
+    if (bookingId == null) {
+      AppToast.error('Missing booking reference');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await ref.read(workerRepositoryProvider).cashCollect(bookingId);
+      if (!mounted) return;
+      setState(() {
+        _cashCollected = true;
+        _busy = false;
+      });
+      AppToast.success('Cash collected — you can complete the job now');
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Widget? _actionBar() {
+    // Drivers transport the team — they don't run the job. Show a view-only
+    // note instead of Start/Complete (the crew or partner starts it).
+    final isDriver = a.role.toLowerCase() == 'driver';
+    if (isDriver && (_status == 'accepted' || _status == 'in_progress')) {
+      return _liftedBar(
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.visibility_outlined,
+                  size: 18, color: AppColors.textMuted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                    'View only — the crew or partner starts this job.',
+                    style:
+                        TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final buttons = <Widget>[];
     switch (_status) {
       case 'pending_acceptance':
@@ -225,23 +335,74 @@ class _WorkerBookingDetailScreenState
             'Start job', AppColors.violet, _busy ? null : () => _act('start')));
         break;
       case 'in_progress':
-        buttons.add(_primary('Complete job', AppColors.brand600,
-            _busy ? null : () => _act('complete')));
+        // Cash still owed → collect before completing (backend enforces it).
+        if (_cashPending) {
+          buttons.add(_primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
+              AppColors.amber, _busy ? null : _collectCash));
+          buttons.add(_primary(
+              'Complete job', AppColors.brand600, null)); // disabled
+        } else {
+          buttons.add(_primary('Complete job', AppColors.brand600,
+              _busy ? null : () => _act('complete')));
+        }
         break;
     }
     if (buttons.isEmpty) return null;
-    return SafeArea(
-      minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Row(
-        children: [
-          for (var i = 0; i < buttons.length; i++) ...[
-            if (i > 0) const SizedBox(width: 10),
-            Expanded(child: buttons[i]),
-          ],
+    final row = Row(
+      children: [
+        for (var i = 0; i < buttons.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Expanded(child: buttons[i]),
         ],
-      ),
+      ],
+    );
+    return _liftedBar(
+      (_status == 'in_progress' && _cashPending)
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: AppColors.amber.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark '
+                    'it collected to complete.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                row,
+              ],
+            )
+          : row,
     );
   }
+
+  /// A lifted bottom bar — top border + shadow + comfortable padding so the
+  /// buttons sit above the gesture/nav area instead of jammed at the edge.
+  Widget _liftedBar(Widget child) => Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.border)),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, -2)),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: child,
+        ),
+      );
 
   Widget _primary(String label, Color color, VoidCallback? onTap) => SizedBox(
         height: 50,

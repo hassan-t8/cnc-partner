@@ -7,9 +7,11 @@ import '../../core/network/api_client.dart';
 import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import '../worker/otp_dialog.dart';
+import 'assign_team_sheet.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -27,7 +29,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   late PartnerBooking b;
   List<BookingAssignment>? _team; // null = loading
   bool _teamError = false;
-  bool _busy = false;
+  bool _busy = false; // lifecycle actions only (start / complete / cash)
+  final Set<int> _removing = {}; // assignment ids being unassigned
   bool _changed = false;
 
   @override
@@ -47,18 +50,36 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   PartnerRepository get _repo => ref.read(partnerRepositoryProvider);
 
+  /// Re-fetch this booking (no single-booking endpoint, so pull the list and
+  /// pick it out) so socket events — payment collected, completed from the web,
+  /// status changes — update the header + action buttons live.
+  Future<void> _reloadBooking() async {
+    try {
+      final list = await _repo.bookings();
+      final fresh = list.where((x) => x.id == b.id);
+      if (fresh.isNotEmpty && mounted) {
+        final next = fresh.first;
+        if (next.status != b.status ||
+            next.cashCollected != b.cashCollected) {
+          _changed = true;
+        }
+        setState(() => b = next);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadTeam() async {
-    setState(() {
-      _team = null;
-      _teamError = false;
-    });
+    // Only show the skeleton on the FIRST load — on reloads (socket / after
+    // assign-unassign) keep the current team visible so it doesn't flash a
+    // loader that looks like the job is starting.
+    if (_team == null) setState(() => _teamError = false);
     try {
       final list = await _repo.bookingAssignments(b.id);
       if (mounted) setState(() => _team = list);
     } catch (_) {
       if (mounted) {
         setState(() {
-          _team = const [];
+          _team ??= const [];
           _teamError = true;
         });
       }
@@ -124,6 +145,25 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     }
   }
 
+  /// Mark the door cash as collected. Required before completing a cash
+  /// booking with money still owed (mirrors the web "Mark as collected").
+  Future<void> _collectCash() async {
+    setState(() => _busy = true);
+    try {
+      await _repo.cashCollect(b.id);
+      if (!mounted) return;
+      setState(() {
+        b = b.copyWith(cashCollected: true);
+        _busy = false;
+      });
+      _changed = true;
+      AppToast.success('Cash collected — you can complete the job now');
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<String?> _reasonDialog() {
     final ctrl = TextEditingController();
     return showDialog<String>(
@@ -148,109 +188,70 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   }
 
   // ---- team ----
-  Future<void> _assign() async {
-    final workers = await _repo.workers();
-    if (!mounted) return;
-    final picked = await showModalBottomSheet<Worker>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          maxChildSize: 0.9,
-          builder: (_, controller) => ListView(
-            controller: controller,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 16, 20, 6),
-                child: Text('Assign a worker',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-              ),
-              if (workers.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text('No workers yet. Add workers first.'),
-                ),
-              for (final w in workers.where((w) => w.status == 'active'))
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.brand50,
-                    child: Text(
-                        (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
-                        style: const TextStyle(
-                            color: AppColors.brand700,
-                            fontWeight: FontWeight.w800)),
-                  ),
-                  title: Text(w.name.isEmpty ? 'Worker' : w.name),
-                  subtitle: Text(w.roles.join(', ')),
-                  onTap: () => Navigator.pop(context, w),
-                ),
-              const SizedBox(height: 10),
-            ],
-          ),
-        ),
-      ),
+  Future<void> _openAssignTeam() async {
+    final changed = await showAssignTeamSheet(
+      context,
+      ref,
+      bookingId: b.id,
+      ref0: b.ref,
+      scheduledStart: b.scheduledStart,
+      zoneId: b.zoneId,
     );
-    if (picked == null) return;
-    final role = picked.roles.contains('driver') ? 'driver' : 'crew';
-    try {
-      await _repo.assignWorker(b.id, picked.id, role: role);
-      AppToast.success('${picked.name} assigned');
+    if (changed && mounted) {
       _changed = true;
-      await _loadTeam();
-    } on ApiException catch (e) {
-      AppToast.error(e.message);
+      _loadTeam();
     }
   }
 
   Future<void> _unassign(BookingAssignment a) async {
-    // Optimistic: drop it from the list immediately, restore on failure.
-    final previous = _team;
-    setState(() => _team =
-        (_team ?? const []).where((x) => x.id != a.id).toList());
+    setState(() => _removing.add(a.id));
     try {
       await _repo.unassign(a.id);
       AppToast.success('Removed from job');
       _changed = true;
+      await _loadTeam();
     } on ApiException catch (e) {
       AppToast.error(e.message);
-      if (mounted) setState(() => _team = previous);
+    } finally {
+      if (mounted) setState(() => _removing.remove(a.id));
     }
   }
 
   List<Widget> _actions() {
     Widget btn(String label, IconData icon, Color color, String action,
-            {bool outlined = false}) =>
-        SizedBox(
-          height: 46,
-          child: outlined
-              ? OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _act(action),
-                  icon: Icon(icon, size: 18, color: color),
-                  label: Text(label,
-                      style: TextStyle(
-                          color: color, fontWeight: FontWeight.w700)),
-                  style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: color.withValues(alpha: 0.5))),
-                )
-              : ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(backgroundColor: color),
-                  onPressed: _busy ? null : () => _act(action),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.2, color: Colors.white))
-                      : Icon(icon, size: 18),
-                  label: Text(label),
+        {bool outlined = false, VoidCallback? onTap, bool enabled = true}) {
+      final handler = (!enabled || _busy) ? null : (onTap ?? () => _act(action));
+      final showSpinner = _busy && handler != null;
+      return SizedBox(
+        height: 46,
+        child: outlined
+            ? OutlinedButton.icon(
+                onPressed: handler,
+                icon: Icon(icon, size: 18, color: color),
+                label: Text(label,
+                    style: TextStyle(
+                        color: color, fontWeight: FontWeight.w700)),
+                style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: color.withValues(alpha: 0.5))),
+              )
+            : ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  disabledBackgroundColor: color.withValues(alpha: 0.35),
+                  disabledForegroundColor: Colors.white.withValues(alpha: 0.8),
                 ),
-        );
+                onPressed: handler,
+                icon: showSpinner
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2.2, color: Colors.white))
+                    : Icon(icon, size: 18),
+                label: Text(label),
+              ),
+      );
+    }
     switch (b.status) {
       case 'awaiting_acceptance':
         return [
@@ -264,6 +265,18 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               'start'),
         ];
       case 'in_progress':
+        // Cash still owed at the door → must collect before completing, like
+        // the web. The Complete button stays disabled until cash is collected.
+        if (b.cashPending) {
+          return [
+            btn('Collect AED ${b.cashDue.toStringAsFixed(0)}',
+                Icons.payments_rounded, AppColors.amber, 'collect',
+                onTap: _collectCash),
+            btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
+                'complete',
+                enabled: false),
+          ];
+        }
         return [
           btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
               'complete'),
@@ -278,7 +291,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     // Live: refresh team when this booking changes (status/dispatch/assign).
     ref.listen(bookingRealtimeProvider, (_, __) {
       final lid = ref.read(bookingRealtimeProvider.notifier).lastBookingId;
-      if (mounted && (lid == null || lid == b.id)) _loadTeam();
+      if (mounted && (lid == null || lid == b.id)) {
+        _loadTeam();
+        _reloadBooking();
+      }
     });
     final actions = _actions();
     final canManageTeam = b.status == 'awaiting_acceptance' ||
@@ -294,45 +310,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Builder(builder: (_) {
-              // serviceName comes as "Category - Subcategory — Service". Show the
-              // specific service as the title and the rest as a small breadcrumb.
-              final parts = b.serviceName
-                  .split(RegExp(r'\s*[—–-]\s*'))
-                  .map((p) => p.trim())
-                  .where((p) => p.isNotEmpty)
-                  .toList();
-              final title = parts.isNotEmpty ? parts.last : 'Service';
-              final crumb = parts.length > 1
-                  ? parts.sublist(0, parts.length - 1).join(' · ')
-                  : '';
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (crumb.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: Text(crumb,
-                                style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600)),
-                          ),
-                        Text(title,
-                            style: const TextStyle(
-                                fontSize: 20, fontWeight: FontWeight.w800)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  StatusBadge(b.status),
-                ],
-              );
-            }),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: ServiceTitle(b.serviceName, titleSize: 20)),
+                const SizedBox(width: 8),
+                StatusBadge(b.status),
+              ],
+            ),
             if (b.ref.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -368,7 +353,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 const Spacer(),
                 if (canManageTeam)
                   TextButton.icon(
-                    onPressed: _assign,
+                    onPressed: _openAssignTeam,
                     icon: const Icon(Icons.person_add_alt_1, size: 18),
                     label: const Text('Assign'),
                   ),
@@ -376,6 +361,33 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             ),
             const SizedBox(height: 4),
             _teamBody(canManageTeam),
+            if (b.cashPending && b.status == 'in_progress') ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.account_balance_wallet_outlined,
+                        size: 18, color: AppColors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Collect AED ${b.cashDue.toStringAsFixed(2)} in cash from '
+                        'the customer, then mark it collected to complete the job.',
+                        style: TextStyle(
+                            fontSize: 12.5, color: AppColors.textMuted),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 24),
               Row(
@@ -488,11 +500,21 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               ),
             ),
             if (canManage)
-              IconButton(
-                onPressed: () => _unassign(a),
-                icon: const Icon(Icons.close, size: 18, color: AppColors.rose),
-                tooltip: 'Remove',
-              ),
+              _removing.contains(a.id)
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2.2)),
+                    )
+                  : IconButton(
+                      onPressed: () => _unassign(a),
+                      icon: const Icon(Icons.close,
+                          size: 18, color: AppColors.rose),
+                      tooltip: 'Remove',
+                    ),
           ],
         ),
       );

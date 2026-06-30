@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'partner_repository.dart';
@@ -137,8 +138,7 @@ class _PartnerScheduleScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(b.serviceName.isEmpty ? 'Service' : b.serviceName,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ServiceTitle(b.serviceName, titleSize: 14),
                   Text(
                       [b.customerName, b.area]
                           .where((s) => s.isNotEmpty)

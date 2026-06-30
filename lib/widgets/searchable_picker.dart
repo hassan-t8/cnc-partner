@@ -15,6 +15,11 @@ Future<T?> showSearchablePicker<T>({
   T? selected,
   bool Function(T a, T b)? equals,
   String hint = 'Search…',
+  // Optional: items for which this returns false are shown but greyed out and
+  // not tappable (e.g. a van already assigned to another driver). The reason
+  // string (if any) is shown as a subtitle.
+  bool Function(T)? enabledOf,
+  String Function(T)? disabledReasonOf,
 }) {
   return showModalBottomSheet<T>(
     context: context,
@@ -32,7 +37,11 @@ Future<T?> showSearchablePicker<T>({
               : items
                   .where((it) => labelOf(it).toLowerCase().contains(q))
                   .toList();
-          final maxH = MediaQuery.of(ctx).size.height * 0.55;
+          // Keyboard-aware: shrink the list so the sheet never overflows when
+          // the search keyboard is open.
+          final mq = MediaQuery.of(ctx);
+          final maxH = (mq.size.height - mq.viewInsets.bottom - 200)
+              .clamp(120.0, mq.size.height * 0.55);
           // Size the list area to the FULL list (not the filtered one) so the
           // sheet height stays CONSTANT while the user types/searches.
           final listH = (items.length * 50.0).clamp(120.0, maxH).toDouble();
@@ -102,15 +111,33 @@ Future<T?> showSearchablePicker<T>({
                               final sel = selected != null &&
                                   (equals?.call(it, selected as T) ??
                                       it == selected);
+                              final enabled = enabledOf?.call(it) ?? true;
+                              final reason = disabledReasonOf?.call(it) ?? '';
                               return ListTile(
                                 dense: true,
+                                enabled: enabled,
                                 title: Text(labelOf(it),
-                                    overflow: TextOverflow.ellipsis),
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        color: enabled
+                                            ? null
+                                            : AppColors.textFaint)),
+                                subtitle: (!enabled && reason.isNotEmpty)
+                                    ? Text(reason,
+                                        style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: AppColors.textFaint))
+                                    : null,
                                 trailing: sel
                                     ? Icon(Icons.check_circle,
                                         color: AppColors.brand600, size: 20)
-                                    : null,
-                                onTap: () => Navigator.pop(ctx, it),
+                                    : (!enabled
+                                        ? Icon(Icons.block,
+                                            size: 16,
+                                            color: AppColors.textFaint)
+                                        : null),
+                                onTap:
+                                    enabled ? () => Navigator.pop(ctx, it) : null,
                               );
                             },
                           ),
@@ -135,6 +162,9 @@ Future<List<T>?> showMultiSearchablePicker<T>({
   required Object Function(T) keyOf,
   List<T> selected = const [],
   String hint = 'Search…',
+  // Optional: groups items under section headers (e.g. zones by emirate,
+  // services by category).
+  String Function(T)? groupOf,
 }) {
   return showModalBottomSheet<List<T>>(
     context: context,
@@ -153,7 +183,25 @@ Future<List<T>?> showMultiSearchablePicker<T>({
               : items
                   .where((it) => labelOf(it).toLowerCase().contains(q))
                   .toList();
-          final maxH = MediaQuery.of(ctx).size.height * 0.55;
+          // When grouped, build a flat list of section-header strings + items,
+          // ordered by group then label.
+          final rows = <dynamic>[];
+          if (groupOf != null) {
+            final byGroup = <String, List<T>>{};
+            for (final it in filtered) {
+              byGroup.putIfAbsent(groupOf(it), () => []).add(it);
+            }
+            final groups = byGroup.keys.toList()..sort();
+            for (final g in groups) {
+              rows.add(g); // header (String)
+              rows.addAll(byGroup[g]!);
+            }
+          } else {
+            rows.addAll(filtered);
+          }
+          final mq = MediaQuery.of(ctx);
+          final maxH = (mq.size.height - mq.viewInsets.bottom - 240)
+              .clamp(120.0, mq.size.height * 0.55);
           final listH = (items.length * 52.0).clamp(120.0, maxH).toDouble();
           return SafeArea(
             child: Padding(
@@ -219,9 +267,23 @@ Future<List<T>?> showMultiSearchablePicker<T>({
                           )
                         : ListView.builder(
                             padding: const EdgeInsets.only(bottom: 8),
-                            itemCount: filtered.length,
+                            itemCount: rows.length,
                             itemBuilder: (_, i) {
-                              final it = filtered[i];
+                              final row = rows[i];
+                              if (row is String) {
+                                // section header
+                                return Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      16, 12, 16, 4),
+                                  child: Text(row.toUpperCase(),
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.5,
+                                          color: AppColors.textMuted)),
+                                );
+                              }
+                              final it = row as T;
                               final k = keyOf(it);
                               final sel = chosen.contains(k);
                               return CheckboxListTile(
