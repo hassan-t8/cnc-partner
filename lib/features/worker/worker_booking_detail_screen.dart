@@ -27,8 +27,11 @@ class _WorkerBookingDetailScreenState
     extends ConsumerState<WorkerBookingDetailScreen> {
   late String _status = widget.assignment.status;
   bool _busy = false;
+  late bool _cashCollected = widget.assignment.cashCollected;
 
   Assignment get a => widget.assignment;
+  bool get _cashPending =>
+      a.payment.toLowerCase() == 'cash' && a.cashDue > 0 && !_cashCollected;
 
   Future<void> _act(String action) async {
     final repo = ref.read(workerRepositoryProvider);
@@ -211,6 +214,27 @@ class _WorkerBookingDetailScreenState
     );
   }
 
+  Future<void> _collectCash() async {
+    final bookingId = a.bookingId;
+    if (bookingId == null) {
+      AppToast.error('Missing booking reference');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await ref.read(workerRepositoryProvider).cashCollect(bookingId);
+      if (!mounted) return;
+      setState(() {
+        _cashCollected = true;
+        _busy = false;
+      });
+      AppToast.success('Cash collected — you can complete the job now');
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Widget? _actionBar() {
     final buttons = <Widget>[];
     switch (_status) {
@@ -225,21 +249,53 @@ class _WorkerBookingDetailScreenState
             'Start job', AppColors.violet, _busy ? null : () => _act('start')));
         break;
       case 'in_progress':
-        buttons.add(_primary('Complete job', AppColors.brand600,
-            _busy ? null : () => _act('complete')));
+        // Cash still owed → collect before completing (backend enforces it).
+        if (_cashPending) {
+          buttons.add(_primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
+              AppColors.amber, _busy ? null : _collectCash));
+          buttons.add(_primary(
+              'Complete job', AppColors.brand600, null)); // disabled
+        } else {
+          buttons.add(_primary('Complete job', AppColors.brand600,
+              _busy ? null : () => _act('complete')));
+        }
         break;
     }
     if (buttons.isEmpty) return null;
+    final row = Row(
+      children: [
+        for (var i = 0; i < buttons.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Expanded(child: buttons[i]),
+        ],
+      ],
+    );
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Row(
-        children: [
-          for (var i = 0; i < buttons.length; i++) ...[
-            if (i > 0) const SizedBox(width: 10),
-            Expanded(child: buttons[i]),
-          ],
-        ],
-      ),
+      child: (_status == 'in_progress' && _cashPending)
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: AppColors.amber.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark '
+                    'it collected to complete.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                row,
+              ],
+            )
+          : row,
     );
   }
 
