@@ -30,9 +30,9 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   bool _error = false;
   int _acting = -1;
   DateTime _date = DateUtils.dateOnly(DateTime.now());
-  // Date-only days (across all the worker's jobs) that have at least one job →
-  // drives the dot markers on the day strip.
-  Set<DateTime> _jobDays = {};
+  // Job count per date-only day (across all the worker's jobs) → drives the
+  // dot markers on the day strip (more jobs = more dots).
+  Map<DateTime, int> _jobCounts = {};
 
   @override
   void initState() {
@@ -41,21 +41,21 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     _loadJobDays();
   }
 
-  /// All days the worker has jobs on — for the day-strip dots. Best-effort.
+  /// Count of jobs per day — for the day-strip dots. Best-effort.
   Future<void> _loadJobDays() async {
     try {
       final all =
           await ref.read(workerRepositoryProvider).myBookings(status: 'all');
       if (!mounted) return;
-      setState(() {
-        _jobDays = {
-          for (final a in all)
-            if (a.scheduledStart != null &&
-                a.status != 'cancelled' &&
-                a.status != 'declined')
-              DateUtils.dateOnly(a.scheduledStart!)
-        };
-      });
+      final counts = <DateTime, int>{};
+      for (final a in all) {
+        if (a.scheduledStart == null ||
+            a.status == 'cancelled' ||
+            a.status == 'declined') continue;
+        final d = DateUtils.dateOnly(a.scheduledStart!);
+        counts[d] = (counts[d] ?? 0) + 1;
+      }
+      setState(() => _jobCounts = counts);
     } catch (_) {}
   }
 
@@ -303,6 +303,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
 
   Widget _dayChip(DateTime day, DateTime today) {
     final on = day == _date;
+    final count = _jobCounts[day] ?? 0;
     final label = day == today
         ? 'Today'
         : day == today.add(const Duration(days: 1))
@@ -318,43 +319,60 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: on ? AppColors.brand600 : AppColors.border),
         ),
-        // FittedBox keeps the labels inside the chip on any device / text-scale.
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label,
-                  maxLines: 1,
-                  style: TextStyle(
-                      fontSize: 11,
-                      height: 1.1,
-                      fontWeight: FontWeight.w700,
-                      color: on ? Colors.white : AppColors.textMuted)),
-              const SizedBox(height: 3),
-              Text(DateFormat('d MMM').format(day),
-                  maxLines: 1,
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      height: 1.1,
-                      fontWeight: FontWeight.w800,
-                      color: on ? Colors.white : AppColors.textPrimary)),
-              const SizedBox(height: 3),
-              // Dot marker when this day has at least one job.
-              Container(
-                width: 5,
-                height: 5,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _jobDays.contains(day)
-                      ? (on ? Colors.white : AppColors.brand600)
-                      : Colors.transparent,
-                ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // FittedBox keeps the labels inside the chip on any text-scale.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(label,
+                      maxLines: 1,
+                      style: TextStyle(
+                          fontSize: 11,
+                          height: 1.1,
+                          fontWeight: FontWeight.w700,
+                          color: on ? Colors.white : AppColors.textMuted)),
+                  const SizedBox(height: 3),
+                  Text(DateFormat('d MMM').format(day),
+                      maxLines: 1,
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.1,
+                          fontWeight: FontWeight.w800,
+                          color: on ? Colors.white : AppColors.textPrimary)),
+                ],
               ),
-            ],
-          ),
+            ),
+            // Top-right job dots (more jobs → more dots, dark → light).
+            if (count > 0)
+              Positioned(top: -1, right: -1, child: _jobDots(count, on)),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _jobDots(int count, bool on) {
+    final n = count.clamp(1, 3);
+    final base = on ? Colors.white : AppColors.brand600;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < n; i++) ...[
+          if (i > 0) const SizedBox(width: 2),
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: base.withValues(alpha: (1.0 - i * 0.32).clamp(0.3, 1.0)),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
