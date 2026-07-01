@@ -92,15 +92,15 @@ class _OtpDialogState extends State<_OtpDialog> {
       }
       return;
     }
-    // A box briefly holds 2 chars when it already had a digit and the user
-    // typed another (the box wasn't re-selected — e.g. the last box, or one
-    // they re-tapped). Keep only the newest digit here and advance; never wipe
-    // the whole code.
+    // A box already holds a digit and another was typed into it — e.g. all six
+    // boxes are filled and the user keeps typing on the last box. Keep the
+    // EXISTING digit and ignore the extra keystroke (to change it, delete
+    // first). This stops a 7th keypress from overwriting the last digit.
+    // (Re-tapping a box to edit it still works: focus change selects the digit,
+    // so typing replaces it as a single char and never hits this branch.)
     if (digits.length == 2) {
-      final newest = digits.substring(1);
-      _controllers[i].text = newest;
+      _controllers[i].text = digits.substring(0, 1);
       _controllers[i].selection = const TextSelection.collapsed(offset: 1);
-      if (i < 5) _nodes[i + 1].requestFocus();
       setState(() {});
       return;
     }
