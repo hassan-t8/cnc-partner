@@ -319,10 +319,12 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: on ? AppColors.brand600 : AppColors.border),
         ),
-        child: Stack(
-          clipBehavior: Clip.none,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // FittedBox keeps the labels inside the chip on any text-scale.
+            // FittedBox keeps the labels centered + inside the chip on any
+            // text-scale.
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Column(
@@ -346,9 +348,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
                 ],
               ),
             ),
-            // Top-right job dots (more jobs → more dots, dark → light).
-            if (count > 0)
-              Positioned(top: -1, right: -1, child: _jobDots(count, on)),
+            const SizedBox(height: 5),
+            // Job dots at the bottom, centered (more jobs → more dots). Always
+            // reserves the row so every chip stays the same height.
+            _jobDots(count, on),
           ],
         ),
       ),
@@ -356,23 +359,27 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   }
 
   Widget _jobDots(int count, bool on) {
-    final n = count.clamp(1, 3);
+    final n = count.clamp(0, 3);
     final base = on ? Colors.white : AppColors.brand600;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < n; i++) ...[
-          if (i > 0) const SizedBox(width: 2),
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: base.withValues(alpha: (1.0 - i * 0.32).clamp(0.3, 1.0)),
+    return SizedBox(
+      height: 5,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (var i = 0; i < n; i++) ...[
+            if (i > 0) const SizedBox(width: 3),
+            Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: base.withValues(alpha: (1.0 - i * 0.30).clamp(0.35, 1.0)),
+              ),
             ),
-          ),
+          ],
         ],
-      ],
+      ),
     );
   }
 
