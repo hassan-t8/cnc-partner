@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
@@ -35,6 +36,14 @@ class _WorkerBookingDetailScreenState
   Assignment get a => widget.assignment;
   bool get _cashPending =>
       a.payment.toLowerCase() == 'cash' && a.cashDue > 0 && !_cashCollected;
+
+  /// Drivers only transport — view only (no start/complete/photos). True when
+  /// this is a driver assignment OR the signed-in user is a driver (not crew).
+  bool get _isDriverView {
+    if (a.role.toLowerCase() == 'driver') return true;
+    final u = ref.read(authControllerProvider).user;
+    return u != null && u.isDriver && !u.isCrew;
+  }
 
   @override
   void initState() {
@@ -250,7 +259,7 @@ class _WorkerBookingDetailScreenState
             ),
             // Before/after photos are for the crew/partner who run the job —
             // not the driver.
-            if (a.role.toLowerCase() != 'driver' &&
+            if (!_isDriverView &&
                 (_status == 'accepted' ||
                     _status == 'in_progress' ||
                     _status == 'completed')) ...[
@@ -294,8 +303,7 @@ class _WorkerBookingDetailScreenState
   Widget? _actionBar() {
     // Drivers transport the team — they don't run the job. Show a view-only
     // note instead of Start/Complete (the crew or partner starts it).
-    final isDriver = a.role.toLowerCase() == 'driver';
-    if (isDriver && (_status == 'accepted' || _status == 'in_progress')) {
+    if (_isDriverView && (_status == 'accepted' || _status == 'in_progress')) {
       return _liftedBar(
         Row(
           children: [

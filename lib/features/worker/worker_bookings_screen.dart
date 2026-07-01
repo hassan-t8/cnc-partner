@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
@@ -62,6 +63,15 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
 
   Future<List<Assignment>> _load(String status) =>
       ref.read(workerRepositoryProvider).myBookings(status: status);
+
+  /// This job is view-only when the assignment is a driver role OR the signed-in
+  /// user is a driver (and not also crew) — drivers only transport, they don't
+  /// start/complete/upload photos.
+  bool _isDriverView(Assignment a) {
+    if (a.role.toLowerCase() == 'driver') return true;
+    final u = ref.read(authControllerProvider).user;
+    return u != null && u.isDriver && !u.isCrew;
+  }
 
   Future<void> _openDetail(Assignment a) async {
     await Navigator.of(context).push(MaterialPageRoute(
@@ -301,7 +311,7 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     }
 
     // Drivers don't run the job — view only (the crew/partner starts it).
-    if (a.role.toLowerCase() == 'driver' &&
+    if (_isDriverView(a) &&
         (a.status == 'accepted' || a.status == 'in_progress')) {
       return [
         const SizedBox(height: 8),
