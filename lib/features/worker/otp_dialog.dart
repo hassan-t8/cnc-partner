@@ -24,7 +24,19 @@ class _OtpDialog extends StatefulWidget {
 
 class _OtpDialogState extends State<_OtpDialog> {
   final _controllers = List.generate(6, (_) => TextEditingController());
-  final _nodes = List.generate(6, (_) => FocusNode());
+  late final List<FocusNode> _nodes;
+
+  @override
+  void initState() {
+    super.initState();
+    // The focus node handles the key event so we can detect backspace on an
+    // already-empty box (onChanged never fires when the text doesn't change).
+    _nodes =
+        List.generate(6, (i) => FocusNode(onKeyEvent: (_, e) => _onKey(i, e)));
+    for (var i = 0; i < 6; i++) {
+      _nodes[i].addListener(() => _selectOnFocus(i));
+    }
+  }
 
   @override
   void dispose() {
@@ -39,19 +51,64 @@ class _OtpDialogState extends State<_OtpDialog> {
 
   String get _code => _controllers.map((c) => c.text).join();
 
+  // Select a box's digit when it gains focus, so the next keystroke *replaces*
+  // it instead of appending a second character (which used to be misread as a
+  // paste and scramble the boxes).
+  void _selectOnFocus(int i) {
+    if (!_nodes[i].hasFocus) return;
+    _controllers[i].selection = TextSelection(
+        baseOffset: 0, extentOffset: _controllers[i].text.length);
+  }
+
+  // Backspace on an *empty* box: clear the previous box and step back to it.
+  // TextField.onChanged doesn't fire here (no text change), so we must catch
+  // the raw key — this is what makes "tab forward, then delete" move back.
+  KeyEventResult _onKey(int i, KeyEvent e) {
+    if (e is KeyDownEvent &&
+        e.logicalKey == LogicalKeyboardKey.backspace &&
+        _controllers[i].text.isEmpty &&
+        i > 0) {
+      _controllers[i - 1].clear();
+      _nodes[i - 1].requestFocus();
+      setState(() {});
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   void _onChanged(int i, String v) {
-    if (v.length > 1) {
-      // paste
-      final digits = v.replaceAll(RegExp(r'\D'), '');
+    final digits = v.replaceAll(RegExp(r'\D'), '');
+    // 3+ chars can only come from a paste — typing one at a time never does.
+    // Spread the pasted code across the boxes from the first.
+    if (digits.length >= 3) {
       for (var k = 0; k < 6; k++) {
         _controllers[k].text = k < digits.length ? digits[k] : '';
       }
       setState(() {});
-      if (digits.length >= 6) FocusScope.of(context).unfocus();
+      if (digits.length >= 6) {
+        FocusScope.of(context).unfocus();
+      } else {
+        _nodes[digits.length.clamp(0, 5)].requestFocus();
+      }
       return;
     }
-    if (v.isNotEmpty && i < 5) _nodes[i + 1].requestFocus();
-    if (v.isEmpty && i > 0) _nodes[i - 1].requestFocus();
+    // A box briefly holds 2 chars when it already had a digit and the user
+    // typed another (the box wasn't re-selected — e.g. the last box, or one
+    // they re-tapped). Keep only the newest digit here and advance; never wipe
+    // the whole code.
+    if (digits.length == 2) {
+      final newest = digits.substring(1);
+      _controllers[i].text = newest;
+      _controllers[i].selection = const TextSelection.collapsed(offset: 1);
+      if (i < 5) _nodes[i + 1].requestFocus();
+      setState(() {});
+      return;
+    }
+    if (digits.isNotEmpty) {
+      if (i < 5) _nodes[i + 1].requestFocus(); // typed a digit → advance
+    } else if (i > 0) {
+      _nodes[i - 1].requestFocus(); // deleted a digit → step back
+    }
     setState(() {});
   }
 
@@ -108,7 +165,6 @@ class _OtpDialogState extends State<_OtpDialog> {
                       autofocus: i == 0,
                       textAlign: TextAlign.center,
                       keyboardType: TextInputType.number,
-                      maxLength: i == 0 ? 6 : 1,
                       inputFormatters: [
                         FilteringTextInputFormatter.digitsOnly
                       ],
