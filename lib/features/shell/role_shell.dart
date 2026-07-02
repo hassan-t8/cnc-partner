@@ -10,7 +10,7 @@ import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../driver/driver_route_screen.dart';
 import '../driver/driver_schedule_screen.dart';
-import '../partner/offer_alert_popup.dart';
+import '../partner/offer_alert_stack.dart';
 import '../partner/partner_bookings_screen.dart';
 import '../partner/partner_dashboard_screen.dart';
 import '../partner/partner_repository.dart';
@@ -44,7 +44,6 @@ class _RoleShellState extends ConsumerState<RoleShell> {
   // periodic poll as a fallback. The Requests tab stays the source of truth.
   final Set<int> _seenOffers = {};
   bool _seeded = false; // first sweep just records existing offers (no popup)
-  bool _popupOpen = false;
   Timer? _offerPoll;
 
   // Worker/driver side: alert when a job is auto-assigned to them.
@@ -72,7 +71,7 @@ class _RoleShellState extends ConsumerState<RoleShell> {
   }
 
   Future<void> _checkOffers() async {
-    if (!mounted || _popupOpen) return;
+    if (!mounted) return;
     final user = ref.read(authControllerProvider).user;
     if (user == null || !user.isPartner) return;
 
@@ -105,15 +104,22 @@ class _RoleShellState extends ConsumerState<RoleShell> {
       _seenOffers.add(o.id);
     }
 
-    _popupOpen = true;
-    final action = await showOfferAlert(context, ref, fresh.first);
-    _popupOpen = false;
-    if (!mounted) return;
-    // The popup is only an alert: on accept/decline refresh the data in place,
-    // but on timeout/close ("later") do NOT navigate — the offer stays in the
-    // Requests tab, which the user opens via "See all" when they choose to.
-    if (action != 'later') {
-      ref.read(tabRefreshProvider.notifier).state++;
+    // inDrive-style stack: push EVERY fresh offer (oldest first so the newest
+    // lands on top). Each card auto-dismisses; the overlay is non-blocking.
+    fresh.sort((a, b) => a.id.compareTo(b.id));
+    for (final o in fresh) {
+      OfferAlertOverlay.instance.push(
+        context,
+        ref,
+        o,
+        onAction: (action) {
+          // On accept/decline refresh the data in place; on timeout/close the
+          // offer simply stays in the Requests tab.
+          if (action != 'later' && mounted) {
+            ref.read(tabRefreshProvider.notifier).state++;
+          }
+        },
+      );
     }
   }
 
