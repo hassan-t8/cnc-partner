@@ -103,7 +103,11 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _AccountSheet(worker: w, repo: repo),
+      builder: (_) => _AccountSheet(
+        worker: w,
+        repo: repo,
+        onStatusChanged: (status) => _applyStatus(w, status),
+      ),
     );
   }
 
@@ -139,14 +143,19 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       ),
     );
     if (picked == null || picked == w.status) return;
+    await _applyStatus(w, picked);
+  }
+
+  // Optimistic status update shared by the status picker and the Account sheet.
+  Future<bool> _applyStatus(Worker w, String status) async {
     final prev = _overrides[w.id];
-    // Optimistic: reflect immediately.
-    setState(() => _overrides[w.id] = w.copyWith(status: picked));
+    setState(() => _overrides[w.id] = w.copyWith(status: status));
     try {
       await ref
           .read(partnerRepositoryProvider)
-          .updateWorker(w.id, {'status': picked});
+          .updateWorker(w.id, {'status': status});
       AppToast.success('Status updated');
+      return true;
     } on ApiException catch (e) {
       setState(() {
         if (prev != null) {
@@ -156,6 +165,7 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
         }
       });
       AppToast.error(e.message);
+      return false;
     }
   }
 
@@ -635,7 +645,13 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
 class _AccountSheet extends StatefulWidget {
   final Worker worker;
   final PartnerRepository repo;
-  const _AccountSheet({required this.worker, required this.repo});
+  // Returns true when the status change persisted, so the sheet can reflect it.
+  final Future<bool> Function(String status) onStatusChanged;
+  const _AccountSheet({
+    required this.worker,
+    required this.repo,
+    required this.onStatusChanged,
+  });
   @override
   State<_AccountSheet> createState() => _AccountSheetState();
 }
@@ -643,6 +659,8 @@ class _AccountSheet extends StatefulWidget {
 class _AccountSheetState extends State<_AccountSheet> {
   Map<String, dynamic>? _info;
   bool _loading = true;
+  // Local mirror of the worker's status so the sheet reflects changes it makes.
+  late String _status = widget.worker.status;
   bool _busy = false;
   final _pw = TextEditingController();
   bool _obscure = true;
@@ -697,6 +715,38 @@ class _AccountSheetState extends State<_AccountSheet> {
     }
   }
 
+  // Put on leave / suspend / reactivate — keeps the sheet open and reflects the
+  // new status. Delegates the persistence + list update to the parent.
+  Future<void> _changeStatus(String status) async {
+    setState(() => _busy = true);
+    final ok = await widget.onStatusChanged(status);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      if (ok) _status = status;
+    });
+  }
+
+  Color _statusColor(String s) {
+    switch (s) {
+      case 'active':
+        return AppColors.brand600;
+      case 'on_leave':
+        return AppColors.amber;
+      case 'suspended':
+        return AppColors.rose;
+      default:
+        return AppColors.textMuted;
+    }
+  }
+
+  static const _statusText = {
+    'active': 'Active',
+    'on_leave': 'On leave',
+    'suspended': 'Suspended',
+    'not_working': 'Not working',
+  };
+
   @override
   Widget build(BuildContext context) {
     final hasLogin = _info?['hasLogin'] == true;
@@ -742,6 +792,31 @@ class _AccountSheetState extends State<_AccountSheet> {
                     ),
                   ],
                 ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Text('STATUS',
+                      style: TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _statusColor(_status).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(_statusText[_status] ?? _status,
+                        style: TextStyle(
+                            color: _statusColor(_status),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
               const Text('Set password',
                   style: TextStyle(fontWeight: FontWeight.w700)),
@@ -780,6 +855,60 @@ class _AccountSheetState extends State<_AccountSheet> {
                       ? 'No email on file'
                       : 'Email a reset link'),
                 ),
+              ),
+              const SizedBox(height: 20),
+              Text('ACCOUNT STATUS',
+                  style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.4)),
+              const SizedBox(height: 10),
+              // On leave ⇄ active (operational only — login stays active).
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: OutlinedButton(
+                  onPressed: _busy
+                      ? null
+                      : () => _changeStatus(
+                          _status == 'on_leave' ? 'active' : 'on_leave'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.amber,
+                    side: BorderSide(color: AppColors.amber),
+                  ),
+                  child: Text(_status == 'on_leave'
+                      ? 'End leave (set active)'
+                      : 'Put on leave'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Suspend ⇄ reactivate (blocks login + auto-dispatch).
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: _status == 'suspended'
+                    ? ElevatedButton.icon(
+                        onPressed: _busy ? null : () => _changeStatus('active'),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.brand600),
+                        icon: const Icon(Icons.check_circle_outline, size: 18),
+                        label: const Text('Reactivate account'),
+                      )
+                    : ElevatedButton.icon(
+                        onPressed:
+                            _busy ? null : () => _changeStatus('suspended'),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.rose),
+                        icon: const Icon(Icons.block, size: 18),
+                        label: const Text('Suspend account'),
+                      ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Suspended workers can't log in and are excluded from "
+                'auto-dispatch. Leave is operational only — login stays active.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11.5),
               ),
             ],
           ),
