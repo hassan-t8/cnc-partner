@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/notifications/notifications_controller.dart';
@@ -18,12 +21,26 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 }
 
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  // 'all' | 'requests' | 'bookings' | 'earnings'
+  String _filter = 'all';
+  // Ticks every minute so the relative time + "time left" stay current.
+  Timer? _tick;
+
   @override
   void initState() {
     super.initState();
     // Opening the panel marks everything read (web parity).
     WidgetsBinding.instance.addPostFrameCallback(
         (_) => ref.read(notificationsProvider.notifier).markAllRead());
+    _tick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
   }
 
   void _open(AppNotification n) {
@@ -42,8 +59,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         break;
     }
     if (screen != null) {
-      Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => screen!));
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen!));
     }
   }
 
@@ -57,35 +73,136 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     return '${d.day}/${d.month}/${d.year}';
   }
 
+  // Splits a booking-offer message into the human details and the trailing
+  // "accept before <deadline>" text (which is only present on offers).
+  ({String details, String? deadline}) _split(String msg) {
+    final lower = msg.toLowerCase();
+    final tapAt = lower.indexOf('tap to');
+    final beforeAt = lower.indexOf('accept before');
+    var details = (tapAt >= 0 ? msg.substring(0, tapAt) : msg).trim();
+    details = details.replaceFirst(RegExp(r'[.\s]+$'), '');
+    String? deadline;
+    if (beforeAt >= 0) {
+      deadline = msg
+          .substring(beforeAt + 'accept before'.length)
+          .trim()
+          .replaceFirst(RegExp(r'^[:\s]+'), '')
+          .replaceFirst(RegExp(r'[.\s]+$'), '');
+      if (deadline.isEmpty) deadline = null;
+    }
+    return (details: details, deadline: deadline);
+  }
+
+  // Best-effort parse of a deadline like "Thu, Jul 2, 2026, 12:39 PM".
+  DateTime? _parseDeadline(String s) {
+    for (final f in const [
+      'EEE, MMM d, yyyy, h:mm a',
+      'MMM d, yyyy, h:mm a',
+      'EEE, MMM d, h:mm a',
+    ]) {
+      try {
+        return DateFormat(f).parseLoose(s);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  String _timeLeft(DateTime dl) {
+    final diff = dl.difference(DateTime.now());
+    if (diff.isNegative) return 'Expired';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m left';
+    if (diff.inHours < 24) {
+      return '${diff.inHours}h ${diff.inMinutes % 60}m left';
+    }
+    return '${diff.inDays}d left';
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(notificationsProvider);
+    final items = _filter == 'all'
+        ? state.items
+        : state.items.where((n) => n.target == _filter).toList();
     return Scaffold(
       appBar: const MainAppBar('Notifications', showBell: false),
-      body: RefreshIndicator(
-        onRefresh: () => ref.read(notificationsProvider.notifier).refresh(),
-        child: state.loading && state.items.isEmpty
-            ? const LoadingList()
-            : state.items.isEmpty
-                ? ListView(children: const [
-                    SizedBox(height: 100),
-                    EmptyState(
-                        icon: Icons.notifications_none_rounded,
-                        title: 'You\'re all caught up',
-                        subtitle: 'New offers and updates will appear here.'),
-                  ])
-                : ListView.separated(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: state.items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => _tile(state.items[i]),
-                  ),
+      body: Column(
+        children: [
+          _filterBar(state.items),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () =>
+                  ref.read(notificationsProvider.notifier).refresh(),
+              child: state.loading && state.items.isEmpty
+                  ? const LoadingList()
+                  : items.isEmpty
+                      ? ListView(children: const [
+                          SizedBox(height: 100),
+                          EmptyState(
+                              icon: Icons.notifications_none_rounded,
+                              title: "You're all caught up",
+                              subtitle:
+                                  'New offers and updates will appear here.'),
+                        ])
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(12),
+                          itemCount: items.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 8),
+                          itemBuilder: (_, i) => _tile(items[i]),
+                        ),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _filterBar(List<AppNotification> all) {
+    int countFor(String t) =>
+        t == 'all' ? all.length : all.where((n) => n.target == t).length;
+    const tabs = [
+      ('all', 'All'),
+      ('requests', 'Offers'),
+      ('bookings', 'Bookings'),
+      ('earnings', 'Earnings'),
+    ];
+    return SizedBox(
+      height: 46,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        children: [
+          for (final t in tabs) ...[
+            _filterChip(t.$1, t.$2, countFor(t.$1)),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String key, String label, int count) {
+    final on = _filter == key;
+    return ChoiceChip(
+      selected: on,
+      onSelected: (_) => setState(() => _filter = key),
+      label: Text('$label${count > 0 ? '  $count' : ''}'),
+      labelStyle: TextStyle(
+        fontSize: 12.5,
+        fontWeight: FontWeight.w700,
+        color: on ? Colors.white : AppColors.textMuted,
+      ),
+      selectedColor: AppColors.brand600,
+      backgroundColor: AppColors.surface,
+      side: BorderSide(color: on ? AppColors.brand600 : AppColors.border),
+      showCheckmark: false,
     );
   }
 
   Widget _tile(AppNotification n) {
     final color = _typeColor(n.type);
+    final parts = _split(n.message);
+    final dl = parts.deadline == null ? null : _parseDeadline(parts.deadline!);
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(14),
@@ -116,34 +233,89 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(n.title.isEmpty ? 'Notification' : n.title,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 14)),
-                    if (n.message.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(n.message,
+                    // Title (left) + relative time (top-right, same row).
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                              n.title.isEmpty ? 'Notification' : n.title,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 14)),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(_ago(n.createdAt),
                             style: TextStyle(
-                                color: AppColors.textMuted, fontSize: 12.5)),
+                                color: AppColors.textFaint, fontSize: 11)),
+                        if (!n.isRead) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                                color: AppColors.brand600,
+                                shape: BoxShape.circle),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (parts.details.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(parts.details,
+                            style: TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12.5,
+                                height: 1.3)),
                       ),
-                    const SizedBox(height: 4),
-                    Text(_ago(n.createdAt),
-                        style: TextStyle(
-                            color: AppColors.textFaint, fontSize: 11)),
+                    if (parts.deadline != null) _deadlineChip(parts.deadline!, dl),
                   ],
                 ),
               ),
-              if (!n.isRead)
-                Container(
-                  margin: const EdgeInsets.only(top: 4, left: 6),
-                  width: 9,
-                  height: 9,
-                  decoration: const BoxDecoration(
-                      color: AppColors.brand600, shape: BoxShape.circle),
-                ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Highlighted "accept before" row with a live time-left when parseable.
+  Widget _deadlineChip(String text, DateTime? dl) {
+    final left = dl == null ? null : _timeLeft(dl);
+    final expired = left == 'Expired';
+    final urgent = dl != null &&
+        !expired &&
+        dl.difference(DateTime.now()).inMinutes < 60;
+    final c = expired
+        ? AppColors.rose
+        : (urgent ? AppColors.amber : AppColors.brand600);
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        children: [
+          Icon(expired ? Icons.timer_off_outlined : Icons.timer_outlined,
+              size: 15, color: c),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              expired ? 'Offer expired' : 'Accept before $text',
+              style: TextStyle(
+                  color: c, fontSize: 11.5, fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (left != null && !expired) ...[
+            const SizedBox(width: 8),
+            Text(left,
+                style: TextStyle(
+                    color: c, fontSize: 11.5, fontWeight: FontWeight.w800)),
+          ],
+        ],
       ),
     );
   }
