@@ -64,6 +64,7 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
 
   bool _isApplied(FilterGroup g) => _valueFor(g.key) != g.sentinel;
   bool get _anyApplied => widget.groups.any(_isApplied);
+  int get _appliedCount => widget.groups.where(_isApplied).length;
 
   @override
   void dispose() {
@@ -195,58 +196,62 @@ class _SearchFilterBarState extends State<SearchFilterBar> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.search, color: AppColors.textFaint, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _search,
-                  onChanged: _onSearchChanged,
-                  decoration: InputDecoration(
-                    hintText: widget.hint,
-                    border: InputBorder.none,
-                    isDense: true,
-                    hintStyle: TextStyle(color: AppColors.textFaint),
+        // Matches the bookings search bar for a consistent look app-wide.
+        TextField(
+          controller: _search,
+          onChanged: (v) {
+            _onSearchChanged(v);
+            setState(() {}); // refresh the clear/tune affordances
+          },
+          decoration: InputDecoration(
+            hintText: widget.hint,
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_search.text.isNotEmpty)
+                  IconButton(
+                    onPressed: () {
+                      _search.clear();
+                      widget.onSearch('');
+                      setState(() {});
+                    },
+                    icon: Icon(Icons.clear,
+                        size: 18, color: AppColors.textFaint),
                   ),
-                  style: const TextStyle(fontSize: 14),
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      onPressed: _openSheet,
+                      icon: Icon(Icons.tune,
+                          color: _anyApplied
+                              ? AppColors.brand600
+                              : AppColors.textMuted),
+                      tooltip: 'Filters',
+                    ),
+                    if (_appliedCount > 0)
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                              color: AppColors.brand600,
+                              shape: BoxShape.circle),
+                          child: Text('$_appliedCount',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800)),
+                        ),
+                      ),
+                  ],
                 ),
-              ),
-              if (_search.text.isNotEmpty)
-                GestureDetector(
-                  onTap: () {
-                    _search.clear();
-                    widget.onSearch('');
-                    setState(() {});
-                  },
-                  child: Icon(Icons.clear,
-                      size: 18, color: AppColors.textFaint),
-                ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: _openSheet,
-                child: Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: _anyApplied
-                        ? AppColors.brand600
-                        : AppColors.bg,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.tune,
-                      size: 18,
-                      color: _anyApplied ? Colors.white : AppColors.textMuted),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         if (_anyApplied)
