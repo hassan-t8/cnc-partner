@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
+import '../../widgets/search_filter_bar.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 import 'partner_schedule_screen.dart';
@@ -80,17 +81,6 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
   static const _statusLabels = {
     'active': 'Active',
     'not_working': 'Not working',
-    'on_leave': 'On leave',
-    'suspended': 'Suspended',
-  };
-
-  // Status filter options — mirrors the partner web app. 'pending' is a
-  // derived state (invite not accepted → pendingActivation), not a stored
-  // Worker.status value; see _filter for the exclusive matching rules.
-  static const _statusFilterLabels = {
-    'active': 'Active',
-    'not_working': 'Not working',
-    'pending': 'Pending',
     'on_leave': 'On leave',
     'suspended': 'Suspended',
   };
@@ -213,13 +203,6 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     }).toList();
   }
 
-  bool get _hasFilters => _role != 'all' || _status != 'all';
-
-  void _clearFilters() => setState(() {
-        _role = 'all';
-        _status = 'all';
-      });
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -234,52 +217,28 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Column(
-              children: [
-                TextField(
-                  decoration: const InputDecoration(
-                      hintText: 'Search name, code, phone…',
-                      prefixIcon: Icon(Icons.search)),
-                  onChanged: (v) => setState(() => _query = v.trim()),
-                ),
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final r in const ['all', 'crew', 'driver'])
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: _filterChip(
-                            label: r == 'all' ? 'All roles' : r,
-                            selected: _role == r,
-                            onTap: () => setState(() => _role = r),
-                          ),
-                        ),
-                      Container(
-                        width: 1,
-                        height: 24,
-                        margin: const EdgeInsets.only(right: 8),
-                        color: AppColors.border,
-                      ),
-                      _filterChip(
-                        label: 'All statuses',
-                        selected: _status == 'all',
-                        onTap: () => setState(() => _status = 'all'),
-                      ),
-                      for (final e in _statusFilterLabels.entries)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: _filterChip(
-                            label: e.value,
-                            selected: _status == e.key,
-                            onTap: () => setState(() => _status = e.key),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                _appliedFilters(),
+            child: SearchFilterBar(
+              hint: 'Search name, code, phone…',
+              onSearch: (v) => setState(() => _query = v),
+              values: {'role': _role, 'status': _status},
+              onApply: (m) => setState(() {
+                _role = m['role'] ?? 'all';
+                _status = m['status'] ?? 'all';
+              }),
+              groups: const [
+                FilterGroup(key: 'role', label: 'Role', options: [
+                  FilterOption('all', 'All roles'),
+                  FilterOption('crew', 'Crew'),
+                  FilterOption('driver', 'Driver'),
+                ]),
+                FilterGroup(key: 'status', label: 'Status', options: [
+                  FilterOption('all', 'All statuses'),
+                  FilterOption('active', 'Active'),
+                  FilterOption('not_working', 'Not working'),
+                  FilterOption('pending', 'Pending'),
+                  FilterOption('on_leave', 'On leave'),
+                  FilterOption('suspended', 'Suspended'),
+                ]),
               ],
             ),
           ),
@@ -320,86 +279,6 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       ),
     );
   }
-
-  Widget _filterChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) =>
-      ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        selectedColor: AppColors.brand600,
-        labelStyle: TextStyle(
-            color: selected ? Colors.white : AppColors.textSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w600),
-        backgroundColor: AppColors.surface,
-        side: BorderSide(color: AppColors.border),
-      );
-
-  // Applied-filter chips (role / status) with an × to clear each one, plus
-  // a Clear-all action. Shows nothing when no filters are active — mirrors
-  // the partner web app's filter-summary UX.
-  Widget _appliedFilters() {
-    if (!_hasFilters) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                if (_role != 'all')
-                  _appliedChip(_role, () => setState(() => _role = 'all')),
-                if (_status != 'all')
-                  _appliedChip(
-                      _statusFilterLabels[_status] ?? _status,
-                      () => setState(() => _status = 'all')),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: _clearFilters,
-            style: TextButton.styleFrom(
-                foregroundColor: AppColors.rose,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: const Size(0, 32)),
-            child: const Text('Clear',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _appliedChip(String label, VoidCallback onRemove) => Container(
-        padding: const EdgeInsets.only(left: 10, right: 4, top: 4, bottom: 4),
-        decoration: BoxDecoration(
-          color: AppColors.brand600.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.brand600.withValues(alpha: 0.30)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    color: AppColors.brand700,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(width: 2),
-            InkWell(
-              onTap: onRemove,
-              customBorder: const CircleBorder(),
-              child: Icon(Icons.close, size: 15, color: AppColors.brand700),
-            ),
-          ],
-        ),
-      );
 
   Widget _card(Worker w) {
     final isDriver = w.roles.contains('driver');

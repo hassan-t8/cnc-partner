@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
+import '../../widgets/search_filter_bar.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 import 'van_form.dart';
@@ -42,10 +43,6 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
           .any((s) => s.toLowerCase().contains(q));
     }).toList();
   }
-
-  bool get _hasFilters => _status != 'all';
-
-  void _clearFilters() => setState(() => _status = 'all');
 
   void _reload() => setState(() {
         _overrides.clear();
@@ -177,37 +174,19 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Column(
-              children: [
-                TextField(
-                  decoration: const InputDecoration(
-                      hintText: 'Search name, plate, driver…',
-                      prefixIcon: Icon(Icons.search)),
-                  onChanged: (v) => setState(() => _query = v.trim()),
-                ),
-                const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _filterChip(
-                        label: 'All statuses',
-                        selected: _status == 'all',
-                        onTap: () => setState(() => _status = 'all'),
-                      ),
-                      for (final e in _statusLabels.entries)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
-                          child: _filterChip(
-                            label: e.value,
-                            selected: _status == e.key,
-                            onTap: () => setState(() => _status = e.key),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                _appliedFilters(),
+            child: SearchFilterBar(
+              hint: 'Search name, plate, driver…',
+              onSearch: (v) => setState(() => _query = v),
+              values: {'status': _status},
+              onApply: (m) =>
+                  setState(() => _status = m['status'] ?? 'all'),
+              groups: const [
+                FilterGroup(key: 'status', label: 'Status', options: [
+                  FilterOption('all', 'All statuses'),
+                  FilterOption('active', 'Active'),
+                  FilterOption('maintenance', 'Maintenance'),
+                  FilterOption('retired', 'Retired'),
+                ]),
               ],
             ),
           ),
@@ -248,83 +227,6 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
       ),
     );
   }
-
-  Widget _filterChip({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) =>
-      ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        selectedColor: AppColors.brand600,
-        labelStyle: TextStyle(
-            color: selected ? Colors.white : AppColors.textSecondary,
-            fontSize: 12,
-            fontWeight: FontWeight.w600),
-        backgroundColor: AppColors.surface,
-        side: BorderSide(color: AppColors.border),
-      );
-
-  // Applied-filter chip (status) with an × to clear it, plus a Clear-all
-  // action. Shows nothing when no filters are active — mirrors the partner
-  // web app's filter-summary UX.
-  Widget _appliedFilters() {
-    if (!_hasFilters) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                if (_status != 'all')
-                  _appliedChip(_statusLabels[_status] ?? _status,
-                      () => setState(() => _status = 'all')),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: _clearFilters,
-            style: TextButton.styleFrom(
-                foregroundColor: AppColors.rose,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                minimumSize: const Size(0, 32)),
-            child: const Text('Clear',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _appliedChip(String label, VoidCallback onRemove) => Container(
-        padding: const EdgeInsets.only(left: 10, right: 4, top: 4, bottom: 4),
-        decoration: BoxDecoration(
-          color: AppColors.brand600.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.brand600.withValues(alpha: 0.30)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    color: AppColors.brand700,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(width: 2),
-            InkWell(
-              onTap: onRemove,
-              customBorder: const CircleBorder(),
-              child: Icon(Icons.close, size: 15, color: AppColors.brand700),
-            ),
-          ],
-        ),
-      );
 
   Widget _card(Van v) {
     final hasParking = v.parkingLat != null && v.parkingLng != null;
