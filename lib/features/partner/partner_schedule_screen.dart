@@ -51,8 +51,10 @@ class _PartnerScheduleScreenState
 
   @override
   Widget build(BuildContext context) {
+    // When a worker's editor is showing, the editor draws its own header (with
+    // a back button), so hide the scaffold app bar to avoid a double bar.
     return Scaffold(
-      appBar: MainAppBar(_selected == null ? 'Worker Schedule' : 'Schedule'),
+      appBar: _selected == null ? MainAppBar('Worker Schedule') : null,
       body: FutureBuilder<List<Worker>>(
         future: _workersFuture,
         builder: (context, snap) {
@@ -75,10 +77,17 @@ class _PartnerScheduleScreenState
             ]);
           }
           if (_selected != null) {
-            return _WorkerScheduleEditor(
-              key: ValueKey(_selected!.id),
-              worker: _selected!,
-              onBack: () => setState(() => _selected = null),
+            return SafeArea(
+              bottom: false,
+              child: _WorkerScheduleEditor(
+                key: ValueKey(_selected!.id),
+                worker: _selected!,
+                // Opened per-worker (from a card / edit form) → back pops the
+                // route. Opened via the picker → back returns to the picker.
+                onBack: widget.initialWorker != null
+                    ? () => Navigator.of(context).pop()
+                    : () => setState(() => _selected = null),
+              ),
             );
           }
           return _pickerList(workers);

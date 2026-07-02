@@ -9,7 +9,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/location_picker_screen.dart';
 import '../../widgets/phone_field.dart';
 import '../../widgets/searchable_picker.dart';
-import 'availability_editor.dart';
+import 'partner_schedule_screen.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 import 'worker_services_picker.dart';
@@ -538,12 +538,10 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
               const SizedBox(height: 14),
               OutlinedButton.icon(
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => AvailabilityEditor(
-                        ownerType: 'worker',
-                        ownerId: widget.worker!.id,
-                        title: '${widget.worker!.name} · hours'))),
-                icon: const Icon(Icons.schedule, size: 18),
-                label: const Text('Working hours'),
+                    builder: (_) =>
+                        PartnerScheduleScreen(initialWorker: widget.worker!))),
+                icon: const Icon(Icons.calendar_month_outlined, size: 18),
+                label: const Text('Schedule + leaves'),
                 style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(46)),
               ),
