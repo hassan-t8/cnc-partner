@@ -342,6 +342,20 @@ class PartnerRepository {
         if (comment != null) 'comment': comment,
       });
 
+  /// The partner's own review of THIS booking's customer, if one exists.
+  /// Mirrors the web modal's pre-fill: GET /reviews/booking/:id then pick the
+  /// row whose targetType == 'customer'. Returns null when not yet reviewed.
+  Future<Review?> customerReviewFor(int bookingId) async {
+    final res = await _api.get('/reviews/booking/$bookingId');
+    final rows = pickList(res.data);
+    for (final r in rows) {
+      if ((r['targetType']?.toString() ?? '') == 'customer') {
+        return Review.fromJson(r);
+      }
+    }
+    return null;
+  }
+
   // ----- service requests -----
   Future<List<ServiceRequest>> serviceRequests() async {
     final res = await _api.get('/catalog/partner/service-requests');

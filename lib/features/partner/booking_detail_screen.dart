@@ -32,14 +32,32 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   bool _busy = false; // lifecycle actions only (start / complete / cash)
   final Set<int> _removing = {}; // assignment ids being unassigned
   bool _changed = false;
+  // The partner's own review of this booking's customer, once loaded. Non-null
+  // when already reviewed → the screen shows the submitted stars/comment.
+  Review? _customerReview;
 
   @override
   void initState() {
     super.initState();
     b = widget.booking;
     _loadTeam();
+    if (b.status == 'completed') _loadCustomerReview();
     // Live: join this booking's room for dispatch/assignment updates.
     ref.read(bookingRealtimeProvider.notifier).joinBooking(b.id);
+  }
+
+  /// Fetch the partner's existing customer review for this booking so the
+  /// detail screen can show it instead of the "Review customer" button.
+  Future<void> _loadCustomerReview() async {
+    try {
+      final r = await _repo.customerReviewFor(b.id);
+      if (mounted && r != null) {
+        setState(() {
+          _customerReview = r;
+          b = b.copyWith(customerReviewed: true);
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -63,7 +81,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             next.cashCollected != b.cashCollected) {
           _changed = true;
         }
+        final becameCompleted =
+            next.status == 'completed' && b.status != 'completed';
         setState(() => b = next);
+        // Just completed (e.g. from the web / another device) → surface any
+        // customer review so the review card/CTA reflects the new state.
+        if (becameCompleted && _customerReview == null) _loadCustomerReview();
       }
     } catch (_) {}
   }
@@ -145,23 +168,147 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     }
   }
 
-  /// Mark the door cash as collected. Required before completing a cash
-  /// booking with money still owed (mirrors the web "Mark as collected").
+  /// Collect the cash owed on this booking. Shown for unpaid/partial (and
+  /// online-uncaptured) bookings, mirroring the web partner-admin condition.
+  /// Confirms (like the web) with an optional notes field before recording.
   Future<void> _collectCash() async {
+    final confirmed = await _cashCollectDialog();
+    if (confirmed == null) return; // cancelled
     setState(() => _busy = true);
     try {
-      await _repo.cashCollect(b.id);
+      await _repo.cashCollect(b.id, notes: confirmed.isEmpty ? null : confirmed);
       if (!mounted) return;
       setState(() {
         b = b.copyWith(cashCollected: true);
         _busy = false;
       });
       _changed = true;
-      AppToast.success('Cash collected — you can complete the job now');
+      AppToast.success(b.status == 'in_progress'
+          ? 'Cash collected — you can complete the job now'
+          : 'Cash marked collected');
     } on ApiException catch (e) {
       AppToast.error(e.message);
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Confirm-and-record dialog for collecting cash. Returns the entered notes
+  /// (may be empty) on confirm, or null on cancel. Mirrors the web confirm.
+  Future<String?> _cashCollectDialog() {
+    final notes = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Collect cash'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Confirm you received AED ${b.cashDue.toStringAsFixed(2)} in '
+                'cash from ${b.customerName.isEmpty ? 'the customer' : b.customerName} '
+                'for booking #${b.ref}.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: notes,
+              maxLines: 2,
+              decoration: const InputDecoration(hintText: 'Notes (optional)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.amber),
+            onPressed: () => Navigator.pop(ctx, notes.text.trim()),
+            child: const Text('Mark collected'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Review the booking's customer (optional, post-completion — mirrors the
+  /// web). Pre-fills any prior submission; the backend upserts so re-submitting
+  /// edits the same row. Stays on the screen and shows the submitted review.
+  Future<void> _reviewCustomer() async {
+    final r = await _reviewCustomerDialog();
+    if (r == null) return;
+    setState(() => _busy = true);
+    try {
+      await _repo.submitCustomerReview(b.id, r.$1,
+          comment: r.$2.isEmpty ? null : r.$2);
+      if (!mounted) return;
+      setState(() {
+        _customerReview = Review(
+            stars: r.$1.toDouble(),
+            comment: r.$2,
+            customerName: b.customerName);
+        b = b.copyWith(customerReviewed: true);
+        _busy = false;
+      });
+      _changed = true;
+      AppToast.success('Review submitted');
+    } on ApiException catch (e) {
+      AppToast.error(e.message);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<(int, String)?> _reviewCustomerDialog() {
+    int stars = (_customerReview?.stars ?? 0).round();
+    final comment =
+        TextEditingController(text: _customerReview?.comment ?? '');
+    return showDialog<(int, String)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text(
+              'Review ${b.customerName.isEmpty ? 'customer' : b.customerName}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 1; i <= 5; i++)
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => setD(() => stars = i),
+                      icon: Icon(
+                          i <= stars
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          color: AppColors.amber,
+                          size: 34),
+                    ),
+                ],
+              ),
+              TextField(
+                controller: comment,
+                maxLines: 3,
+                maxLength: 2000,
+                decoration:
+                    const InputDecoration(hintText: 'Comment (optional)'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: stars == 0
+                  ? null
+                  : () => Navigator.pop(ctx, (stars, comment.text.trim())),
+              child: const Text('Submit review'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<String?> _reasonDialog() {
@@ -280,6 +427,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         return [
           btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
               'complete'),
+        ];
+      case 'completed':
+        // Optional post-completion CTA (mirrors the web). Hidden once the
+        // customer has been reviewed — the submitted review card shows instead.
+        if (b.customerReviewed) return const [];
+        return [
+          btn('Review customer', Icons.star_rounded, AppColors.amber, 'review',
+              outlined: true, onTap: _reviewCustomer),
         ];
       default:
         return const [];
@@ -419,6 +574,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 ),
               ),
             ],
+            if (b.status == 'completed' && _customerReview != null) ...[
+              const SizedBox(height: 22),
+              _reviewCard(_customerReview!),
+            ],
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 24),
               Row(
@@ -549,6 +708,50 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           ],
         ),
       );
+
+  /// The submitted "your review of the customer" card (read-only), with a
+  /// tap-to-edit affordance since the backend upserts the same row.
+  Widget _reviewCard(Review r) {
+    final s = r.stars.round();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('Your review of the customer',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+              const Spacer(),
+              TextButton(
+                onPressed: _busy ? null : _reviewCustomer,
+                child: const Text('Edit'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              for (var i = 1; i <= 5; i++)
+                Icon(i <= s ? Icons.star_rounded : Icons.star_border_rounded,
+                    size: 22, color: AppColors.amber),
+            ],
+          ),
+          if (r.comment.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(r.comment,
+                style:
+                    TextStyle(fontSize: 13.5, color: AppColors.textSecondary)),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _detailRow(IconData icon, String label, String value) => Padding(
         padding: const EdgeInsets.only(bottom: 14),

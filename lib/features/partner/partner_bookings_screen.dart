@@ -161,6 +161,18 @@ class _PartnerBookingsScreenState
     }
   }
 
+  /// Optimistically flip a booking to "reviewed" so the "Review customer"
+  /// button becomes the "Reviewed" chip without waiting for a refetch.
+  void _patchReviewed(int id) {
+    final i = _all.indexWhere((b) => b.id == id);
+    if (i >= 0) {
+      setState(() => _all = [
+            for (var k = 0; k < _all.length; k++)
+              k == i ? _all[k].copyWith(customerReviewed: true) : _all[k]
+          ]);
+    }
+  }
+
   List<PartnerBooking> _filter(List<PartnerBooking> all) {
     final q = _query.toLowerCase();
     return all.where((b) {
@@ -258,6 +270,7 @@ class _PartnerBookingsScreenState
           }
           await repo.submitCustomerReview(b.id, r.$1,
               comment: r.$2.isEmpty ? null : r.$2);
+          _patchReviewed(b.id);
           AppToast.success('Review submitted');
           break;
       }
@@ -749,8 +762,14 @@ class _PartnerBookingsScreenState
           AppColors.brand600,
           (busy || b.cashPending) ? null : () => _act(b, 'complete'), busy));
     } else if (b.status == 'completed') {
-      actions.add(_btn('Review customer', Icons.star_rounded, AppColors.amber,
-          busy ? null : () => _act(b, 'review'), false, outlined: true));
+      // After completion the partner can review the customer (optional, like
+      // the web). Once reviewed, the button becomes a "Reviewed" chip.
+      if (b.customerReviewed) {
+        actions.add(_reviewedChip());
+      } else {
+        actions.add(_btn('Review customer', Icons.star_rounded, AppColors.amber,
+            busy ? null : () => _act(b, 'review'), false, outlined: true));
+      }
     }
     return actions;
   }
@@ -949,6 +968,31 @@ class _PartnerBookingsScreenState
                   style: TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
             ),
           ],
+        ),
+      );
+
+  /// Non-interactive "Reviewed" chip shown once the partner has reviewed this
+  /// booking's customer (mirrors the web's green "Reviewed" pill).
+  Widget _reviewedChip() => SizedBox(
+        height: 42,
+        child: Container(
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: AppColors.brand50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.brand600.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.star_rounded, size: 16, color: AppColors.brand700),
+              const SizedBox(width: 6),
+              Text('Reviewed',
+                  style: TextStyle(
+                      color: AppColors.brand700, fontWeight: FontWeight.w700)),
+            ],
+          ),
         ),
       );
 

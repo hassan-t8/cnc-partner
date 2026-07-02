@@ -150,6 +150,10 @@ class PartnerBooking {
   final String payment; // cash | card | ...
   final double cashDue;
   final bool cashCollected;
+  // True once the partner has left a review for THIS booking's customer.
+  // Mirrors the web's per-booking `customerReviewed` flag from
+  // getPartnerBookings (batch-loaded Review rows with targetType 'customer').
+  final bool customerReviewed;
   final int? zoneId;
 
   const PartnerBooking({
@@ -169,17 +173,24 @@ class PartnerBooking {
     this.payment = '',
     this.cashDue = 0,
     this.cashCollected = false,
+    this.customerReviewed = false,
   });
 
   /// Cap-aware take-home for this booking (net of CNC commission, cap-floor
   /// protected). Alias of [partnerCost] — mirrors the backend `partnerNet`.
   double get partnerNet => partnerCost;
 
-  /// Cash booking with money still owed at the door.
+  /// Money still owed on this booking that the partner can collect as cash —
+  /// method-agnostic, mirroring the web partner-admin `cashDueFor`
+  /// (`paymentStatus !== 'full' && !cashCollected`). Covers unpaid/partial
+  /// bookings AND online bookings the customer never captured (COD fallback).
   bool get cashPending =>
-      payment.toLowerCase() == 'cash' && cashDue > 0 && !cashCollected;
+      !cashCollected &&
+      cashDue > 0 &&
+      paymentStatus.toLowerCase() != 'full';
 
-  PartnerBooking copyWith({String? status, bool? cashCollected}) =>
+  PartnerBooking copyWith(
+          {String? status, bool? cashCollected, bool? customerReviewed}) =>
       PartnerBooking(
         id: id,
         ref: ref,
@@ -196,6 +207,8 @@ class PartnerBooking {
         payment: payment,
         cashDue: cashDue,
         cashCollected: cashCollected ?? this.cashCollected,
+        customerReviewed: customerReviewed ?? this.customerReviewed,
+        zoneId: zoneId,
       );
 
   factory PartnerBooking.fromJson(Map<String, dynamic> j) {
@@ -229,6 +242,7 @@ class PartnerBooking {
         return owed > 0 ? owed : 0.0;
       }(),
       cashCollected: j['cashCollected'] == true,
+      customerReviewed: _b(j['customerReviewed']),
       zoneId: _i(j['zoneId']),
     );
   }
