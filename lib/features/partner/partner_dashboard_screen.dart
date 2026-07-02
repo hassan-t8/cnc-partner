@@ -12,7 +12,6 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
-import '../bookings/models.dart';
 import 'offer_details_sheet.dart';
 import 'partner_bookings_screen.dart';
 import 'partner_earnings_screen.dart';
@@ -55,17 +54,16 @@ class _PartnerDashboardScreenState
 
   Future<_Dash> _fetch() async {
     final repo = ref.read(partnerRepositoryProvider);
+    // KPIs (today/week/pending/workers/vans/earnings) are computed server-side
+    // via /partner/me/dashboard-stats — no more client-side counting over a
+    // capped booking list. Offers still come from the live offers inbox.
     final results = await Future.wait([
-      repo.bookings().catchError((_) => <PartnerBooking>[]),
-      repo.workers().catchError((_) => <Worker>[]),
-      repo.vans().catchError((_) => <Van>[]),
+      repo.getDashboardStats().catchError((_) => const DashboardStats()),
       repo.offers().catchError((_) => <Offer>[]),
     ]);
     return _Dash(
-      bookings: results[0] as List<PartnerBooking>,
-      workers: (results[1] as List).length,
-      vans: (results[2] as List).length,
-      offers: results[3] as List<Offer>,
+      stats: results[0] as DashboardStats,
+      offers: results[1] as List<Offer>,
     );
   }
 
@@ -133,22 +131,12 @@ class _PartnerDashboardScreenState
                   ])
                 : Builder(builder: (context) {
                     final d = _data!;
-            final now = DateTime.now();
-            final today = d.bookings
-                .where((b) =>
-                    b.scheduledStart != null &&
-                    DateUtils.isSameDay(b.scheduledStart, now))
-                .length;
-            final week = d.bookings
-                .where((b) =>
-                    b.scheduledStart != null &&
-                    b.scheduledStart!.isAfter(now) &&
-                    b.scheduledStart!
-                        .isBefore(now.add(const Duration(days: 7))))
-                .length;
-            final weekEarn = d.bookings
-                .where((b) => b.status == 'completed')
-                .fold<double>(0, (s, b) => s + b.partnerCost);
+            // Server-computed KPIs (no client-side counting over a capped
+            // booking list). weekEarn is sum(partnerCost) for completed
+            // bookings in the current Monday-week, per the backend window.
+            final today = d.stats.bookingsToday;
+            final week = d.stats.bookingsWeek;
+            final weekEarn = d.stats.earningsWeek;
 
             return ListView(
               padding: const EdgeInsets.all(16),
@@ -183,12 +171,12 @@ class _PartnerDashboardScreenState
                 Row(
                   children: [
                     Expanded(
-                        child: _kpi('Workers', '${d.workers}',
+                        child: _kpi('Workers', '${d.stats.workersCount}',
                             Icons.groups_rounded, AppColors.violet,
                             () => _open(const PartnerWorkersScreen()))),
                     const SizedBox(width: 12),
                     Expanded(
-                        child: _kpi('Vans', '${d.vans}',
+                        child: _kpi('Vans', '${d.stats.vansCount}',
                             Icons.local_shipping_rounded, AppColors.amber,
                             () => _open(const PartnerVansScreen()))),
                   ],
@@ -503,13 +491,7 @@ class _PartnerDashboardScreenState
 }
 
 class _Dash {
-  final List<PartnerBooking> bookings;
-  final int workers;
-  final int vans;
+  final DashboardStats stats;
   final List<Offer> offers;
-  _Dash(
-      {required this.bookings,
-      required this.workers,
-      required this.vans,
-      required this.offers});
+  _Dash({required this.stats, required this.offers});
 }

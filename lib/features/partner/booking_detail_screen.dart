@@ -342,8 +342,39 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             if (b.paymentStatus.isNotEmpty)
               _detailRow(Icons.payments_outlined, 'Payment',
                   b.paymentStatus.replaceAll('_', ' ')),
+            // Cap-aware take-home (partnerNet mirror) — net of CNC commission
+            // and cap-floor protected. This is the honest number; cash you
+            // collect is reconciled against it in your wallet after completion.
             _detailRow(Icons.account_balance_wallet_outlined, 'Your payout',
                 'AED ${b.partnerCost.toStringAsFixed(2)}'),
+            if (b.capApplied) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.brand50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.brand600.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.verified_user_outlined,
+                        size: 16, color: AppColors.brand700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Discount cap applied — your payout is protected at your '
+                        'guaranteed floor even though the customer used a discount.',
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            color: AppColors.brand700,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 22),
             Row(
               children: [

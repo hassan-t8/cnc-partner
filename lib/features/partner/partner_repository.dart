@@ -21,6 +21,45 @@ class PartnerRepository {
     return pickList(res.data).map(PartnerBooking.fromJson).toList();
   }
 
+  /// One page of partner bookings + the pagination envelope, for
+  /// infinite-scroll. Backend response shape:
+  ///   { success, totalCount, data:[...],
+  ///     pagination:{ totalRecords, currentPage, totalPages, pageSize } }
+  Future<PartnerBookingsPage> bookingsPage(
+      {int page = 1, int limit = 30}) async {
+    final res = await _api.get('/booking/getPartnerBookings',
+        query: {'page': page, 'limit': limit});
+    final rows = pickList(res.data).map(PartnerBooking.fromJson).toList();
+    final body = res.data;
+    final pag = (body is Map && body['pagination'] is Map)
+        ? Map<String, dynamic>.from(body['pagination'] as Map)
+        : const <String, dynamic>{};
+    int asInt(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+    final totalRecords = asInt(pag['totalRecords'] ??
+        (body is Map ? body['totalCount'] : null) ??
+        rows.length);
+    final totalPages = asInt(pag['totalPages']) > 0
+        ? asInt(pag['totalPages'])
+        : (limit > 0 ? ((totalRecords + limit - 1) ~/ limit) : 1);
+    final currentPage =
+        asInt(pag['currentPage']) > 0 ? asInt(pag['currentPage']) : page;
+    return PartnerBookingsPage(
+      rows: rows,
+      totalRecords: totalRecords,
+      totalPages: totalPages,
+      currentPage: currentPage,
+    );
+  }
+
+  /// Aggregated dashboard KPIs computed server-side. Replaces the old
+  /// "fetch up to 500 bookings + count on the client" pattern (which could
+  /// truncate and undercount past the list cap). Mirrors partnerApi
+  /// .getDashboardStats() → GET /partner/me/dashboard-stats.
+  Future<DashboardStats> getDashboardStats() async {
+    final res = await _api.get('/partner/me/dashboard-stats');
+    return DashboardStats.fromJson(pickMap(res.data));
+  }
+
   Future<void> acceptBooking(int id) =>
       _api.post('/booking/$id/partner-accept');
   Future<void> declineBooking(int id, {String? reason}) => _api.post(

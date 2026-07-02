@@ -2,6 +2,7 @@
 int? _i(dynamic v) => v == null ? null : (v is num ? v.toInt() : int.tryParse('$v'));
 double _d(dynamic v) =>
     v == null ? 0 : (v is num ? v.toDouble() : double.tryParse('$v') ?? 0);
+bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 String _s(dynamic v) => v?.toString() ?? '';
 DateTime? _dt(dynamic v) {
   if (v == null) return null;
@@ -132,7 +133,18 @@ class PartnerBooking {
   final String area;
   final String status;
   final DateTime? scheduledStart;
+  // Cap-aware take-home (partnerNet). `partnerCost` is the Booking column
+  // mirror of the central settlement helper's cap-aware `partnerNet` — net of
+  // CNC commission and protected by the partner's discount cap. This is the
+  // canonical per-booking take-home; do NOT re-derive it from list price.
   final double partnerCost;
+  // partnerFloor = listPrice × (1 − maxDiscountPct) × (1 − commissionPct) —
+  // the protected minimum the partner is guaranteed when a customer discount
+  // pushes past the cap.
+  final double partnerFloor;
+  // True when the discount cap floor kicked in (customer-paid dropped below
+  // the cap threshold), so partnerCost was raised to partnerFloor.
+  final bool capApplied;
   final bool requiresStartOtp;
   final String paymentStatus;
   final String payment; // cash | card | ...
@@ -150,12 +162,18 @@ class PartnerBooking {
     this.status = '',
     this.scheduledStart,
     this.partnerCost = 0,
+    this.partnerFloor = 0,
+    this.capApplied = false,
     this.requiresStartOtp = false,
     this.paymentStatus = '',
     this.payment = '',
     this.cashDue = 0,
     this.cashCollected = false,
   });
+
+  /// Cap-aware take-home for this booking (net of CNC commission, cap-floor
+  /// protected). Alias of [partnerCost] — mirrors the backend `partnerNet`.
+  double get partnerNet => partnerCost;
 
   /// Cash booking with money still owed at the door.
   bool get cashPending =>
@@ -171,6 +189,8 @@ class PartnerBooking {
         status: status ?? this.status,
         scheduledStart: scheduledStart,
         partnerCost: partnerCost,
+        partnerFloor: partnerFloor,
+        capApplied: capApplied,
         requiresStartOtp: requiresStartOtp,
         paymentStatus: paymentStatus,
         payment: payment,
@@ -189,7 +209,12 @@ class PartnerBooking {
       area: _s(j['area'] ?? j['city']),
       status: _s(j['dispatchStatus'] ?? j['status']),
       scheduledStart: _dt(j['scheduledStart'] ?? j['date']),
-      partnerCost: _d(j['partnerCost']),
+      // Cap-aware take-home (partnerNet mirror). Prefer the explicit
+      // partnerNet field if the API ever returns it; else the Booking column
+      // mirror `partnerCost`.
+      partnerCost: _d(j['partnerNet'] ?? j['partnerCost']),
+      partnerFloor: _d(j['partnerFloor']),
+      capApplied: _b(j['capApplied']),
       requiresStartOtp: j['requiresStartOtp'] == true,
       paymentStatus: _s(j['paymentStatus']),
       payment: _s(j['payment'] ?? j['paymentMethod']),

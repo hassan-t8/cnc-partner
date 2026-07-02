@@ -97,15 +97,27 @@ class NotificationsController extends Notifier<NotifState> {
           .map(AppNotification.fromJson)
           .toList()
         ..sort((a, b) => b.id.compareTo(a.id));
-      // Surface a system notification for genuinely new unread arrivals.
+      // Surface a system notification for genuinely new unread arrivals. When
+      // several land in the same poll (a burst), collapse them into one
+      // "N new notifications" summary instead of surfacing only the first —
+      // which silently dropped the rest.
       if (!_first) {
         final fresh = items
             .where((n) => n.id > _lastMaxId && !n.isRead)
             .toList();
-        if (fresh.isNotEmpty) {
+        if (fresh.length == 1) {
           final n = fresh.first;
           NotificationService.instance.show(
               n.title.isEmpty ? 'New notification' : n.title, n.message);
+        } else if (fresh.length > 1) {
+          // fresh is sorted newest-first (items is id-desc); preview the
+          // latest message so the summary still hints at what arrived.
+          final latest = fresh.first;
+          final preview = latest.message.isNotEmpty
+              ? latest.message
+              : (latest.title.isNotEmpty ? latest.title : 'Tap to view');
+          NotificationService.instance
+              .show('${fresh.length} new notifications', preview);
         }
       }
       if (items.isNotEmpty) _lastMaxId = items.first.id;

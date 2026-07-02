@@ -51,6 +51,14 @@ class _PartnerBookingsScreenState
   double? _penaltyPct; // partner's self-unassign penalty %, fetched lazily
   bool _penaltyLoaded = false;
 
+  // ----- infinite-scroll pagination -----
+  static const _pageSize = 30;
+  final ScrollController _scroll = ScrollController();
+  int _page = 1;
+  int _totalRecords = 0;
+  bool _hasMore = true;
+  bool _loadingMore = false;
+
   bool get _hasFilters => _status != 'all' || _from != null || _to != null;
   int get _filterCount =>
       (_status != 'all' ? 1 : 0) + (_from != null ? 1 : 0) + (_to != null ? 1 : 0);
@@ -67,19 +75,40 @@ class _PartnerBookingsScreenState
     super.initState();
     _from = widget.initialFrom;
     _to = widget.initialTo;
+    _scroll.addListener(_onScroll);
     _load();
   }
 
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  // Append the next page when the user nears the bottom.
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    if (pos.pixels >= pos.maxScrollExtent - 400) _loadMore();
+  }
+
+  // Fresh load (page 1) — resets the accumulated list + pagination.
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = false;
     });
     try {
-      final list = await ref.read(partnerRepositoryProvider).bookings();
+      final res = await ref
+          .read(partnerRepositoryProvider)
+          .bookingsPage(page: 1, limit: _pageSize);
       if (mounted) {
         setState(() {
-          _all = list;
+          _all = res.rows;
+          _page = res.currentPage;
+          _totalRecords = res.totalRecords;
+          _hasMore = res.hasMore;
           _loading = false;
         });
       }
@@ -90,6 +119,32 @@ class _PartnerBookingsScreenState
           _loading = false;
         });
       }
+    }
+  }
+
+  // Fetch + append the next page. No-op while a page is in flight, when the
+  // list is exhausted, or during the initial/error load.
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _loading || _error) return;
+    setState(() => _loadingMore = true);
+    try {
+      final next = _page + 1;
+      final res = await ref
+          .read(partnerRepositoryProvider)
+          .bookingsPage(page: next, limit: _pageSize);
+      if (!mounted) return;
+      // De-dupe defensively in case a new row shifted paging between fetches.
+      final seen = {for (final b in _all) b.id};
+      final fresh = res.rows.where((b) => !seen.contains(b.id)).toList();
+      setState(() {
+        _all = [..._all, ...fresh];
+        _page = res.currentPage;
+        _totalRecords = res.totalRecords;
+        _hasMore = res.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -371,19 +426,25 @@ class _PartnerBookingsScreenState
                 }
                 final rows = _filter(_all);
                 if (rows.isEmpty) {
-                  return ListView(children: const [
-                    SizedBox(height: 80),
-                    EmptyState(
-                        icon: Icons.assignment_outlined,
-                        title: 'No bookings match',
-                        subtitle: 'Try clearing the filters.'),
-                  ]);
+                  return ListView(
+                      controller: _scroll,
+                      children: const [
+                        SizedBox(height: 80),
+                        EmptyState(
+                            icon: Icons.assignment_outlined,
+                            title: 'No bookings match',
+                            subtitle: 'Try clearing the filters.'),
+                      ]);
                 }
+                // Trailing slot: a loading spinner while a page is in flight,
+                // else a "showing X of Y" footer once everything is loaded.
                 return ListView.separated(
+                  controller: _scroll,
                   padding: const EdgeInsets.all(16),
-                  itemCount: rows.length,
+                  itemCount: rows.length + 1,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _card(rows[i]),
+                  itemBuilder: (_, i) =>
+                      i < rows.length ? _card(rows[i]) : _listFooter(rows.length),
                 );
               }),
             ),
@@ -692,6 +753,45 @@ class _PartnerBookingsScreenState
           busy ? null : () => _act(b, 'review'), false, outlined: true));
     }
     return actions;
+  }
+
+  // Trailing list slot: a spinner while the next page loads, a tap-to-load
+  // affordance if more remain, else a "showing X of Y" summary. [shownCount]
+  // is the number of rows currently visible after client-side filters.
+  Widget _listFooter(int shownCount) {
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4)),
+        ),
+      );
+    }
+    // Loaded rows (pre-filter) vs the server total. When filters are active
+    // the visible count can be lower; note that in the label for clarity.
+    final loaded = _all.length;
+    final total = _totalRecords > 0 ? _totalRecords : loaded;
+    final filtered = shownCount != loaded;
+    final label = filtered
+        ? 'Showing $shownCount filtered · $loaded of $total loaded'
+        : 'Showing $loaded of $total';
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 4),
+      child: Column(
+        children: [
+          if (_hasMore)
+            TextButton(
+              onPressed: _loadMore,
+              child: const Text('Load more'),
+            ),
+          Text(label,
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+        ],
+      ),
+    );
   }
 
   Widget _card(PartnerBooking b) {

@@ -1,3 +1,5 @@
+import '../bookings/models.dart' show PartnerBooking;
+
 int? _i(dynamic v) =>
     v == null ? null : (v is num ? v.toInt() : int.tryParse('$v'));
 double _d(dynamic v) =>
@@ -331,6 +333,70 @@ class Partner {
       unassignPenaltyPct: j['unassignPenaltyPct'] == null
           ? null
           : _d(j['unassignPenaltyPct']),
+    );
+  }
+}
+
+/// One page of partner bookings plus the pagination envelope, for
+/// infinite-scroll. Mirrors the `{ data, pagination:{ totalRecords,
+/// currentPage, totalPages, pageSize } }` shape from getPartnerBookings.
+class PartnerBookingsPage {
+  final List<PartnerBooking> rows;
+  final int totalRecords;
+  final int totalPages;
+  final int currentPage;
+  const PartnerBookingsPage({
+    this.rows = const [],
+    this.totalRecords = 0,
+    this.totalPages = 1,
+    this.currentPage = 1,
+  });
+
+  bool get hasMore => currentPage < totalPages;
+}
+
+/// Aggregated dashboard KPIs from `GET /partner/me/dashboard-stats`.
+/// Server-side counting replaces the old "fetch 500 bookings + count on the
+/// client" pattern (which truncated at the list cap). Response shape:
+///   { success, data: { counts:{ bookingsToday, bookingsWeek, pendingCount,
+///     workersCount, vansCount }, earningsWeek, pendingBookings:[...],
+///     window:{ todayISO, weekStartISO, weekEndISO } } }
+class DashboardStats {
+  final int bookingsToday;
+  final int bookingsWeek;
+  final int pendingCount;
+  final int workersCount;
+  final int vansCount;
+  final double earningsWeek;
+  final List<PartnerBooking> pendingBookings;
+
+  const DashboardStats({
+    this.bookingsToday = 0,
+    this.bookingsWeek = 0,
+    this.pendingCount = 0,
+    this.workersCount = 0,
+    this.vansCount = 0,
+    this.earningsWeek = 0,
+    this.pendingBookings = const [],
+  });
+
+  factory DashboardStats.fromJson(Map<String, dynamic> j) {
+    final counts =
+        j['counts'] is Map ? Map<String, dynamic>.from(j['counts']) : const {};
+    final pending = (j['pendingBookings'] is List)
+        ? (j['pendingBookings'] as List)
+            .whereType<Map>()
+            .map((e) => PartnerBooking.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <PartnerBooking>[];
+    return DashboardStats(
+      bookingsToday: _i(counts['bookingsToday']) ?? 0,
+      bookingsWeek: _i(counts['bookingsWeek']) ?? 0,
+      pendingCount: _i(counts['pendingCount']) ?? 0,
+      workersCount: _i(counts['workersCount']) ?? 0,
+      vansCount: _i(counts['vansCount']) ?? 0,
+      earningsWeek: _d(j['earningsWeek']),
+      pendingBookings: pending,
     );
   }
 }
@@ -708,6 +774,60 @@ class WalletStatement {
   final List<WalletTransaction> transactions;
   const WalletStatement(
       {this.wallet = const WalletInfo(), this.transactions = const []});
+}
+
+/// Canonical cap-aware partner settlement for one booking — the Flutter mirror
+/// of the backend's `computePartnerSettlement(...)` return shape
+/// (services/catalog/partnerSettlementMath.js).
+///
+/// INVARIANTS (guaranteed by the backend helper):
+///   * onlineDue >= 0 AND cashCommission >= 0, mutually exclusive
+///   * partnerNet ≈ cashHeld + onlineDue − cashCommission
+///
+/// `partnerNet` is the cap-aware take-home (net of CNC commission, protected
+/// by the discount cap). This is the ONLY number that should be shown as the
+/// partner's earnings for a booking — never the raw list price or full
+/// customer-paid amount, which would OVERSTATE earnings.
+class PartnerSettlement {
+  final double listPrice;
+  final double customerPaid;
+  final double partnerNet; // cap-aware take-home
+  final double partnerFloor; // protected minimum
+  final double cashHeld; // cash physically held by partner (excl-VAT)
+  final double onlineDue; // CNC owes partner (top-up credit)
+  final double cashCommission; // partner owes CNC on cash collected
+  final bool capApplied; // cap floor kicked in
+  final double? commissionPct;
+  final double? maxDiscountPct;
+
+  const PartnerSettlement({
+    this.listPrice = 0,
+    this.customerPaid = 0,
+    this.partnerNet = 0,
+    this.partnerFloor = 0,
+    this.cashHeld = 0,
+    this.onlineDue = 0,
+    this.cashCommission = 0,
+    this.capApplied = false,
+    this.commissionPct,
+    this.maxDiscountPct,
+  });
+
+  factory PartnerSettlement.fromJson(Map<String, dynamic> j) =>
+      PartnerSettlement(
+        listPrice: _d(j['listPrice']),
+        customerPaid: _d(j['customerPaid']),
+        partnerNet: _d(j['partnerNet'] ?? j['partnerCost']),
+        partnerFloor: _d(j['partnerFloor']),
+        cashHeld: _d(j['cashHeld']),
+        onlineDue: _d(j['onlineDue']),
+        cashCommission: _d(j['cashCommission']),
+        capApplied: _b(j['capApplied']),
+        commissionPct:
+            j['commissionPct'] == null ? null : _d(j['commissionPct']),
+        maxDiscountPct:
+            j['maxDiscountPct'] == null ? null : _d(j['maxDiscountPct']),
+      );
 }
 
 class Review {
