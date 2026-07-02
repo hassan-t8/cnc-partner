@@ -12,6 +12,7 @@ import '../../widgets/searchable_picker.dart';
 import 'availability_editor.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import 'worker_services_picker.dart';
 
 class WorkerForm extends ConsumerStatefulWidget {
   final Worker? worker;
@@ -37,7 +38,8 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   double? _homeLat;
   double? _homeLng;
   List<int> _serviceZoneIds = const []; // additional zones beyond primary
-  List<int> _serviceBasePriceIds = const []; // services (crew)
+  List<int> _serviceBasePriceIds = const []; // services (crew) — anchor rows
+  Map<int, List<int>> _serviceItemsByBp = {}; // basePriceId -> serviceItemIds
   int? _assignedVanId; // van (driver)
   bool _autoAssign = true;
   bool _busy = false;
@@ -84,12 +86,15 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
             .toList();
         if (mounted) setState(() => _serviceZoneIds = secondary);
       }).catchError((_) {});
-      repo.workerServices(w.id).then((rows) {
-        final bps = rows
-            .map((r) => _toInt(r['basePriceId']))
-            .whereType<int>()
-            .toList();
-        if (mounted) setState(() => _serviceBasePriceIds = bps);
+      repo.workerServicesLink(w.id).then((link) {
+        if (mounted) {
+          setState(() {
+            _serviceBasePriceIds = link.basePriceIds;
+            _serviceItemsByBp = {
+              for (final e in link.itemsByBp.entries) e.key: [...e.value],
+            };
+          });
+        }
       }).catchError((_) {});
       _vans.then((vans) {
         final mine = vans.where((v) => v.driverWorkerId == w.id).toList();
@@ -186,7 +191,8 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
 
     if (_role == 'crew') {
       // Services only apply to crew; drivers don't deliver services.
-      await repo.syncWorkerServices(workerId, _serviceBasePriceIds);
+      await repo.syncWorkerServices(workerId, _serviceBasePriceIds,
+          itemsByBp: _serviceItemsByBp);
     } else if (_role == 'driver') {
       // Re-point van assignment: clear any van this worker used to drive,
       // then attach the newly chosen one.
@@ -364,7 +370,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
             _hint('Extra zones to serve beyond the primary zone. Primary is auto-included and locked here.'),
             const SizedBox(height: 14),
             if (_role == 'crew') ...[
-              _label('Services delivered'),
+              _label('Services attached'),
               FutureBuilder<List<MyService>>(
                 future: _myServices,
                 builder: (context, snap) {
@@ -372,37 +378,37 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                       .where((s) => s.basePriceId != null)
                       .toList();
                   final sel = services
-                      .where((s) => _serviceBasePriceIds.contains(s.basePriceId))
+                      .where((s) =>
+                          _serviceBasePriceIds.contains(s.basePriceId) ||
+                          (_serviceItemsByBp[s.basePriceId]?.isNotEmpty ??
+                              false))
                       .toList();
+                  final pickedCount = sel.length;
                   return PickerField(
                     value: sel.isEmpty
                         ? ''
-                        : sel.map((s) => s.name).join(', '),
+                        : '$pickedCount linked · ${sel.map((s) => s.name).join(', ')}',
                     hint: 'None linked',
                     onTap: () async {
-                      final picked =
-                          await showMultiSearchablePicker<MyService>(
+                      final result = await showWorkerServicesPicker(
                         context: context,
-                        title: 'Services delivered',
-                        items: services,
-                        labelOf: (s) => s.name,
-                        keyOf: (s) => s.basePriceId!,
-                        groupOf: (s) => s.verticalName.isNotEmpty
-                            ? s.verticalName
-                            : (s.categoryName.isEmpty
-                                ? 'Services'
-                                : s.categoryName),
-                        selected: sel,
+                        services: services,
+                        selectedBasePriceIds: _serviceBasePriceIds,
+                        itemsByBp: _serviceItemsByBp,
                       );
-                      if (picked != null) {
-                        setState(() => _serviceBasePriceIds =
-                            picked.map((s) => s.basePriceId!).toList());
+                      if (result != null) {
+                        setState(() {
+                          _serviceBasePriceIds = result.basePriceIds;
+                          _serviceItemsByBp = result.itemsByBp;
+                        });
                         _markDirty();
                       }
                     },
                   );
                 },
               ),
+              _hint(
+                  'Tap to pick the services and items this worker handles. Prices shown per item.'),
               const SizedBox(height: 14),
             ],
             if (_role == 'driver') ...[

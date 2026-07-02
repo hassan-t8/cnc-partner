@@ -174,8 +174,52 @@ class PartnerRepository {
     return pickList(res.data);
   }
 
-  Future<void> syncWorkerServices(int id, List<int> basePriceIds) =>
-      _api.post('/workers/$id/services', body: {'basePriceIds': basePriceIds});
+  /// A worker's linked services, split into the legacy anchor rows
+  /// (`basePriceIds`) and the per-item picks bucketed by basePriceId
+  /// (`itemsByBp`). Mirrors the web's hydration of `listWorkerServices`
+  /// (`GET /workers/:id/services` → `{ data:[{basePriceId}], items:[{basePriceId,
+  /// serviceItemId}] }`).
+  Future<WorkerServicesLink> workerServicesLink(int id) async {
+    final res = await _api.get('/workers/$id/services');
+    final body = res.data;
+    final data = pickList(body);
+    final basePriceIds = data
+        .map((r) => r['basePriceId'])
+        .map((v) => v is num ? v.toInt() : int.tryParse('$v'))
+        .whereType<int>()
+        .toList();
+    // Per-item rows live under the top-level `items` key (not `data`).
+    final rawItems = (body is Map && body['items'] is List)
+        ? (body['items'] as List)
+        : const [];
+    final itemsByBp = <int, List<int>>{};
+    for (final e in rawItems.whereType<Map>()) {
+      final bp = e['basePriceId'] is num
+          ? (e['basePriceId'] as num).toInt()
+          : int.tryParse('${e['basePriceId']}');
+      final sid = e['serviceItemId'] is num
+          ? (e['serviceItemId'] as num).toInt()
+          : int.tryParse('${e['serviceItemId']}');
+      if (bp == null || sid == null) continue;
+      (itemsByBp[bp] ??= <int>[]).add(sid);
+    }
+    return WorkerServicesLink(basePriceIds: basePriceIds, itemsByBp: itemsByBp);
+  }
+
+  /// Persist a worker's picked services + items. Matches the web contract:
+  /// `POST /workers/:id/services { basePriceIds, itemsByBasePriceId }` where
+  /// `itemsByBasePriceId` maps basePriceId → serviceItemId[].
+  Future<void> syncWorkerServices(
+    int id,
+    List<int> basePriceIds, {
+    Map<int, List<int>> itemsByBp = const {},
+  }) =>
+      _api.post('/workers/$id/services', body: {
+        'basePriceIds': basePriceIds,
+        'itemsByBasePriceId': {
+          for (final e in itemsByBp.entries) '${e.key}': e.value,
+        },
+      });
 
   // ----- availability rules (working hours) -----
   Future<List<AvailabilityRule>> availabilityRules(

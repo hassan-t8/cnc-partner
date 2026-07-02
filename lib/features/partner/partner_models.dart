@@ -61,6 +61,25 @@ class ServiceRequest {
   }
 }
 
+/// One available item (sub-service) under a partner's linked service, carrying
+/// the ServiceItem id + display name + price. Mirrors the web's `catalogItems`
+/// (the FULL item universe) so the worker picker can render checkboxes + prices.
+class MyServiceItem {
+  final int serviceItemId; // ServiceItem id — what worker_services links to
+  final String name;
+  final double? unitPrice;
+  const MyServiceItem({
+    required this.serviceItemId,
+    this.name = '',
+    this.unitPrice,
+  });
+  factory MyServiceItem.fromJson(Map<String, dynamic> j) => MyServiceItem(
+        serviceItemId: _i(j['serviceItemId'] ?? j['id']) ?? 0,
+        name: _s(j['name']),
+        unitPrice: j['unitPrice'] == null ? null : _d(j['unitPrice']),
+      );
+}
+
 /// A catalog service the partner has linked ("I provide this").
 class MyService {
   final int id; // PartnerService id (used to unlink legacy whole-service rows)
@@ -71,7 +90,9 @@ class MyService {
   final String shortDescription;
   final String categoryName;
   final String verticalName;
+  final bool isActive;
   final List<int> pickedItemIds; // ServiceItem ids the partner delivers
+  final List<MyServiceItem> items; // FULL item universe (catalogItems) w/ prices
   const MyService({
     required this.id,
     this.catalogServiceId,
@@ -81,7 +102,9 @@ class MyService {
     this.shortDescription = '',
     this.categoryName = '',
     this.verticalName = '',
+    this.isActive = true,
     this.pickedItemIds = const [],
+    this.items = const [],
   });
   factory MyService.fromJson(Map<String, dynamic> j) {
     final c = j['catalog'] is Map ? Map<String, dynamic>.from(j['catalog']) : const {};
@@ -94,6 +117,16 @@ class MyService {
             .where((e) => e > 0)
             .toList()
         : <int>[];
+    // Item universe: prefer `catalogItems` (FULL set the partner offers), fall
+    // back to the linked `items` for older backend responses. Mirrors the web.
+    final rawItems = (j['catalogItems'] is List && (j['catalogItems'] as List).isNotEmpty)
+        ? j['catalogItems']
+        : (j['items'] is List ? j['items'] : const []);
+    final items = (rawItems as List)
+        .whereType<Map>()
+        .map((e) => MyServiceItem.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.serviceItemId > 0)
+        .toList();
     return MyService(
       id: _i(j['id']) ?? 0,
       catalogServiceId: _i(j['catalogServiceId'] ?? c['id']),
@@ -103,9 +136,22 @@ class MyService {
       shortDescription: _s(c['shortDescription']),
       categoryName: _s(cat['name']),
       verticalName: _s(vert['name']),
+      isActive: j['isActive'] == null ? true : _b(j['isActive']),
       pickedItemIds: picked,
+      items: items,
     );
   }
+}
+
+/// A worker's linked services, split into legacy anchor rows (`basePriceIds`)
+/// and per-item picks bucketed by basePriceId (`itemsByBp`).
+class WorkerServicesLink {
+  final List<int> basePriceIds;
+  final Map<int, List<int>> itemsByBp;
+  const WorkerServicesLink({
+    this.basePriceIds = const [],
+    this.itemsByBp = const {},
+  });
 }
 
 /// One pickable item (sub-service) under a catalog service.
