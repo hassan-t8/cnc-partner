@@ -221,11 +221,15 @@ class PartnerRepository {
         },
       });
 
-  // ----- availability rules (working hours) -----
+  // ----- availability rules (recurring weekly shifts) -----
   Future<List<AvailabilityRule>> availabilityRules(
-      String ownerType, int ownerId) async {
-    final res = await _api.get('/availability/rules',
-        query: {'ownerType': ownerType, 'ownerId': ownerId});
+      String ownerType, int ownerId,
+      {bool activeOnly = true}) async {
+    final res = await _api.get('/availability/rules', query: {
+      'ownerType': ownerType,
+      'ownerId': ownerId,
+      if (activeOnly) 'activeOnly': 'true',
+    });
     return pickList(res.data).map(AvailabilityRule.fromJson).toList();
   }
 
@@ -237,6 +241,29 @@ class PartnerRepository {
 
   Future<void> deleteAvailabilityRule(int id) =>
       _api.delete('/availability/rules/$id');
+
+  // ----- availability exceptions (leaves / one-off changes) -----
+  /// One-off overrides for [ownerId] between [from] and [to] (YYYY-MM-DD).
+  /// Backend filters by the date range only when BOTH from + to are given.
+  Future<List<AvailabilityException>> availabilityExceptions(
+      String ownerType, int ownerId,
+      {String? from, String? to}) async {
+    final res = await _api.get('/availability/exceptions', query: {
+      'ownerType': ownerType,
+      'ownerId': ownerId,
+      if (from != null && to != null) ...{'from': from, 'to': to},
+    });
+    return pickList(res.data).map(AvailabilityException.fromJson).toList();
+  }
+
+  Future<void> createAvailabilityException(Map<String, dynamic> body) =>
+      _api.post('/availability/exceptions', body: body);
+
+  Future<void> updateAvailabilityException(int id, Map<String, dynamic> body) =>
+      _api.put('/availability/exceptions/$id', body: body);
+
+  Future<void> deleteAvailabilityException(int id) =>
+      _api.delete('/availability/exceptions/$id');
 
   // ----- vans -----
   Future<List<Van>> vans() async {

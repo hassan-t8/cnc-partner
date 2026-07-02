@@ -9,6 +9,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/status_badge.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import 'partner_schedule_screen.dart';
 import 'worker_form.dart';
 
 class PartnerWorkersScreen extends ConsumerStatefulWidget {
@@ -22,6 +23,7 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
   late Future<List<Worker>> _future;
   String _query = '';
   String _role = 'all';
+  String _status = 'all';
   // Optimistic local edits (status / auto-assign) so the UI updates instantly,
   // before the server round-trip completes.
   final Map<int, Worker> _overrides = {};
@@ -78,6 +80,17 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
   static const _statusLabels = {
     'active': 'Active',
     'not_working': 'Not working',
+    'on_leave': 'On leave',
+    'suspended': 'Suspended',
+  };
+
+  // Status filter options — mirrors the partner web app. 'pending' is a
+  // derived state (invite not accepted → pendingActivation), not a stored
+  // Worker.status value; see _filter for the exclusive matching rules.
+  static const _statusFilterLabels = {
+    'active': 'Active',
+    'not_working': 'Not working',
+    'pending': 'Pending',
     'on_leave': 'On leave',
     'suspended': 'Suspended',
   };
@@ -171,11 +184,31 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     final q = _query.toLowerCase();
     return all.map(_apply).where((w) {
       if (_role != 'all' && !w.roles.contains(_role)) return false;
+      if (_status != 'all') {
+        // 'pending' is a derived, exclusive state: a pending worker must not
+        // show under 'active', and an activated worker must not show under
+        // 'pending'. Other statuses match on Worker.status directly.
+        if (_status == 'pending') {
+          if (!w.pendingActivation) return false;
+        } else if (_status == 'active') {
+          if (w.pendingActivation) return false;
+          if (w.status != 'active') return false;
+        } else if (w.status != _status) {
+          return false;
+        }
+      }
       if (q.isEmpty) return true;
       return [w.name, w.code, w.phone, w.email]
           .any((s) => s.toLowerCase().contains(q));
     }).toList();
   }
+
+  bool get _hasFilters => _role != 'all' || _status != 'all';
+
+  void _clearFilters() => setState(() {
+        _role = 'all';
+        _status = 'all';
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -200,26 +233,43 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                   onChanged: (v) => setState(() => _query = v.trim()),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: ['all', 'crew', 'driver'].map((r) {
-                    final on = _role == r;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ChoiceChip(
-                        label: Text(r == 'all' ? 'All' : r),
-                        selected: on,
-                        onSelected: (_) => setState(() => _role = r),
-                        selectedColor: AppColors.brand600,
-                        labelStyle: TextStyle(
-                            color: on ? Colors.white : AppColors.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600),
-                        backgroundColor: AppColors.surface,
-                        side: BorderSide(color: AppColors.border),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final r in const ['all', 'crew', 'driver'])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _filterChip(
+                            label: r == 'all' ? 'All roles' : r,
+                            selected: _role == r,
+                            onTap: () => setState(() => _role = r),
+                          ),
+                        ),
+                      Container(
+                        width: 1,
+                        height: 24,
+                        margin: const EdgeInsets.only(right: 8),
+                        color: AppColors.border,
                       ),
-                    );
-                  }).toList(),
+                      _filterChip(
+                        label: 'All statuses',
+                        selected: _status == 'all',
+                        onTap: () => setState(() => _status = 'all'),
+                      ),
+                      for (final e in _statusFilterLabels.entries)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: _filterChip(
+                            label: e.value,
+                            selected: _status == e.key,
+                            onTap: () => setState(() => _status = e.key),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
+                _appliedFilters(),
               ],
             ),
           ),
@@ -260,6 +310,86 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       ),
     );
   }
+
+  Widget _filterChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) =>
+      ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        selectedColor: AppColors.brand600,
+        labelStyle: TextStyle(
+            color: selected ? Colors.white : AppColors.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600),
+        backgroundColor: AppColors.surface,
+        side: BorderSide(color: AppColors.border),
+      );
+
+  // Applied-filter chips (role / status) with an × to clear each one, plus
+  // a Clear-all action. Shows nothing when no filters are active — mirrors
+  // the partner web app's filter-summary UX.
+  Widget _appliedFilters() {
+    if (!_hasFilters) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (_role != 'all')
+                  _appliedChip(_role, () => setState(() => _role = 'all')),
+                if (_status != 'all')
+                  _appliedChip(
+                      _statusFilterLabels[_status] ?? _status,
+                      () => setState(() => _status = 'all')),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _clearFilters,
+            style: TextButton.styleFrom(
+                foregroundColor: AppColors.rose,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32)),
+            child: const Text('Clear',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _appliedChip(String label, VoidCallback onRemove) => Container(
+        padding: const EdgeInsets.only(left: 10, right: 4, top: 4, bottom: 4),
+        decoration: BoxDecoration(
+          color: AppColors.brand600.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.brand600.withValues(alpha: 0.30)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    color: AppColors.brand700,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(width: 2),
+            InkWell(
+              onTap: onRemove,
+              customBorder: const CircleBorder(),
+              child: Icon(Icons.close, size: 15, color: AppColors.brand700),
+            ),
+          ],
+        ),
+      );
 
   Widget _card(Worker w) {
     final isDriver = w.roles.contains('driver');
@@ -431,6 +561,16 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              // ── Schedule (recurring shifts + leaves) ──────────────
+              SizedBox(
+                width: double.infinity,
+                child: _actionBtn(
+                    Icons.calendar_month_outlined, 'Schedule + leaves', () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => PartnerScheduleScreen(initialWorker: w)));
+                }),
+              ),
+              const SizedBox(height: 8),
               // ── Actions ───────────────────────────────────────────
               Row(
                 children: [

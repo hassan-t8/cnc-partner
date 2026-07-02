@@ -20,6 +20,8 @@ class PartnerVansScreen extends ConsumerStatefulWidget {
 
 class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
   late Future<List<Van>> _future;
+  String _query = '';
+  String _status = 'all';
   // Optimistic local edits (status / auto-assign) for instant UI feedback.
   final Map<int, Van> _overrides = {};
 
@@ -30,6 +32,20 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
   }
 
   Van _apply(Van v) => _overrides[v.id] ?? v;
+
+  List<Van> _filter(List<Van> all) {
+    final q = _query.toLowerCase();
+    return all.map(_apply).where((v) {
+      if (_status != 'all' && v.status != _status) return false;
+      if (q.isEmpty) return true;
+      return [v.name, v.plate, v.code, v.driverName]
+          .any((s) => s.toLowerCase().contains(q));
+    }).toList();
+  }
+
+  bool get _hasFilters => _status != 'all';
+
+  void _clearFilters() => setState(() => _status = 'all');
 
   void _reload() => setState(() {
         _overrides.clear();
@@ -157,39 +173,158 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Add van', style: TextStyle(color: Colors.white)),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async => _reload(),
-        child: FutureBuilder<List<Van>>(
-          future: _future,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const LoadingList();
-            }
-            if (snap.hasError) {
-              return ErrorRetry(
-                  message: 'Couldn\'t load vans.', onRetry: _reload);
-            }
-            final rows = snap.data ?? const [];
-            if (rows.isEmpty) {
-              return ListView(children: const [
-                SizedBox(height: 80),
-                EmptyState(
-                    icon: Icons.local_shipping_outlined,
-                    title: 'No vans yet',
-                    subtitle: 'Add vans from the web portal.'),
-              ]);
-            }
-            return ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: rows.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (_, i) => _card(_apply(rows[i])),
-            );
-          },
-        ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Column(
+              children: [
+                TextField(
+                  decoration: const InputDecoration(
+                      hintText: 'Search name, plate, driver…',
+                      prefixIcon: Icon(Icons.search)),
+                  onChanged: (v) => setState(() => _query = v.trim()),
+                ),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _filterChip(
+                        label: 'All statuses',
+                        selected: _status == 'all',
+                        onTap: () => setState(() => _status = 'all'),
+                      ),
+                      for (final e in _statusLabels.entries)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: _filterChip(
+                            label: e.value,
+                            selected: _status == e.key,
+                            onTap: () => setState(() => _status = e.key),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                _appliedFilters(),
+              ],
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async => _reload(),
+              child: FutureBuilder<List<Van>>(
+                future: _future,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const LoadingList();
+                  }
+                  if (snap.hasError) {
+                    return ErrorRetry(
+                        message: 'Couldn\'t load vans.', onRetry: _reload);
+                  }
+                  final rows = _filter(snap.data ?? const []);
+                  if (rows.isEmpty) {
+                    return ListView(children: const [
+                      SizedBox(height: 80),
+                      EmptyState(
+                          icon: Icons.local_shipping_outlined,
+                          title: 'No vans',
+                          subtitle: 'Add vans from the web portal.'),
+                    ]);
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: rows.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) => _card(rows[i]),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
+
+  Widget _filterChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) =>
+      ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        selectedColor: AppColors.brand600,
+        labelStyle: TextStyle(
+            color: selected ? Colors.white : AppColors.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600),
+        backgroundColor: AppColors.surface,
+        side: BorderSide(color: AppColors.border),
+      );
+
+  // Applied-filter chip (status) with an × to clear it, plus a Clear-all
+  // action. Shows nothing when no filters are active — mirrors the partner
+  // web app's filter-summary UX.
+  Widget _appliedFilters() {
+    if (!_hasFilters) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (_status != 'all')
+                  _appliedChip(_statusLabels[_status] ?? _status,
+                      () => setState(() => _status = 'all')),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _clearFilters,
+            style: TextButton.styleFrom(
+                foregroundColor: AppColors.rose,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32)),
+            child: const Text('Clear',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _appliedChip(String label, VoidCallback onRemove) => Container(
+        padding: const EdgeInsets.only(left: 10, right: 4, top: 4, bottom: 4),
+        decoration: BoxDecoration(
+          color: AppColors.brand600.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.brand600.withValues(alpha: 0.30)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    color: AppColors.brand700,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+            const SizedBox(width: 2),
+            InkWell(
+              onTap: onRemove,
+              customBorder: const CircleBorder(),
+              child: Icon(Icons.close, size: 15, color: AppColors.brand700),
+            ),
+          ],
+        ),
+      );
 
   Widget _card(Van v) {
     final hasParking = v.parkingLat != null && v.parkingLng != null;

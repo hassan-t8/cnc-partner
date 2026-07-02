@@ -1001,3 +1001,42 @@ class AvailabilityRule {
         isActive: j['isActive'] == null ? true : _b(j['isActive']),
       );
 }
+
+/// A one-off override on the recurring schedule for a specific date.
+///   type='off'   → owner is NOT available that date (leave, sick, holiday).
+///   type='extra' → owner IS available that date despite the recurring rule.
+/// A null start/end pair means the whole day; a set window is a partial block.
+/// dayOfWeek convention (for rules) is 0=Sun..6=Sat, matching JS getDay().
+class AvailabilityException {
+  final int id;
+  final String date; // YYYY-MM-DD
+  final String type; // 'off' | 'extra'
+  final String? startTime; // HH:MM:SS or null (whole day)
+  final String? endTime;
+  final String reason;
+  const AvailabilityException({
+    required this.id,
+    this.date = '',
+    this.type = 'off',
+    this.startTime,
+    this.endTime,
+    this.reason = '',
+  });
+  factory AvailabilityException.fromJson(Map<String, dynamic> j) {
+    final st = _s(j['startTime']);
+    final et = _s(j['endTime']);
+    // date can arrive as "YYYY-MM-DD" or a full ISO timestamp — keep the day.
+    final rawDate = _s(j['date']);
+    return AvailabilityException(
+      id: _i(j['id']) ?? 0,
+      date: rawDate.length >= 10 ? rawDate.substring(0, 10) : rawDate,
+      type: _s(j['type']).isEmpty ? 'off' : _s(j['type']),
+      startTime: st.isEmpty ? null : st,
+      endTime: et.isEmpty ? null : et,
+      reason: _s(j['reason']),
+    );
+  }
+
+  bool get isOff => type == 'off';
+  bool get isWholeDay => startTime == null && endTime == null;
+}
