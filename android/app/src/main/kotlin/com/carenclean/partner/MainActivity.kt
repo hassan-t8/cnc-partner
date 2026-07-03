@@ -1,4 +1,4 @@
-package com.example.cnc_partner
+package com.carenclean.partner
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

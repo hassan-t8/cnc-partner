@@ -17,9 +17,14 @@ class _RouterRefresh extends ChangeNotifier {
   }
 }
 
+/// Root navigator key — lets non-widget code (e.g. push-notification tap
+/// routing) grab a BuildContext for imperative navigation.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _RouterRefresh(ref);
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     refreshListenable: refresh,
     redirect: (context, state) {

@@ -42,6 +42,12 @@ dependencies:
   flutter_local_notifications: ^18.0.1
   permission_handler: ^11.3.1
 
+  # Push notifications (FCM). Native config files (google-services.json /
+  # GoogleService-Info.plist) are added by the app owner; Firebase is
+  # initialized from the native config via Firebase.initializeApp().
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
+
   # Realtime booking/offer updates over Socket.IO (web parity)
   socket_io_client: ^2.0.3+1
 

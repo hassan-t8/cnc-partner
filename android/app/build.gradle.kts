@@ -1,12 +1,15 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    // Firebase / FCM. Requires android/app/google-services.json (added by the
+    // app owner) for a release build; Dart analysis does not need it.
+    id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
-    namespace = "com.example.cnc_partner"
+    namespace = "com.carenclean.partner"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -23,7 +26,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.cnc_partner"
+        applicationId = "com.carenclean.partner"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

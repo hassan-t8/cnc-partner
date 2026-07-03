@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#059669</color>
+    <!-- Accent tint for FCM system-tray notifications. -->
+    <color name="fcm_notification_color">#059669</color>
 </resources>

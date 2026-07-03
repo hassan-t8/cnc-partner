@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Cnc Partner</string>
+	<string>CNC Partner</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -56,6 +56,17 @@
 		</dict>
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<!-- Push notifications (FCM): allow the app to process incoming remote
+	     notifications while backgrounded. Requires the "Push Notifications"
+	     capability + "Background Modes → Remote notifications" in Xcode. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<!-- Let FlutterFire's method-swizzling forward APNs callbacks to
+	     firebase_messaging automatically (no manual AppDelegate wiring). -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
