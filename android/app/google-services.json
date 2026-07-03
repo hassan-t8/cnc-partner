@@ -1,0 +1,126 @@
+{
+  "project_info": {
+    "project_number": "569022686431",
+    "project_id": "cnc26-c6f8d",
+    "storage_bucket": "cnc26-c6f8d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:569022686431:android:c01b22e269f552b57fb56a",
+        "android_client_info": {
+          "package_name": "com.carenclean.partner"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "569022686431-uo9vafk7c13aa98eft6uoi6cdhevb2sg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCPd5OtxI5-Fw5U6_-4Yzy9gJjOdYnJnlo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "569022686431-uo9vafk7c13aa98eft6uoi6cdhevb2sg.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "569022686431-0jr7aoekelvg5cf99iflp0suu7hg3rdr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.carenclean.crm"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:569022686431:android:b2ec9359a95852cd7fb56a",
+        "android_client_info": {
+          "package_name": "com.example.cnc_panel"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "569022686431-uo9vafk7c13aa98eft6uoi6cdhevb2sg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCPd5OtxI5-Fw5U6_-4Yzy9gJjOdYnJnlo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "569022686431-uo9vafk7c13aa98eft6uoi6cdhevb2sg.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "569022686431-0jr7aoekelvg5cf99iflp0suu7hg3rdr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.carenclean.crm"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:569022686431:android:7c5c825ebfc2f0857fb56a",
+        "android_client_info": {
+          "package_name": "com.mudassir.careandclean"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "569022686431-spq9ed64m0d2nnlkqd60s4mb6rmeo4fl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mudassir.careandclean",
+            "certificate_hash": "e744ff9ff835d07cffde63f5d674629a42d7e83f"
+          }
+        },
+        {
+          "client_id": "569022686431-uo9vafk7c13aa98eft6uoi6cdhevb2sg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCPd5OtxI5-Fw5U6_-4Yzy9gJjOdYnJnlo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "569022686431-uo9vafk7c13aa98eft6uoi6cdhevb2sg.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "569022686431-0jr7aoekelvg5cf99iflp0suu7hg3rdr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.carenclean.crm"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
