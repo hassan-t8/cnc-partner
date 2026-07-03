@@ -55,19 +55,22 @@ class _CncPartnerAppState extends ConsumerState<CncPartnerApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // After the first frame the router is mounted → ask for push permission and
-    // handle a TERMINATED/COLD launch that came from tapping a notification.
+    // After the first frame the router is mounted → handle a TERMINATED/COLD
+    // launch that came from tapping a notification. (Permission is asked AFTER
+    // login, below.)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await PushService.instance.requestPermission();
       await PushService.instance.processInitialMessage();
     });
-    // Register the FCM token with the backend as soon as we're authenticated
-    // (login, biometric restore, or a restored session). Re-runs on every
-    // transition into the authenticated state.
+    // On login (or biometric restore / restored session): ask for notification
+    // permission, then generate the FCM token, print it, and register it with
+    // the backend. Runs on every transition into the authenticated state.
     ref.listenManual(authControllerProvider, (prev, next) {
       if (next.status == AuthStatus.authenticated &&
           prev?.status != AuthStatus.authenticated) {
-        PushService.instance.registerToken();
+        () async {
+          await PushService.instance.requestPermission();
+          await PushService.instance.registerToken();
+        }();
       }
     });
   }

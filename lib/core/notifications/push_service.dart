@@ -133,7 +133,14 @@ class PushService {
       // firebase_messaging handles the wait internally once permission is set.
       final token = await _fm.getToken();
       if (token != null && token.isNotEmpty) {
+        // Print prominently so it can be copied for Firebase console test sends.
+        debugPrint('════════════════════ FCM TOKEN ════════════════════');
+        debugPrint(token);
+        debugPrint('═══════════════════════════════════════════════════');
         await _postToken(token);
+      } else {
+        debugPrint('[push] FCM token is null — iOS simulator has no APNs; use a '
+            'real device or Android to obtain a token.');
       }
     } catch (e) {
       if (kDebugMode) debugPrint('[push] registerToken failed: $e');
