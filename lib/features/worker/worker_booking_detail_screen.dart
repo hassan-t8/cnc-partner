@@ -30,7 +30,7 @@ class WorkerBookingDetailScreen extends ConsumerStatefulWidget {
 class _WorkerBookingDetailScreenState
     extends ConsumerState<WorkerBookingDetailScreen> {
   late String _status = widget.assignment.status;
-  bool _busy = false;
+  String? _busyAction; // which action is in flight (only that button spins)
   late bool _cashCollected = widget.assignment.cashCollected;
 
   Assignment get a => widget.assignment;
@@ -83,7 +83,7 @@ class _WorkerBookingDetailScreenState
 
   Future<void> _act(String action) async {
     final repo = ref.read(workerRepositoryProvider);
-    setState(() => _busy = true);
+    setState(() => _busyAction = action);
     try {
       switch (action) {
         case 'accept':
@@ -94,7 +94,7 @@ class _WorkerBookingDetailScreenState
         case 'decline':
           final reason = await _reasonDialog();
           if (reason == null) {
-            setState(() => _busy = false);
+            setState(() => _busyAction = null);
             return;
           }
           await repo.decline(a.id, reason: reason.isEmpty ? null : reason);
@@ -114,7 +114,7 @@ class _WorkerBookingDetailScreenState
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyAction = null);
     }
   }
 
@@ -299,18 +299,18 @@ class _WorkerBookingDetailScreenState
       AppToast.error('Missing booking reference');
       return;
     }
-    setState(() => _busy = true);
+    setState(() => _busyAction = 'collect');
     try {
       await ref.read(workerRepositoryProvider).cashCollect(bookingId);
       if (!mounted) return;
       setState(() {
         _cashCollected = true;
-        _busy = false;
+        _busyAction = null;
       });
       AppToast.success('Cash collected — you can complete the job now');
     } on ApiException catch (e) {
       AppToast.error(e.message);
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyAction = null);
     }
   }
 
@@ -334,28 +334,36 @@ class _WorkerBookingDetailScreenState
       );
     }
 
+    // Any running action disables every button (no double-taps), but ONLY the
+    // button whose action is in flight shows a spinner.
+    final busy = _busyAction != null;
     final buttons = <Widget>[];
     switch (_status) {
       case 'pending_acceptance':
         buttons.add(_primary('Accept', AppColors.brand600,
-            _busy ? null : () => _act('accept')));
+            busy ? null : () => _act('accept'),
+            busy: _busyAction == 'accept'));
         buttons.add(_primary(
-            'Decline', AppColors.rose, _busy ? null : () => _act('decline')));
+            'Decline', AppColors.rose, busy ? null : () => _act('decline'),
+            busy: _busyAction == 'decline'));
         break;
       case 'accepted':
         buttons.add(_primary(
-            'Start job', AppColors.violet, _busy ? null : () => _act('start')));
+            'Start job', AppColors.violet, busy ? null : () => _act('start'),
+            busy: _busyAction == 'start'));
         break;
       case 'in_progress':
         // Cash still owed → collect before completing (backend enforces it).
         if (_cashPending) {
           buttons.add(_primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
-              AppColors.amber, _busy ? null : _collectCash));
+              AppColors.amber, busy ? null : _collectCash,
+              busy: _busyAction == 'collect'));
           buttons.add(_primary(
               'Complete job', AppColors.brand600, null)); // disabled
         } else {
           buttons.add(_primary('Complete job', AppColors.brand600,
-              _busy ? null : () => _act('complete')));
+              busy ? null : () => _act('complete'),
+              busy: _busyAction == 'complete'));
         }
         break;
     }
@@ -419,12 +427,14 @@ class _WorkerBookingDetailScreenState
         ),
       );
 
-  Widget _primary(String label, Color color, VoidCallback? onTap) => SizedBox(
+  Widget _primary(String label, Color color, VoidCallback? onTap,
+          {bool busy = false}) =>
+      SizedBox(
         height: 50,
         child: ElevatedButton(
           style: ElevatedButton.styleFrom(backgroundColor: color),
           onPressed: onTap,
-          child: _busy
+          child: busy
               ? const SizedBox(
                   width: 22,
                   height: 22,
