@@ -164,6 +164,18 @@ class _PartnerBookingsScreenState
     }
   }
 
+  /// Optimistically mark a booking's cash as collected in place (so the
+  /// "Collect cash" button drops and "Complete" enables) without a refetch.
+  void _patchCash(int id) {
+    final i = _all.indexWhere((b) => b.id == id);
+    if (i >= 0) {
+      setState(() => _all = [
+            for (var k = 0; k < _all.length; k++)
+              k == i ? _all[k].copyWith(cashCollected: true) : _all[k]
+          ]);
+    }
+  }
+
   /// Optimistically remove a booking from the local list (e.g. after a
   /// self-unassign releases it back to dispatch) so it doesn't linger stale.
   void _removeBooking(int id) {
@@ -303,6 +315,7 @@ class _PartnerBookingsScreenState
           }
           await repo.cashCollect(b.id);
           AppToast.success('Cash marked collected');
+          _patchCash(b.id);
           break;
         case 'review':
           // The dialog submits the review itself (spinner on its Submit button,
@@ -316,11 +329,11 @@ class _PartnerBookingsScreenState
           AppToast.success('Review submitted');
           break;
       }
+      // Update ONLY the changed row in place — no full-list refetch, no loader,
+      // no regeneration. The status transition is deterministic; cash/unassign
+      // are patched/removed in their own cases above.
       final newStatus = _statusForAction[action];
       if (newStatus != null) _patch(b.id, newStatus);
-      // Reconcile from the server WITHOUT the full-screen skeleton or a scroll
-      // jump — the row is already patched optimistically above.
-      _silentReload();
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
