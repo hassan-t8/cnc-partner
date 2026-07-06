@@ -943,6 +943,7 @@ class BookingAssignment {
   final String workerName;
   final String role;
   final String status;
+  final int? vanId;
   final String vanLabel; // e.g. "cli · 234"
 
   const BookingAssignment({
@@ -951,6 +952,7 @@ class BookingAssignment {
     this.workerName = '',
     this.role = '',
     this.status = '',
+    this.vanId,
     this.vanLabel = '',
   });
 
@@ -970,6 +972,7 @@ class BookingAssignment {
       workerName: name.isNotEmpty ? name : _s(j['workerName'] ?? who['name']),
       role: _s(j['role'] ?? (dw.isNotEmpty ? 'driver' : 'crew')),
       status: _s(j['status'] ?? j['acceptanceStatus']),
+      vanId: _i(van['id'] ?? j['vanId']),
       vanLabel: van.isEmpty
           ? ''
           : [van['name'], van['plate']]

@@ -112,10 +112,20 @@ class _AssignTeamSheetState extends ConsumerState<_AssignTeamSheet> {
         .join(' · ');
   }
 
-  String _vLabel(Van v) =>
-      [v.plate, v.code, if (v.driverName.isNotEmpty) 'driver: ${v.driverName}']
-          .where((s) => s.isNotEmpty)
-          .join(' · ');
+  // Vans already on this booking's team → disabled in the picker ("already
+  // added"), matching the web.
+  Set<int> get _assignedVanIds =>
+      {for (final a in _team) if (a.vanId != null) a.vanId!};
+
+  String _vLabel(Van v) {
+    final z = _zoneLabel(v.homeZoneId);
+    return [
+      v.code,
+      v.plate,
+      if (z.isNotEmpty) z,
+      if (v.driverName.isNotEmpty) 'driver: ${v.driverName}',
+    ].where((s) => s.isNotEmpty).join(' · ');
+  }
 
   // ---- pickers ----
   Future<void> _pickCrew() async {
@@ -162,6 +172,9 @@ class _AssignTeamSheetState extends ConsumerState<_AssignTeamSheet> {
       selected: _van,
       labelOf: _vLabel,
       equals: (a, b) => a.id == b.id,
+      // A van already on this booking's team can't be added again.
+      enabledOf: (v) => !_assignedVanIds.contains(v.id),
+      disabledReasonOf: (_) => 'already added',
     );
     if (picked != null) {
       setState(() {
