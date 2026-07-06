@@ -4,6 +4,14 @@ double _d(dynamic v) =>
     v == null ? 0 : (v is num ? v.toDouble() : double.tryParse('$v') ?? 0);
 bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 String _s(dynamic v) => v?.toString() ?? '';
+
+/// Payment-status labels the backend treats as "fully paid" — mirrors
+/// `assertPaidOrThrow`'s PAID list in CRM_Backend services/booking/
+/// cashCollection.js. Any other status (unpaid/partial/pending/'not
+/// received') leaves cash collectable at the door.
+const Set<String> _kPaidStatuses = {
+  'paid', 'full', 'success', 'complete', 'completed',
+};
 DateTime? _dt(dynamic v) {
   if (v == null) return null;
   return DateTime.tryParse(v.toString());
@@ -30,6 +38,10 @@ class Assignment {
   // Cash-collection (worker gates the Complete button on these, like the
   // partner flow + the web).
   final String payment; // cash | card | ...
+  // Payment-receipt status of the parent booking ('not received' | 'pending' |
+  // 'partial' | 'complete', or '' when the endpoint omits it). Drives the
+  // method-agnostic cash-pending check below.
+  final String paymentStatus;
   final double cashDue;
   final bool cashCollected;
 
@@ -51,13 +63,22 @@ class Assignment {
     this.lat,
     this.lng,
     this.payment = '',
+    this.paymentStatus = '',
     this.cashDue = 0,
     this.cashCollected = false,
   });
 
-  /// Cash booking with money still owed at the door.
+  /// Money still owed on this booking that the worker can collect as cash —
+  /// method-agnostic, mirroring the web WorkerBookings `cashDueFor` change
+  /// (2026-07-03). Cash bookings AND unpaid card/online bookings the customer
+  /// never captured are collectable; only wallet-prepaid or already-paid
+  /// bookings are excluded. The backend's ONLINE_PAYMENT_COVERS_CASH guard
+  /// still blocks a genuine double-collection if the status flag lags.
   bool get cashPending =>
-      payment.toLowerCase() == 'cash' && cashDue > 0 && !cashCollected;
+      !cashCollected &&
+      cashDue > 0 &&
+      payment.toLowerCase() != 'wallet' &&
+      !_kPaidStatuses.contains(paymentStatus.toLowerCase());
 
   Assignment copyWith({String? status, bool? cashCollected}) => Assignment(
         id: id,
@@ -77,6 +98,7 @@ class Assignment {
         lat: lat,
         lng: lng,
         payment: payment,
+        paymentStatus: paymentStatus,
         cashDue: cashDue,
         cashCollected: cashCollected ?? this.cashCollected,
       );
@@ -102,6 +124,10 @@ class Assignment {
       lat: j['lat'] == null ? null : _d(j['lat']),
       lng: j['lng'] == null ? null : _d(j['lng']),
       payment: _s(b['payment'] ?? b['paymentMethod'] ?? j['payment']),
+      // Payment-receipt status. workers/me/bookings denormalizes the parent
+      // Booking's `status` enum ('not received'|'pending'|'partial'|'complete');
+      // prefer an explicit paymentStatus if a future endpoint sends one.
+      paymentStatus: _s(b['paymentStatus'] ?? b['bookingPaymentStatus'] ?? b['status']),
       // The worker bookings response ships payment/cashCollected/totalPrice/
       // coinsApplied; cash owed at the door = total − coins (clamped) unless an
       // explicit due is provided.
@@ -181,13 +207,15 @@ class PartnerBooking {
   double get partnerNet => partnerCost;
 
   /// Money still owed on this booking that the partner can collect as cash —
-  /// method-agnostic, mirroring the web partner-admin `cashDueFor`
-  /// (`paymentStatus !== 'full' && !cashCollected`). Covers unpaid/partial
-  /// bookings AND online bookings the customer never captured (COD fallback).
+  /// method-agnostic, mirroring the web partner-admin `cashDueFor` (2026-07-03
+  /// merged form: skip already-collected, wallet-prepaid, and fully-paid
+  /// bookings; anything else is collectable). Covers unpaid/partial bookings
+  /// AND online bookings the customer never captured (COD fallback).
   bool get cashPending =>
       !cashCollected &&
       cashDue > 0 &&
-      paymentStatus.toLowerCase() != 'full';
+      payment.toLowerCase() != 'wallet' &&
+      !_kPaidStatuses.contains(paymentStatus.toLowerCase());
 
   PartnerBooking copyWith(
           {String? status, bool? cashCollected, bool? customerReviewed}) =>

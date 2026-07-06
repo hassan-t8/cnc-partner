@@ -34,8 +34,11 @@ class _WorkerBookingDetailScreenState
   late bool _cashCollected = widget.assignment.cashCollected;
 
   Assignment get a => widget.assignment;
+  // Method-agnostic cash-pending (mirrors Assignment.cashPending / the web
+  // WorkerBookings change) but reads the locally-tracked _cashCollected so the
+  // button hides the instant cash is marked collected on this screen.
   bool get _cashPending =>
-      a.payment.toLowerCase() == 'cash' && a.cashDue > 0 && !_cashCollected;
+      a.copyWith(cashCollected: _cashCollected).cashPending;
 
   /// Drivers only transport — view only (no start/complete/photos). True when
   /// this is a driver assignment OR the signed-in user is a driver (not crew).
