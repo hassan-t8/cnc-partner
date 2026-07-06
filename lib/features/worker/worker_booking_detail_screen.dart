@@ -48,21 +48,23 @@ class _WorkerBookingDetailScreenState
     return u != null && u.isDriver && !u.isCrew;
   }
 
+  // Captured once while `ref` is valid, so dispose() can leave the booking room
+  // WITHOUT touching `ref` (using ref after dispose throws and looped-crashed
+  // the app on every socket event).
+  BookingRealtime? _rt;
+
   @override
   void initState() {
     super.initState();
+    _rt = ref.read(bookingRealtimeProvider.notifier);
     final bid = widget.assignment.bookingId;
-    if (bid != null) {
-      ref.read(bookingRealtimeProvider.notifier).joinBooking(bid);
-    }
+    if (bid != null) _rt!.joinBooking(bid);
   }
 
   @override
   void dispose() {
     final bid = widget.assignment.bookingId;
-    if (bid != null) {
-      ref.read(bookingRealtimeProvider.notifier).leaveBooking(bid);
-    }
+    if (bid != null) _rt?.leaveBooking(bid);
     super.dispose();
   }
 
@@ -180,7 +182,7 @@ class _WorkerBookingDetailScreenState
   Widget build(BuildContext context) {
     // Live: refresh this job when its booking changes (payment/status).
     ref.listen(bookingRealtimeProvider, (_, __) {
-      final lid = ref.read(bookingRealtimeProvider.notifier).lastBookingId;
+      final lid = _rt?.lastBookingId;
       if (mounted && (lid == null || lid == a.bookingId)) _refresh();
     });
     final time = a.scheduledStart != null

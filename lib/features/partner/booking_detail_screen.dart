@@ -41,6 +41,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   // when already reviewed → the screen shows the submitted stars/comment.
   Review? _customerReview;
 
+  // Captured while `ref` is valid so dispose() can leave the room WITHOUT
+  // touching `ref` (using ref after dispose throws on every socket event).
+  BookingRealtime? _rt;
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +52,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     _loadTeam();
     if (b.status == 'completed') _loadCustomerReview();
     // Live: join this booking's room for dispatch/assignment updates.
-    ref.read(bookingRealtimeProvider.notifier).joinBooking(b.id);
+    _rt = ref.read(bookingRealtimeProvider.notifier);
+    _rt!.joinBooking(b.id);
   }
 
   /// Fetch the partner's existing customer review for this booking so the
@@ -67,7 +72,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   @override
   void dispose() {
-    ref.read(bookingRealtimeProvider.notifier).leaveBooking(b.id);
+    _rt?.leaveBooking(b.id);
     super.dispose();
   }
 
@@ -499,7 +504,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   Widget build(BuildContext context) {
     // Live: refresh team when this booking changes (status/dispatch/assign).
     ref.listen(bookingRealtimeProvider, (_, __) {
-      final lid = ref.read(bookingRealtimeProvider.notifier).lastBookingId;
+      final lid = _rt?.lastBookingId;
       if (mounted && (lid == null || lid == b.id)) {
         _loadTeam();
         _reloadBooking();
