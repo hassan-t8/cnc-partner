@@ -76,27 +76,35 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   Future<void> _openDetail(Assignment a) async {
     await Navigator.of(context).push(MaterialPageRoute(
         builder: (_) => WorkerBookingDetailScreen(assignment: a)));
-    if (mounted) _reloadAll();
+    // Refetch only the visible tab (in place, no skeleton) — the detail screen
+    // may have changed this booking's status.
+    if (mounted) _refresh(_tabs.index);
   }
 
   Future<void> _act(Assignment a, String action) async {
     final repo = ref.read(workerRepositoryProvider);
     setState(() => _acting = a.id);
     try {
+      String? newStatus;
       switch (action) {
         case 'accept':
           await repo.accept(a.id);
           AppToast.success('Job accepted');
+          newStatus = 'accepted';
           break;
         case 'start':
-          await _start(a);
+          if (!await _start(a)) return; // cancelled — nothing changed
+          newStatus = 'in_progress';
           break;
         case 'complete':
           await repo.complete(a.id);
           AppToast.success('Job completed');
+          newStatus = 'completed';
           break;
       }
-      _reloadAll();
+      // Patch only the affected row across the loaded tabs — no full refetch,
+      // no list regeneration. Completing drops it out of "Upcoming".
+      if (newStatus != null) _patchStatus(a, newStatus);
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
@@ -114,7 +122,7 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     try {
       await ref.read(workerRepositoryProvider).cashCollect(bookingId);
       AppToast.success('Cash collected — you can complete the job now');
-      _reloadAll();
+      _patchCash(a.id); // just flip this row's cash flag
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
@@ -122,14 +130,17 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     }
   }
 
-  Future<void> _start(Assignment a) async {
+  /// Returns true if the job actually started (false if the crew cancelled the
+  /// OTP dialog), so the caller only patches the row on real success.
+  Future<bool> _start(Assignment a) async {
     final repo = ref.read(workerRepositoryProvider);
     try {
       await repo.start(a.id);
       AppToast.success('Job started');
+      return true;
     } on ApiException catch (e) {
       if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
-        if (!mounted) return;
+        if (!mounted) return false;
         // The dialog validates the code itself and stays OPEN on a wrong code;
         // it only returns (non-null) once the start succeeds.
         final otp = await showOtpDialog(
@@ -145,12 +156,62 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
             }
           },
         );
-        if (otp == null) return;
+        if (otp == null) return false;
         AppToast.success('Job started');
-      } else {
-        rethrow;
+        return true;
       }
+      rethrow;
     }
+  }
+
+  /// Whether a booking with [status] should appear under tab [t].
+  bool _belongsInTab(int t, String status) {
+    switch (_statuses[t]) {
+      case 'completed':
+        return status == 'completed';
+      case 'all':
+        return true;
+      default: // 'upcoming' — everything still live
+        return status != 'completed' &&
+            status != 'cancelled' &&
+            status != 'declined';
+    }
+  }
+
+  /// Update one booking's status across every loaded tab: replace it in place
+  /// where it still belongs, drop it from tabs it left (e.g. "Upcoming" once
+  /// completed), and add it to a tab it just entered (e.g. "Completed").
+  void _patchStatus(Assignment a, String status) {
+    final updated = a.copyWith(status: status);
+    setState(() {
+      for (var t = 0; t < _statuses.length; t++) {
+        final list = _data[t];
+        if (list == null) continue;
+        final present = list.any((x) => x.id == a.id);
+        final belongs = _belongsInTab(t, status);
+        if (belongs) {
+          _data[t] = present
+              ? [for (final x in list) x.id == a.id ? updated : x]
+              : [updated, ...list];
+        } else if (present) {
+          _data[t] = [for (final x in list) if (x.id != a.id) x];
+        }
+      }
+    });
+  }
+
+  /// Flip the cash-collected flag on one booking across every loaded tab.
+  void _patchCash(int id) {
+    setState(() {
+      for (var t = 0; t < _statuses.length; t++) {
+        final list = _data[t];
+        if (list == null) continue;
+        _data[t] = [
+          for (final x in list)
+            x.id == id ? x.copyWith(cashCollected: true) : x
+        ];
+      }
+    });
   }
 
   void _reload(int i) => _fetchInto(i);

@@ -15,11 +15,16 @@ class BookingPhotos extends ConsumerStatefulWidget {
   final int assignmentId;
   final bool showAfter; // also show the "After photos" strip
   final bool canAdd;
+  // Compact mode: render a one-line "Job photos (N)" header that expands to the
+  // strips on tap — keeps list cards short. The full strips show inline
+  // (non-collapsible) on the detail screen.
+  final bool collapsible;
   const BookingPhotos({
     super.key,
     required this.assignmentId,
     this.showAfter = false,
     this.canAdd = true,
+    this.collapsible = false,
   });
 
   @override
@@ -29,6 +34,7 @@ class BookingPhotos extends ConsumerStatefulWidget {
 class _BookingPhotosState extends ConsumerState<BookingPhotos> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
+  bool _expanded = false; // collapsible mode only
   final Set<String> _uploading = {}; // 'before' | 'after'
 
   @override
@@ -126,6 +132,7 @@ class _BookingPhotosState extends ConsumerState<BookingPhotos> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.collapsible) return _collapsible();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -133,6 +140,67 @@ class _BookingPhotosState extends ConsumerState<BookingPhotos> {
         if (widget.showAfter) ...[
           const SizedBox(height: 12),
           _strip('after', 'After photos'),
+        ],
+      ],
+    );
+  }
+
+  /// One-line header (icon + "Job photos" + count) that expands to the strips —
+  /// keeps the crew job cards compact.
+  Widget _collapsible() {
+    final count = _items.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Icon(Icons.photo_library_outlined,
+                    size: 16, color: AppColors.textMuted),
+                const SizedBox(width: 6),
+                const Text('Job photos',
+                    style:
+                        TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                if (count > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: AppColors.brand50,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text('$count',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.brand700)),
+                  ),
+                ],
+                const Spacer(),
+                if (count == 0 && !_loading && widget.canAdd)
+                  Text('Add',
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.brand600)),
+                Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 24, color: AppColors.brand600),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded) ...[
+          const SizedBox(height: 8),
+          _strip('before', 'Before'),
+          if (widget.showAfter) ...[
+            const SizedBox(height: 12),
+            _strip('after', 'After'),
+          ],
         ],
       ],
     );

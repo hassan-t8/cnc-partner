@@ -248,13 +248,14 @@ class _WorkerBookingDetailScreenState
             const SizedBox(height: 12),
             Row(
               children: [
-                if (a.fullAddress.isNotEmpty)
+                if (a.mapUrl != null)
                   Expanded(
                     child: _ghost(Icons.directions_outlined, 'Directions',
                         () {
+                      // Exact pin the customer dropped when we have it, else
+                      // coordinates, else the text address (see Assignment.mapUrl).
                       launchUrl(
-                        Uri.parse(
-                            'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(a.fullAddress)}'),
+                        Uri.parse(a.mapUrl!),
                         mode: LaunchMode.externalApplication,
                       );
                     }),
@@ -447,11 +448,11 @@ class _WorkerBookingDetailScreenState
       );
 
   Widget _ghost(IconData icon, String label, VoidCallback onTap) => SizedBox(
-        height: 44,
+        height: 46,
         child: OutlinedButton.icon(
           onPressed: onTap,
-          icon: Icon(icon, size: 18),
-          label: Text(label),
+          icon: Icon(icon, size: 22),
+          label: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         ),
       );
 

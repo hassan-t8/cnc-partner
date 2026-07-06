@@ -2,6 +2,11 @@
 int? _i(dynamic v) => v == null ? null : (v is num ? v.toInt() : int.tryParse('$v'));
 double _d(dynamic v) =>
     v == null ? 0 : (v is num ? v.toDouble() : double.tryParse('$v') ?? 0);
+// Nullable double — keeps null (and unparseable/empty) as null instead of 0, so
+// "no coordinate" stays distinguishable from "0,0".
+double? _dn(dynamic v) => v == null
+    ? null
+    : (v is num ? v.toDouble() : double.tryParse('$v'));
 bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
 String _s(dynamic v) => v?.toString() ?? '';
 
@@ -35,6 +40,9 @@ class Assignment {
   final String role;
   final double? lat;
   final double? lng;
+  // The exact map pin the customer dropped. Either a full https Maps URL or a
+  // plain "lat,lng"/address string — same field the web portals link to.
+  final String pinLocation;
   // Cash-collection (worker gates the Complete button on these, like the
   // partner flow + the web).
   final String payment; // cash | card | ...
@@ -62,6 +70,7 @@ class Assignment {
     this.role = '',
     this.lat,
     this.lng,
+    this.pinLocation = '',
     this.payment = '',
     this.paymentStatus = '',
     this.cashDue = 0,
@@ -97,6 +106,7 @@ class Assignment {
         role: role,
         lat: lat,
         lng: lng,
+        pinLocation: pinLocation,
         payment: payment,
         paymentStatus: paymentStatus,
         cashDue: cashDue,
@@ -121,8 +131,12 @@ class Assignment {
       scheduledEnd: _dt(j['scheduledEnd'] ?? b['scheduledEnd']),
       completedAt: _dt(j['completedAt']),
       role: _s(j['role']),
-      lat: j['lat'] == null ? null : _d(j['lat']),
-      lng: j['lng'] == null ? null : _d(j['lng']),
+      // Backend stores coordinates as latitude/longitude on the booking; accept
+      // the short lat/lng aliases too, from either the booking or the row.
+      lat: _dn(b['latitude'] ?? b['lat'] ?? j['latitude'] ?? j['lat']),
+      lng: _dn(b['longitude'] ?? b['lng'] ?? j['longitude'] ?? j['lng']),
+      pinLocation:
+          _s(b['pinLocation'] ?? b['location'] ?? j['pinLocation']),
       payment: _s(b['payment'] ?? b['paymentMethod'] ?? j['payment']),
       // Payment-receipt status. workers/me/bookings denormalizes the parent
       // Booking's `status` enum ('not received'|'pending'|'partial'|'complete');
@@ -143,6 +157,29 @@ class Assignment {
 
   String get fullAddress =>
       [address, area].where((s) => s.trim().isNotEmpty).join(', ');
+
+  /// Best directions/map link for this booking, or null when there's nothing to
+  /// point at. Mirrors the web portals: prefer the customer's dropped pin, then
+  /// exact coordinates, then the text address.
+  ///   • pinLocation that's already an https link → open it verbatim (it points
+  ///     at the exact spot the customer picked).
+  ///   • otherwise build a Google Maps directions URL to the precise
+  ///     destination (pin string → coordinates → address).
+  String? get mapUrl {
+    final pin = pinLocation.trim();
+    if (pin.startsWith('http')) return pin;
+    String? dest;
+    if (pin.isNotEmpty) {
+      dest = pin; // usually "lat,lng" or a place name
+    } else if (lat != null && lng != null && !(lat == 0 && lng == 0)) {
+      dest = '$lat,$lng';
+    } else if (fullAddress.isNotEmpty) {
+      dest = fullAddress;
+    }
+    if (dest == null) return null;
+    return 'https://www.google.com/maps/dir/?api=1&destination='
+        '${Uri.encodeComponent(dest)}';
+  }
 
   /// Human-facing booking reference: the "CNC-B-…" code when present,
   /// otherwise the numeric id prefixed with '#'.

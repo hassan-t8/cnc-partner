@@ -16,6 +16,7 @@ import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'otp_dialog.dart';
 import 'today_summary.dart';
+import 'worker_booking_detail_screen.dart';
 import 'worker_repository.dart';
 
 class CrewJobsScreen extends ConsumerStatefulWidget {
@@ -114,14 +115,24 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     _load();
   }
 
+  Future<void> _openDetail(Assignment a) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => WorkerBookingDetailScreen(assignment: a)));
+    // Refetch this day in place (no skeleton) — the detail screen may have
+    // changed the booking.
+    if (mounted) _refresh();
+  }
+
   Future<void> _act(Assignment a, String action) async {
     final repo = ref.read(workerRepositoryProvider);
     setState(() => _acting = a.id);
     try {
+      String? newStatus;
       switch (action) {
         case 'accept':
           await repo.accept(a.id);
           AppToast.success('Job accepted');
+          newStatus = 'accepted';
           break;
         case 'decline':
           final reason = await _reasonDialog();
@@ -131,16 +142,20 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           }
           await repo.decline(a.id, reason: reason.isEmpty ? null : reason);
           AppToast.success('Job declined');
+          newStatus = 'declined';
           break;
         case 'start':
-          await _start(a);
+          if (!await _start(a)) return; // cancelled — nothing changed
+          newStatus = 'in_progress';
           break;
         case 'complete':
           await repo.complete(a.id);
           AppToast.success('Job completed');
+          newStatus = 'completed';
           break;
       }
-      _reload();
+      // Patch only this row — no full-day refetch, no list regeneration.
+      if (newStatus != null) _patchStatus(a, newStatus);
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
@@ -158,7 +173,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     try {
       await ref.read(workerRepositoryProvider).cashCollect(bookingId);
       AppToast.success('Cash collected — you can complete the job now');
-      _reload();
+      _patchCash(a.id); // just flip this row's cash flag
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
@@ -166,14 +181,17 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     }
   }
 
-  Future<void> _start(Assignment a) async {
+  /// Returns true if the job actually started (false if the crew cancelled the
+  /// OTP dialog), so the caller only patches the row on real success.
+  Future<bool> _start(Assignment a) async {
     final repo = ref.read(workerRepositoryProvider);
     try {
       await repo.start(a.id);
       AppToast.success('Job started');
+      return true;
     } on ApiException catch (e) {
       if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
-        if (!mounted) return;
+        if (!mounted) return false;
         // The dialog validates the code itself and stays OPEN on a wrong code;
         // it only returns (non-null) once the start succeeds.
         final otp = await showOtpDialog(
@@ -189,12 +207,31 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
             }
           },
         );
-        if (otp == null) return;
+        if (otp == null) return false;
         AppToast.success('Job started');
-      } else {
-        rethrow;
+        return true;
       }
+      rethrow;
     }
+  }
+
+  /// Replace one job's status in place — the day view keeps completed jobs
+  /// (they're still that day's work), just flips the badge/actions.
+  void _patchStatus(Assignment a, String status) {
+    final updated = a.copyWith(status: status);
+    setState(() {
+      _jobs = [for (final x in _jobs) x.id == a.id ? updated : x];
+    });
+  }
+
+  /// Flip the cash-collected flag on one job.
+  void _patchCash(int id) {
+    setState(() {
+      _jobs = [
+        for (final x in _jobs)
+          x.id == id ? x.copyWith(cashCollected: true) : x
+      ];
+    });
   }
 
   Future<String?> _reasonDialog() async {
@@ -399,7 +436,13 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     final time = a.scheduledStart != null
         ? DateFormat('EEE d MMM · h:mm a').format(a.scheduledStart!)
         : 'Time TBD';
-    return Container(
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: () => _openDetail(a),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -415,46 +458,44 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
                 child: ServiceTitle(a.serviceName, titleSize: 15.5),
               ),
               StatusBadge(a.status, worker: true),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right, size: 18, color: AppColors.textFaint),
             ],
           ),
           const SizedBox(height: 6),
           _row(Icons.schedule, time),
-          if (a.customerName.isNotEmpty) _row(Icons.person_outline, a.customerName),
-          if (a.fullAddress.isNotEmpty) _row(Icons.place_outlined, a.fullAddress),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              if (a.fullAddress.isNotEmpty)
-                _ghost(Icons.directions_outlined, 'Directions', () {
-                  launchUrl(
-                    Uri.parse(
-                        'https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(a.fullAddress)}'),
-                    mode: LaunchMode.externalApplication,
-                  );
-                }),
-              if (a.partnerPhone != null && a.partnerPhone!.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                _ghost(Icons.call_outlined, 'Call', () {
-                  launchUrl(Uri.parse('tel:${a.partnerPhone}'));
-                }),
-              ],
-            ],
-          ),
+          if (a.customerName.isNotEmpty)
+            _row(Icons.person_outline, a.customerName,
+                trailing: (a.partnerPhone?.isNotEmpty ?? false)
+                    ? _miniAction(Icons.call, 'Call',
+                        () => launchUrl(Uri.parse('tel:${a.partnerPhone}')))
+                    : null),
+          if (a.fullAddress.isNotEmpty || a.mapUrl != null)
+            _row(Icons.place_outlined,
+                a.fullAddress.isNotEmpty ? a.fullAddress : 'Pinned location',
+                trailing: a.mapUrl != null
+                    ? _miniAction(Icons.directions, 'Directions',
+                        () => launchUrl(Uri.parse(a.mapUrl!),
+                            mode: LaunchMode.externalApplication))
+                    : null),
           const SizedBox(height: 10),
           _actions(a, busy),
           if (a.role.toLowerCase() != 'driver' &&
               (a.status == 'accepted' ||
                   a.status == 'in_progress' ||
                   a.status == 'completed')) ...[
-            const Divider(height: 20),
+            const Divider(height: 18),
             BookingPhotos(
               key: ValueKey('photos-${a.id}-${a.status}'),
               assignmentId: a.id,
+              collapsible: true,
               showAfter:
                   a.status == 'in_progress' || a.status == 'completed',
             ),
           ],
         ],
+      ),
+        ),
       ),
     );
   }
@@ -528,17 +569,30 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         ),
       );
 
-  Widget _ghost(IconData icon, String label, VoidCallback onTap) =>
-      OutlinedButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 16),
-        label: Text(label, style: const TextStyle(fontSize: 12.5)),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  /// Circular icon action (Directions / Call) that lives at the end of an info
+  /// row — keeps the card short instead of a full-width button row, but stays
+  /// big enough to be an easy tap target.
+  Widget _miniAction(IconData icon, String tooltip, VoidCallback onTap) =>
+      Tooltip(
+        message: tooltip,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 26,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.brand50,
+              shape: BoxShape.circle,
+              border:
+                  Border.all(color: AppColors.brand600.withValues(alpha: 0.35)),
+            ),
+            child: Icon(icon, size: 22, color: AppColors.brand600),
+          ),
         ),
       );
 
-  Widget _row(IconData icon, String text) => Padding(
+  Widget _row(IconData icon, String text, {Widget? trailing}) => Padding(
         padding: const EdgeInsets.only(top: 3),
         child: Row(
           children: [
@@ -548,6 +602,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
                 child: Text(text,
                     style: TextStyle(
                         fontSize: 12.5, color: AppColors.textSecondary))),
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              trailing,
+            ],
           ],
         ),
       );
