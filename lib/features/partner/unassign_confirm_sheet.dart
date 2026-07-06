@@ -3,28 +3,40 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 
 /// Confirm self-unassign with the booking details, a penalty note, and a
-/// reason (max 500 chars). Returns the reason (may be empty) when confirmed,
-/// or null if cancelled. Mirrors the web's UnassignConfirmModal.
-Future<String?> showUnassignSheet(
+/// reason (max 500 chars). Mirrors the web's UnassignConfirmModal.
+///
+/// The sheet performs the unassign ITSELF via [onSubmit]: on tap it calls
+/// onSubmit(reason) which returns `(result, errorMessage)` — a null error means
+/// success. While it runs the Unassign button shows a spinner and both buttons
+/// disable. On success the sheet closes returning the result map (incl. the
+/// applied penalty); on error it stays OPEN and shows an inline message so the
+/// user can retry. Returns null if cancelled.
+Future<Map<String, dynamic>?> showUnassignSheet(
   BuildContext context, {
   required String bookingRef,
   String? customerName,
   required double partnerCost,
   double? penaltyPct, // null = legacy/no penalty, 0 = waived, >0 = active
+  required Future<(Map<String, dynamic>?, String?)> Function(String reason)
+      onSubmit,
 }) {
   final reason = TextEditingController();
   final hasPenalty = penaltyPct != null && penaltyPct > 0;
   final aed = hasPenalty
       ? (partnerCost * penaltyPct / 100 * 100).roundToDouble() / 100
       : 0.0;
+  bool submitting = false;
+  String? error;
 
-  return showModalBottomSheet<String>(
+  return showModalBottomSheet<Map<String, dynamic>>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.white,
+    isDismissible: false, // block dismiss while a submit may be in flight
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (ctx) => Padding(
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setSheet) => Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
       child: SafeArea(
         child: SingleChildScrollView(
@@ -108,6 +120,22 @@ Future<String?> showUnassignSheet(
                     border: OutlineInputBorder(),
                   ),
                 ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(Icons.error_outline, size: 16, color: AppColors.rose),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(error!,
+                            style: TextStyle(
+                                color: AppColors.rose,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -115,7 +143,8 @@ Future<String?> showUnassignSheet(
                       child: SizedBox(
                         height: 48,
                         child: OutlinedButton(
-                          onPressed: () => Navigator.pop(ctx),
+                          onPressed:
+                              submitting ? null : () => Navigator.pop(ctx),
                           child: const Text('Cancel'),
                         ),
                       ),
@@ -127,9 +156,34 @@ Future<String?> showUnassignSheet(
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.rose),
-                          onPressed: () =>
-                              Navigator.pop(ctx, reason.text.trim()),
-                          child: const Text('Unassign'),
+                          onPressed: submitting
+                              ? null
+                              : () async {
+                                  setSheet(() {
+                                    submitting = true;
+                                    error = null;
+                                  });
+                                  final (res, err) =
+                                      await onSubmit(reason.text.trim());
+                                  if (!ctx.mounted) return;
+                                  if (err == null) {
+                                    // Success → close with the result map.
+                                    Navigator.pop(
+                                        ctx, res ?? <String, dynamic>{});
+                                  } else {
+                                    setSheet(() {
+                                      submitting = false;
+                                      error = err;
+                                    });
+                                  }
+                                },
+                          child: submitting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2.2, color: Colors.white))
+                              : const Text('Unassign'),
                         ),
                       ),
                     ),
@@ -139,6 +193,7 @@ Future<String?> showUnassignSheet(
             ),
           ),
         ),
+      ),
       ),
     ),
   );

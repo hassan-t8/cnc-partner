@@ -164,6 +164,18 @@ class _PartnerBookingsScreenState
     }
   }
 
+  /// Optimistically remove a booking from the local list (e.g. after a
+  /// self-unassign releases it back to dispatch) so it doesn't linger stale.
+  void _removeBooking(int id) {
+    final i = _all.indexWhere((b) => b.id == id);
+    if (i >= 0) {
+      setState(() => _all = [
+            for (final b in _all)
+              if (b.id != id) b
+          ]);
+    }
+  }
+
   /// Optimistically flip a booking to "reviewed" so the "Review customer"
   /// button becomes the "Reviewed" chip without waiting for a refetch.
   void _patchReviewed(int id) {
@@ -250,24 +262,38 @@ class _PartnerBookingsScreenState
         case 'unsign':
           final pct = await _loadPenaltyPct();
           if (!mounted) return;
-          final reason = await showUnassignSheet(context,
+          // The sheet runs the unassign itself: its Unassign button spins while
+          // the call runs, stays OPEN with an inline error on failure, and only
+          // closes (returning the result incl. penalty) on success.
+          final res = await showUnassignSheet(context,
               bookingRef: b.ref.isNotEmpty ? b.ref : '#${b.id}',
               customerName: b.customerName,
               partnerCost: b.partnerCost,
-              penaltyPct: pct);
-          if (reason == null) {
+              penaltyPct: pct,
+              onSubmit: (reason) async {
+                try {
+                  final r = await repo.partnerUnassign(b.id,
+                      reason: reason,
+                      clientRequestId:
+                          'app-${DateTime.now().microsecondsSinceEpoch}');
+                  return (r, null);
+                } on ApiException catch (e) {
+                  return (null, e.message);
+                }
+              });
+          if (res == null) {
+            // Cancelled (no successful unassign).
             setState(() => _acting.remove(b.id));
             return;
           }
-          final res = await repo.partnerUnassign(b.id,
-              reason: reason,
-              clientRequestId:
-                  'app-${DateTime.now().microsecondsSinceEpoch}');
           final penalty = res['penalty'];
           final amt = penalty is Map ? penalty['amount'] : null;
           AppToast.success((amt is num && amt > 0)
               ? 'Released — penalty AED ${amt.toStringAsFixed(2)}'
               : 'Booking released');
+          // The booking is released back to dispatch → drop it from the list
+          // immediately so it doesn't linger stale, then reconcile silently.
+          _removeBooking(b.id);
           break;
         case 'cash':
           final done = await _cashCollectDialog(b);
@@ -279,13 +305,13 @@ class _PartnerBookingsScreenState
           AppToast.success('Cash marked collected');
           break;
         case 'review':
+          // The dialog submits the review itself (spinner on its Submit button,
+          // inline error on failure) and only returns non-null on success.
           final r = await _reviewCustomerDialog(b);
           if (r == null) {
             setState(() => _acting.remove(b.id));
             return;
           }
-          await repo.submitCustomerReview(b.id, r.$1,
-              comment: r.$2.isEmpty ? null : r.$2);
           _patchReviewed(b.id);
           AppToast.success('Review submitted');
           break;
@@ -362,11 +388,19 @@ class _PartnerBookingsScreenState
     return _penaltyPct;
   }
 
+  /// Review dialog that SUBMITS the review itself: the Submit button runs
+  /// `submitCustomerReview`, shows a spinner while it runs, closes (returning
+  /// the stars+comment) only on success, and stays OPEN with an inline error on
+  /// failure. Stars are required.
   Future<(int, String)?> _reviewCustomerDialog(PartnerBooking b) {
     int stars = 0;
     final comment = TextEditingController();
+    bool submitting = false;
+    String? error;
+    final repo = ref.read(partnerRepositoryProvider);
     return showDialog<(int, String)>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
           title: Text(
@@ -381,7 +415,7 @@ class _PartnerBookingsScreenState
                   for (var i = 1; i <= 5; i++)
                     IconButton(
                       padding: EdgeInsets.zero,
-                      onPressed: () => setD(() => stars = i),
+                      onPressed: submitting ? null : () => setD(() => stars = i),
                       icon: Icon(
                           i <= stars
                               ? Icons.star_rounded
@@ -394,20 +428,59 @@ class _PartnerBookingsScreenState
               TextField(
                 controller: comment,
                 maxLines: 3,
+                enabled: !submitting,
                 decoration:
                     const InputDecoration(hintText: 'Comment (optional)'),
               ),
+              if (error != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(Icons.error_outline, size: 16, color: AppColors.rose),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(error!,
+                          style: TextStyle(
+                              color: AppColors.rose,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: submitting ? null : () => Navigator.pop(ctx),
                 child: const Text('Cancel')),
             ElevatedButton(
-              onPressed: stars == 0
+              onPressed: (stars == 0 || submitting)
                   ? null
-                  : () => Navigator.pop(ctx, (stars, comment.text.trim())),
-              child: const Text('Submit'),
+                  : () async {
+                      setD(() {
+                        submitting = true;
+                        error = null;
+                      });
+                      final text = comment.text.trim();
+                      try {
+                        await repo.submitCustomerReview(b.id, stars,
+                            comment: text.isEmpty ? null : text);
+                        if (ctx.mounted) Navigator.pop(ctx, (stars, text));
+                      } on ApiException catch (e) {
+                        setD(() {
+                          submitting = false;
+                          error = e.message;
+                        });
+                      }
+                    },
+              child: submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.2, color: Colors.white))
+                  : const Text('Submit'),
             ),
           ],
         ),

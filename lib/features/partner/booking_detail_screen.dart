@@ -247,35 +247,32 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   /// web). Pre-fills any prior submission; the backend upserts so re-submitting
   /// edits the same row. Stays on the screen and shows the submitted review.
   Future<void> _reviewCustomer() async {
+    // The dialog submits the review itself (spinner on its Submit button,
+    // inline error on failure) and only returns non-null on success.
     final r = await _reviewCustomerDialog();
     if (r == null) return;
-    setState(() => _busyAction = 'review');
-    try {
-      await _repo.submitCustomerReview(b.id, r.$1,
-          comment: r.$2.isEmpty ? null : r.$2);
-      if (!mounted) return;
-      setState(() {
-        _customerReview = Review(
-            stars: r.$1.toDouble(),
-            comment: r.$2,
-            customerName: b.customerName);
-        b = b.copyWith(customerReviewed: true);
-        _busyAction = null;
-      });
-      _changed = true;
-      AppToast.success('Review submitted');
-    } on ApiException catch (e) {
-      AppToast.error(e.message);
-      if (mounted) setState(() => _busyAction = null);
-    }
+    setState(() {
+      _customerReview = Review(
+          stars: r.$1.toDouble(), comment: r.$2, customerName: b.customerName);
+      b = b.copyWith(customerReviewed: true);
+    });
+    _changed = true;
+    AppToast.success('Review submitted');
   }
 
+  /// Review dialog that SUBMITS the review itself: the Submit button runs
+  /// `submitCustomerReview`, shows a spinner while it runs, closes (returning
+  /// the stars+comment) only on success, and stays OPEN with an inline error on
+  /// failure. Stars are required.
   Future<(int, String)?> _reviewCustomerDialog() {
     int stars = (_customerReview?.stars ?? 0).round();
     final comment =
         TextEditingController(text: _customerReview?.comment ?? '');
+    bool submitting = false;
+    String? error;
     return showDialog<(int, String)>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setD) => AlertDialog(
           title: Text(
@@ -290,7 +287,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                   for (var i = 1; i <= 5; i++)
                     IconButton(
                       padding: EdgeInsets.zero,
-                      onPressed: () => setD(() => stars = i),
+                      onPressed: submitting ? null : () => setD(() => stars = i),
                       icon: Icon(
                           i <= stars
                               ? Icons.star_rounded
@@ -304,20 +301,59 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 controller: comment,
                 maxLines: 3,
                 maxLength: 2000,
+                enabled: !submitting,
                 decoration:
                     const InputDecoration(hintText: 'Comment (optional)'),
               ),
+              if (error != null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(Icons.error_outline, size: 16, color: AppColors.rose),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(error!,
+                          style: TextStyle(
+                              color: AppColors.rose,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: submitting ? null : () => Navigator.pop(ctx),
                 child: const Text('Cancel')),
             ElevatedButton(
-              onPressed: stars == 0
+              onPressed: (stars == 0 || submitting)
                   ? null
-                  : () => Navigator.pop(ctx, (stars, comment.text.trim())),
-              child: const Text('Submit review'),
+                  : () async {
+                      setD(() {
+                        submitting = true;
+                        error = null;
+                      });
+                      final text = comment.text.trim();
+                      try {
+                        await _repo.submitCustomerReview(b.id, stars,
+                            comment: text.isEmpty ? null : text);
+                        if (ctx.mounted) Navigator.pop(ctx, (stars, text));
+                      } on ApiException catch (e) {
+                        setD(() {
+                          submitting = false;
+                          error = e.message;
+                        });
+                      }
+                    },
+              child: submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.2, color: Colors.white))
+                  : const Text('Submit review'),
             ),
           ],
         ),
