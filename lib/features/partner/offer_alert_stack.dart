@@ -82,18 +82,22 @@ class _OfferStackState extends ConsumerState<_OfferStack> {
 
   @override
   Widget build(BuildContext context) {
-    final pad = MediaQuery.of(context).padding.top;
     final visible = _items.take(_maxVisible).toList();
     final hidden = _items.length - visible.length;
-    return Positioned(
-      top: pad + 8,
-      left: 12,
-      right: 12,
-      child: Material(
-        color: Colors.transparent,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+    // Centered on screen (was top-anchored). A dim scrim sits behind so the
+    // offer draws focus; still scrollable if several stack up.
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.25),
+        alignment: Alignment.center,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
             for (var i = 0; i < visible.length; i++)
               _OfferAlertCard(
                 // Key by offer id so Flutter keeps each card's state as the
@@ -124,7 +128,10 @@ class _OfferStackState extends ConsumerState<_OfferStack> {
                         fontSize: 12,
                         fontWeight: FontWeight.w700)),
               ),
-          ],
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
