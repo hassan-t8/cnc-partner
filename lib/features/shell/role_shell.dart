@@ -104,6 +104,11 @@ class _RoleShellState extends ConsumerState<RoleShell> {
       _seenOffers.add(o.id);
     }
 
+    // A new offer arrived → refresh the tabs' lists NOW (dashboard "New
+    // requests" + Requests tab) so it appears live, without waiting for a tab
+    // switch or for the user to act on the popup.
+    if (mounted) ref.read(tabRefreshProvider.notifier).state++;
+
     // inDrive-style stack: push EVERY fresh offer (oldest first so the newest
     // lands on top). Each card auto-dismisses; the overlay is non-blocking.
     fresh.sort((a, b) => a.id.compareTo(b.id));
