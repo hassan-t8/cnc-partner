@@ -3,21 +3,35 @@ import 'package:flutter/services.dart';
 
 import '../../core/theme/app_colors.dart';
 
-/// 6-digit OTP entry. Returns the code, or null if cancelled.
-Future<String?> showOtpDialog(BuildContext context,
-    {required String bookingRef, String? customerName}) {
+/// 6-digit OTP entry. Returns the entered code on success, or null if cancelled.
+///
+/// When [onSubmit] is provided the dialog VALIDATES the code itself: on tap it
+/// calls onSubmit(code) which returns an error message (or null on success). On
+/// error the dialog stays OPEN and shows the message so the user can retry; it
+/// only closes (returning the code) once onSubmit succeeds. Without onSubmit it
+/// just returns the code on tap (legacy behaviour).
+Future<String?> showOtpDialog(
+  BuildContext context, {
+  required String bookingRef,
+  String? customerName,
+  Future<String?> Function(String code)? onSubmit,
+}) {
   return showDialog<String>(
     context: context,
     barrierDismissible: false,
-    builder: (_) =>
-        _OtpDialog(bookingRef: bookingRef, customerName: customerName),
+    builder: (_) => _OtpDialog(
+        bookingRef: bookingRef,
+        customerName: customerName,
+        onSubmit: onSubmit),
   );
 }
 
 class _OtpDialog extends StatefulWidget {
   final String bookingRef;
   final String? customerName;
-  const _OtpDialog({required this.bookingRef, this.customerName});
+  final Future<String?> Function(String code)? onSubmit;
+  const _OtpDialog(
+      {required this.bookingRef, this.customerName, this.onSubmit});
   @override
   State<_OtpDialog> createState() => _OtpDialogState();
 }
@@ -50,6 +64,36 @@ class _OtpDialogState extends State<_OtpDialog> {
   }
 
   String get _code => _controllers.map((c) => c.text).join();
+
+  bool _submitting = false;
+  String? _error;
+
+  Future<void> _submit() async {
+    final code = _code;
+    if (widget.onSubmit == null) {
+      Navigator.pop(context, code);
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    final err = await widget.onSubmit!(code);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.pop(context, code); // verified → close with the code
+    } else {
+      // Wrong code: keep the dialog OPEN, show the error, reset for a retry.
+      setState(() {
+        _submitting = false;
+        _error = err;
+        for (final c in _controllers) {
+          c.clear();
+        }
+      });
+      _nodes[0].requestFocus();
+    }
+  }
 
   // Select a box's digit when it gains focus, so the next keystroke *replaces*
   // it instead of appending a second character (which used to be misread as a
@@ -181,15 +225,37 @@ class _OtpDialogState extends State<_OtpDialog> {
               ],
             ),
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.error_outline, size: 16, color: AppColors.rose),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(_error!,
+                      style: TextStyle(
+                          color: AppColors.rose,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: _submitting ? null : () => Navigator.pop(context),
             child: const Text('Cancel')),
         ElevatedButton(
-          onPressed: filled ? () => Navigator.pop(context, _code) : null,
-          child: const Text('Verify & start'),
+          onPressed: (filled && !_submitting) ? _submit : null,
+          child: _submitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.2, color: Colors.white))
+              : const Text('Verify & start'),
         ),
       ],
     );

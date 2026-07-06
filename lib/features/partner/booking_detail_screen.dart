@@ -110,13 +110,6 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     }
   }
 
-  static const _statusForAction = {
-    'accept': 'accepted',
-    'decline': 'declined',
-    'start': 'in_progress',
-    'complete': 'completed',
-  };
-
   // ---- lifecycle ----
   Future<void> _act(String action) async {
     setState(() => _busy = true);
@@ -142,13 +135,26 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           } on ApiException catch (e) {
             if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
               if (!mounted) return;
-              final otp = await showOtpDialog(context,
-                  bookingRef: '#${b.ref}', customerName: b.customerName);
+              // The dialog validates the code itself and stays OPEN on a wrong
+              // code; it only returns (non-null) once the start succeeds.
+              final otp = await showOtpDialog(
+                context,
+                bookingRef: '#${b.ref}',
+                customerName: b.customerName,
+                onSubmit: (code) async {
+                  try {
+                    await _repo.startBooking(b.id, otp: code);
+                    return null; // success → dialog closes
+                  } on ApiException catch (err) {
+                    return err.message; // wrong code → stay open, show message
+                  }
+                },
+              );
               if (otp == null) {
+                // Cancelled (no successful start).
                 setState(() => _busy = false);
                 return;
               }
-              await _repo.startBooking(b.id, otp: otp);
             } else {
               rethrow;
             }
@@ -160,9 +166,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           AppToast.success('Booking completed');
           break;
       }
+      // Stay on the detail and refresh it in place with the updated data
+      // (the list refreshes when the user goes back — PopScope returns 'reload'
+      // because _changed is set).
       _changed = true;
-      // Return the new status so the list updates optimistically.
-      if (mounted) Navigator.pop(context, _statusForAction[action] ?? '');
+      await _reloadBooking();
+      if (mounted) setState(() => _busy = false);
     } on ApiException catch (e) {
       AppToast.error(e.message);
       if (mounted) setState(() => _busy = false);
