@@ -130,11 +130,22 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     } on ApiException catch (e) {
       if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
         if (!mounted) return;
-        final otp = await showOtpDialog(context,
-            bookingRef: a.bookingRef,
-            customerName: a.customerName);
+        // The dialog validates the code itself and stays OPEN on a wrong code;
+        // it only returns (non-null) once the start succeeds.
+        final otp = await showOtpDialog(
+          context,
+          bookingRef: a.bookingRef,
+          customerName: a.customerName,
+          onSubmit: (code) async {
+            try {
+              await repo.start(a.id, otp: code);
+              return null; // success → dialog closes
+            } on ApiException catch (err) {
+              return err.message; // wrong code → stay open, show message
+            }
+          },
+        );
         if (otp == null) return;
-        await repo.start(a.id, otp: otp);
         AppToast.success('Job started');
       } else {
         rethrow;

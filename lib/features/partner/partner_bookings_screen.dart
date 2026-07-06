@@ -47,7 +47,10 @@ class _PartnerBookingsScreenState
   String _status = 'all';
   DateTime? _from;
   DateTime? _to;
-  int _acting = -1;
+  // Which inline action is running, keyed by booking id → action name. A card
+  // with several buttons (e.g. Collect cash + Complete) can then spin ONLY the
+  // tapped one while its siblings just disable. Empty = nothing in flight.
+  final Map<int, String> _acting = {};
   double? _penaltyPct; // partner's self-unassign penalty %, fetched lazily
   bool _penaltyLoaded = false;
 
@@ -192,7 +195,7 @@ class _PartnerBookingsScreenState
 
   Future<void> _act(PartnerBooking b, String action) async {
     final repo = ref.read(partnerRepositoryProvider);
-    setState(() => _acting = b.id);
+    setState(() => _acting[b.id] = action);
     try {
       switch (action) {
         case 'accept':
@@ -202,7 +205,7 @@ class _PartnerBookingsScreenState
         case 'decline':
           final reason = await _reasonDialog();
           if (reason == null) {
-            setState(() => _acting = -1);
+            setState(() => _acting.remove(b.id));
             return;
           }
           await repo.declineBooking(b.id, reason: reason.isEmpty ? null : reason);
@@ -214,13 +217,26 @@ class _PartnerBookingsScreenState
           } on ApiException catch (e) {
             if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
               if (!mounted) return;
-              final otp = await showOtpDialog(context,
-                  bookingRef: '#${b.ref}', customerName: b.customerName);
+              // The dialog validates the code itself and stays OPEN on a wrong
+              // code; it only returns (non-null) once the start succeeds.
+              final otp = await showOtpDialog(
+                context,
+                bookingRef: '#${b.ref}',
+                customerName: b.customerName,
+                onSubmit: (code) async {
+                  try {
+                    await repo.startBooking(b.id, otp: code);
+                    return null; // success → dialog closes
+                  } on ApiException catch (err) {
+                    return err.message; // wrong code → stay open, show message
+                  }
+                },
+              );
               if (otp == null) {
-                setState(() => _acting = -1);
+                // Cancelled (no successful start).
+                setState(() => _acting.remove(b.id));
                 return;
               }
-              await repo.startBooking(b.id, otp: otp);
             } else {
               rethrow;
             }
@@ -240,7 +256,7 @@ class _PartnerBookingsScreenState
               partnerCost: b.partnerCost,
               penaltyPct: pct);
           if (reason == null) {
-            setState(() => _acting = -1);
+            setState(() => _acting.remove(b.id));
             return;
           }
           final res = await repo.partnerUnassign(b.id,
@@ -256,7 +272,7 @@ class _PartnerBookingsScreenState
         case 'cash':
           final done = await _cashCollectDialog(b);
           if (done != true) {
-            setState(() => _acting = -1);
+            setState(() => _acting.remove(b.id));
             return;
           }
           await repo.cashCollect(b.id);
@@ -265,7 +281,7 @@ class _PartnerBookingsScreenState
         case 'review':
           final r = await _reviewCustomerDialog(b);
           if (r == null) {
-            setState(() => _acting = -1);
+            setState(() => _acting.remove(b.id));
             return;
           }
           await repo.submitCustomerReview(b.id, r.$1,
@@ -276,11 +292,33 @@ class _PartnerBookingsScreenState
       }
       final newStatus = _statusForAction[action];
       if (newStatus != null) _patch(b.id, newStatus);
-      _reload();
+      // Reconcile from the server WITHOUT the full-screen skeleton or a scroll
+      // jump — the row is already patched optimistically above.
+      _silentReload();
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
-      if (mounted) setState(() => _acting = -1);
+      if (mounted) setState(() => _acting.remove(b.id));
+    }
+  }
+
+  /// Reconcile the loaded list against the server WITHOUT toggling the
+  /// full-screen loader or resetting pagination/scroll: refetch page 1 and
+  /// patch any matching rows in place, keeping the user's scroll position.
+  /// Used after an inline action succeeds so the list updates smoothly.
+  Future<void> _silentReload() async {
+    try {
+      final res = await ref
+          .read(partnerRepositoryProvider)
+          .bookingsPage(page: 1, limit: _pageSize);
+      if (!mounted) return;
+      final fresh = {for (final b in res.rows) b.id: b};
+      setState(() {
+        _all = [for (final b in _all) fresh[b.id] ?? b];
+        _totalRecords = res.totalRecords;
+      });
+    } catch (_) {
+      // Keep the optimistic state on failure — no scroll disruption.
     }
   }
 
@@ -738,29 +776,36 @@ class _PartnerBookingsScreenState
         ),
       );
 
-  List<Widget> _actionsFor(PartnerBooking b, bool busy) {
+  List<Widget> _actionsFor(PartnerBooking b) {
+    // Which action (if any) is in flight for THIS card. Any in-flight action
+    // disables every button on the card (no double-taps); only the active one
+    // shows its spinner.
+    final active = _acting[b.id];
+    final cardBusy = active != null;
     final actions = <Widget>[];
     if (b.status == 'awaiting_acceptance') {
       actions.add(_btn('Accept', Icons.check_rounded, AppColors.brand600,
-          busy ? null : () => _act(b, 'accept'), busy));
+          cardBusy ? null : () => _act(b, 'accept'), active == 'accept'));
       actions.add(_btn('Decline', Icons.close_rounded, AppColors.rose,
-          busy ? null : () => _act(b, 'decline'), false,
+          cardBusy ? null : () => _act(b, 'decline'), active == 'decline',
           outlined: true));
     } else if (b.status == 'accepted') {
-      actions.add(_btn('Start job', Icons.play_arrow_rounded,
-          AppColors.violet, busy ? null : () => _act(b, 'start'), busy));
+      actions.add(_btn('Start job', Icons.play_arrow_rounded, AppColors.violet,
+          cardBusy ? null : () => _act(b, 'start'), active == 'start'));
       actions.add(_btn('Unsign', Icons.undo_rounded, AppColors.rose,
-          busy ? null : () => _act(b, 'unsign'), false, outlined: true));
+          cardBusy ? null : () => _act(b, 'unsign'), active == 'unsign',
+          outlined: true));
     } else if (b.status == 'in_progress') {
       // Cash bookings must collect cash before completing.
       if (b.cashPending) {
         actions.add(_btn('Collect AED ${b.cashDue.toStringAsFixed(2)}',
             Icons.payments_rounded, AppColors.amber,
-            busy ? null : () => _act(b, 'cash'), busy));
+            cardBusy ? null : () => _act(b, 'cash'), active == 'cash'));
       }
       actions.add(_btn('Complete', Icons.check_circle_rounded,
           AppColors.brand600,
-          (busy || b.cashPending) ? null : () => _act(b, 'complete'), busy));
+          (cardBusy || b.cashPending) ? null : () => _act(b, 'complete'),
+          active == 'complete'));
     } else if (b.status == 'completed') {
       // After completion the partner can review the customer (optional, like
       // the web). Once reviewed, the button becomes a "Reviewed" chip.
@@ -768,7 +813,8 @@ class _PartnerBookingsScreenState
         actions.add(_reviewedChip());
       } else {
         actions.add(_btn('Review customer', Icons.star_rounded, AppColors.amber,
-            busy ? null : () => _act(b, 'review'), false, outlined: true));
+            cardBusy ? null : () => _act(b, 'review'), active == 'review',
+            outlined: true));
       }
     }
     return actions;
@@ -814,13 +860,12 @@ class _PartnerBookingsScreenState
   }
 
   Widget _card(PartnerBooking b) {
-    final busy = _acting == b.id;
     final (accent, _) = AppColors.dispatchStatus(b.status);
     final time = b.scheduledStart != null
         ? DateFormat('EEE d MMM · h:mm a').format(b.scheduledStart!)
         : 'Not scheduled';
     final customer = b.customerName.isEmpty ? 'Customer' : b.customerName;
-    final actions = _actionsFor(b, busy);
+    final actions = _actionsFor(b);
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(16),
@@ -1031,11 +1076,8 @@ class _PartnerBookingsScreenState
     // Detail returns the new status string after a lifecycle action,
     // 'reload' if only the team changed, or '' on a plain back.
     if (result == null || result.isEmpty) return;
-    if (result == 'reload') {
-      _reload();
-    } else {
-      _patch(b.id, result);
-      _reload();
-    }
+    // Patch the affected row in place then reconcile silently — no scroll jump.
+    if (result != 'reload') _patch(b.id, result);
+    _silentReload();
   }
 }

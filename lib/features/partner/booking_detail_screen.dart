@@ -30,7 +30,11 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   late PartnerBooking b;
   List<BookingAssignment>? _team; // null = loading
   bool _teamError = false;
-  bool _busy = false; // lifecycle actions only (start / complete / cash)
+  // Which action is currently running, so ONLY the tapped button spins while
+  // the others just disable. null = idle. Keys match the action strings used
+  // in _actions()/_act() ('accept','decline','start','complete','collect',
+  // 'review').
+  String? _busyAction;
   final Set<int> _removing = {}; // assignment ids being unassigned
   bool _changed = false;
   // The partner's own review of this booking's customer, once loaded. Non-null
@@ -112,7 +116,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   // ---- lifecycle ----
   Future<void> _act(String action) async {
-    setState(() => _busy = true);
+    setState(() => _busyAction = action);
     try {
       switch (action) {
         case 'accept':
@@ -122,7 +126,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         case 'decline':
           final reason = await _reasonDialog();
           if (reason == null) {
-            setState(() => _busy = false);
+            setState(() => _busyAction = null);
             return;
           }
           await _repo.declineBooking(b.id,
@@ -152,7 +156,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               );
               if (otp == null) {
                 // Cancelled (no successful start).
-                setState(() => _busy = false);
+                setState(() => _busyAction = null);
                 return;
               }
             } else {
@@ -171,10 +175,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       // because _changed is set).
       _changed = true;
       await _reloadBooking();
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyAction = null);
     } on ApiException catch (e) {
       AppToast.error(e.message);
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyAction = null);
     }
   }
 
@@ -184,13 +188,13 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   Future<void> _collectCash() async {
     final confirmed = await _cashCollectDialog();
     if (confirmed == null) return; // cancelled
-    setState(() => _busy = true);
+    setState(() => _busyAction = 'collect');
     try {
       await _repo.cashCollect(b.id, notes: confirmed.isEmpty ? null : confirmed);
       if (!mounted) return;
       setState(() {
         b = b.copyWith(cashCollected: true);
-        _busy = false;
+        _busyAction = null;
       });
       _changed = true;
       AppToast.success(b.status == 'in_progress'
@@ -198,7 +202,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           : 'Cash marked collected');
     } on ApiException catch (e) {
       AppToast.error(e.message);
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyAction = null);
     }
   }
 
@@ -245,7 +249,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   Future<void> _reviewCustomer() async {
     final r = await _reviewCustomerDialog();
     if (r == null) return;
-    setState(() => _busy = true);
+    setState(() => _busyAction = 'review');
     try {
       await _repo.submitCustomerReview(b.id, r.$1,
           comment: r.$2.isEmpty ? null : r.$2);
@@ -256,13 +260,13 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             comment: r.$2,
             customerName: b.customerName);
         b = b.copyWith(customerReviewed: true);
-        _busy = false;
+        _busyAction = null;
       });
       _changed = true;
       AppToast.success('Review submitted');
     } on ApiException catch (e) {
       AppToast.error(e.message);
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyAction = null);
     }
   }
 
@@ -377,8 +381,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   List<Widget> _actions() {
     Widget btn(String label, IconData icon, Color color, String action,
         {bool outlined = false, VoidCallback? onTap, bool enabled = true}) {
-      final handler = (!enabled || _busy) ? null : (onTap ?? () => _act(action));
-      final showSpinner = _busy && handler != null;
+      // Any running action disables every button (no double-taps), but only
+      // THIS button spins — when its action is the one in flight.
+      final handler = (!enabled || _busyAction != null)
+          ? null
+          : (onTap ?? () => _act(action));
+      final showSpinner = _busyAction == action;
       return SizedBox(
         height: 46,
         child: outlined
@@ -956,7 +964,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             Icons.star_outline_rounded,
             'Your review of the customer',
             trailing: TextButton(
-              onPressed: _busy ? null : _reviewCustomer,
+              onPressed: _busyAction != null ? null : _reviewCustomer,
               style: TextButton.styleFrom(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
