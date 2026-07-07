@@ -191,6 +191,11 @@ class _AssignTeamSheetState extends ConsumerState<_AssignTeamSheet> {
   }
 
   Future<void> _addToTeam() async {
+    // Synchronous re-entry guard: `_adding` is set inside setState (async
+    // rebuild), so a rapid double-tap could fire this twice before the button
+    // disables and create duplicate assignment rows. This bails in-thread —
+    // first tap wins, the rest no-op. (Mirrors the web savingRef fix.)
+    if (_adding) return;
     if (_crew.isEmpty && _driver == null) {
       AppToast.error('Pick a crew member or driver first');
       return;
