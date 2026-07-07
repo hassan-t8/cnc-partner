@@ -12,6 +12,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
+import 'crew_sync.dart';
 import 'otp_dialog.dart';
 import 'worker_booking_detail_screen.dart';
 import 'worker_repository.dart';
@@ -102,9 +103,14 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
           newStatus = 'completed';
           break;
       }
-      // Patch only the affected row across the loaded tabs — no full refetch,
-      // no list regeneration. Completing drops it out of "Upcoming".
-      if (newStatus != null) _patchStatus(a, newStatus);
+      // Write to the shared crew store — overlaid at render across every crew
+      // screen, so the change is consistent and survives a refetch. The tab
+      // filter drops a completed job out of "Upcoming".
+      if (newStatus != null) {
+        ref
+            .read(crewOverridesProvider.notifier)
+            .patch(a.bookingId, status: newStatus);
+      }
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
@@ -122,7 +128,9 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     try {
       await ref.read(workerRepositoryProvider).cashCollect(bookingId);
       AppToast.success('Cash collected — you can complete the job now');
-      _patchCash(a.id); // just flip this row's cash flag
+      ref
+          .read(crewOverridesProvider.notifier)
+          .patch(a.bookingId, cashCollected: true);
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
@@ -178,42 +186,6 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     }
   }
 
-  /// Update one booking's status across every loaded tab: replace it in place
-  /// where it still belongs, drop it from tabs it left (e.g. "Upcoming" once
-  /// completed), and add it to a tab it just entered (e.g. "Completed").
-  void _patchStatus(Assignment a, String status) {
-    final updated = a.copyWith(status: status);
-    setState(() {
-      for (var t = 0; t < _statuses.length; t++) {
-        final list = _data[t];
-        if (list == null) continue;
-        final present = list.any((x) => x.id == a.id);
-        final belongs = _belongsInTab(t, status);
-        if (belongs) {
-          _data[t] = present
-              ? [for (final x in list) x.id == a.id ? updated : x]
-              : [updated, ...list];
-        } else if (present) {
-          _data[t] = [for (final x in list) if (x.id != a.id) x];
-        }
-      }
-    });
-  }
-
-  /// Flip the cash-collected flag on one booking across every loaded tab.
-  void _patchCash(int id) {
-    setState(() {
-      for (var t = 0; t < _statuses.length; t++) {
-        final list = _data[t];
-        if (list == null) continue;
-        _data[t] = [
-          for (final x in list)
-            x.id == id ? x.copyWith(cashCollected: true) : x
-        ];
-      }
-    });
-  }
-
   void _reload(int i) => _fetchInto(i);
 
   // Await-able for pull-to-refresh — keeps the current rows visible while it
@@ -230,6 +202,8 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   Widget build(BuildContext context) {
     // Refetch every tab's data when the bottom-nav tab is (re)tapped.
     ref.listen(tabRefreshProvider, (_, __) => _reloadAll());
+    // Rebuild when any crew screen changes a booking (shared store).
+    ref.watch(crewOverridesProvider);
     return Scaffold(
       appBar: MainAppBar('My bookings',
         bottom: TabBar(
@@ -253,7 +227,16 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   }
 
   Widget _list(int i) {
-    final rows = _data[i];
+    final base = _data[i];
+    // Overlay shared crew patches, then keep only rows that still belong in
+    // this tab (a completed job leaves "Upcoming", etc.).
+    final ov = ref.read(crewOverridesProvider.notifier);
+    final rows = base == null
+        ? null
+        : [
+            for (final a in base.map(ov.apply))
+              if (_belongsInTab(i, a.status)) a
+          ];
     Widget child;
     if (rows == null) {
       // First load (no cached data yet).

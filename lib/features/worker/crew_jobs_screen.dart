@@ -14,6 +14,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
+import 'crew_sync.dart';
 import 'otp_dialog.dart';
 import 'today_summary.dart';
 import 'worker_booking_detail_screen.dart';
@@ -154,8 +155,14 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           newStatus = 'completed';
           break;
       }
-      // Patch only this row — no full-day refetch, no list regeneration.
-      if (newStatus != null) _patchStatus(a, newStatus);
+      // Write to the shared crew store — no full-day refetch. Every crew
+      // screen overlays this, so the change shows everywhere and survives a
+      // refresh.
+      if (newStatus != null) {
+        ref
+            .read(crewOverridesProvider.notifier)
+            .patch(a.bookingId, status: newStatus);
+      }
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
@@ -173,7 +180,11 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     try {
       await ref.read(workerRepositoryProvider).cashCollect(bookingId);
       AppToast.success('Cash collected — you can complete the job now');
-      _patchCash(a.id); // just flip this row's cash flag
+      // Persist in the shared store — /booking-assignments doesn't echo
+      // cashCollected, so this is what stops "Collect" reappearing on refresh.
+      ref
+          .read(crewOverridesProvider.notifier)
+          .patch(a.bookingId, cashCollected: true);
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
@@ -215,25 +226,6 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     }
   }
 
-  /// Replace one job's status in place — the day view keeps completed jobs
-  /// (they're still that day's work), just flips the badge/actions.
-  void _patchStatus(Assignment a, String status) {
-    final updated = a.copyWith(status: status);
-    setState(() {
-      _jobs = [for (final x in _jobs) x.id == a.id ? updated : x];
-    });
-  }
-
-  /// Flip the cash-collected flag on one job.
-  void _patchCash(int id) {
-    setState(() {
-      _jobs = [
-        for (final x in _jobs)
-          x.id == id ? x.copyWith(cashCollected: true) : x
-      ];
-    });
-  }
-
   Future<String?> _reasonDialog() async {
     final ctrl = TextEditingController();
     return showDialog<String>(
@@ -263,11 +255,16 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   Widget build(BuildContext context) {
     // Refetch when this tab is (re)tapped on the bottom nav.
     ref.listen(tabRefreshProvider, (_, __) => _reload());
+    // Rebuild whenever any crew screen changes a booking, and overlay those
+    // changes on this day's server data so state is consistent everywhere.
+    ref.watch(crewOverridesProvider);
+    final ov = ref.read(crewOverridesProvider.notifier);
+    final jobs = [for (final j in _jobs) ov.apply(j)];
     return Scaffold(
       appBar: const MainAppBar('My jobs'),
       body: Column(
         children: [
-          TodaySummary(jobs: _jobs),
+          TodaySummary(jobs: jobs),
           _dateStrip(),
           Expanded(
             child: RefreshIndicator(
@@ -281,7 +278,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
                               message: 'Couldn\'t load your jobs.',
                               onRetry: _reload),
                         ])
-                      : _jobs.isEmpty
+                      : jobs.isEmpty
                           ? ListView(children: const [
                               SizedBox(height: 80),
                               EmptyState(
@@ -293,10 +290,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
                             ])
                           : ListView.separated(
                               padding: const EdgeInsets.all(16),
-                              itemCount: _jobs.length,
+                              itemCount: jobs.length,
                               separatorBuilder: (_, __) =>
                                   const SizedBox(height: 12),
-                              itemBuilder: (_, i) => _jobCard(_jobs[i]),
+                              itemBuilder: (_, i) => _jobCard(jobs[i]),
                             ),
             ),
           ),

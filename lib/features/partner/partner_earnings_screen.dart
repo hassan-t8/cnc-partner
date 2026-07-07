@@ -146,6 +146,11 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     final cashCollected = txns
         .where((t) => t.type == 'cash_collected' && _inRange(t.createdAt))
         .fold<double>(0, (s, t) => s + t.amount);
+    // Customer tips credited this period — 100% to the partner, no commission
+    // (web parity: derives the tips card from `type=='tip'` ledger rows).
+    final tips = txns
+        .where((t) => t.type == 'tip' && _inRange(t.createdAt))
+        .fold<double>(0, (s, t) => s + t.amount);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -169,6 +174,12 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           const SizedBox(height: 12),
           _stat('Cash collected (period)',
               'AED ${cashCollected.toStringAsFixed(2)}', Icons.payments_outlined),
+        ],
+        if (tips > 0) ...[
+          const SizedBox(height: 12),
+          _stat('Tips received (period)',
+              'AED ${tips.toStringAsFixed(2)}',
+              Icons.volunteer_activism_outlined),
         ],
         const SizedBox(height: 16),
         _dateFilterBar(),
@@ -632,6 +643,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     'earning': 'Earnings',
     'cash_commission': 'Cash commission to CNC',
     'cash_collected': 'Cash collected from customer',
+    'tip': 'Customer tip',
     'partner_unassign_penalty': 'Unassign penalty',
     'payout': 'Payout to bank',
     'adjustment': 'Manual adjustment',
@@ -657,6 +669,8 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         return 'Physical cash you already hold — not added to your wallet.';
       case 'cash_commission':
         return 'What you owe CNC on the cash you collected.';
+      case 'tip':
+        return 'A customer tip — 100% yours, no commission.';
       default:
         return '';
     }
@@ -677,6 +691,8 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         return 'commission';
       case 'cash_collected':
         return 'cash in hand';
+      case 'tip':
+        return 'tip';
       default:
         return t.type.isEmpty
             ? (t.isCredit ? 'credit' : 'debit')

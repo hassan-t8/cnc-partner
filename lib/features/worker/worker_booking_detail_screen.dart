@@ -13,6 +13,7 @@ import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'booking_photos.dart';
+import 'crew_sync.dart';
 import 'otp_dialog.dart';
 import 'worker_repository.dart';
 
@@ -75,13 +76,23 @@ class _WorkerBookingDetailScreenState
       final list = await ref.read(workerRepositoryProvider).myBookings();
       final fresh = list.where((x) => x.id == a.id);
       if (fresh.isNotEmpty && mounted) {
+        // Overlay the shared crew store so a change made elsewhere (or here)
+        // isn't undone by a server row that lags.
+        final resolved =
+            ref.read(crewOverridesProvider.notifier).apply(fresh.first);
         setState(() {
-          _status = fresh.first.status;
-          _cashCollected = fresh.first.cashCollected;
+          _status = resolved.status;
+          _cashCollected = resolved.cashCollected;
         });
       }
     } catch (_) {}
   }
+
+  // Publish a change to the shared crew store so the Jobs / My-bookings lists
+  // stay consistent with this screen.
+  void _sync({String? status, bool? cashCollected}) => ref
+      .read(crewOverridesProvider.notifier)
+      .patch(a.bookingId, status: status, cashCollected: cashCollected);
 
   Future<void> _act(String action) async {
     final repo = ref.read(workerRepositoryProvider);
@@ -91,6 +102,7 @@ class _WorkerBookingDetailScreenState
         case 'accept':
           await repo.accept(a.id);
           _status = 'accepted';
+          _sync(status: 'accepted');
           AppToast.success('Job accepted');
           break;
         case 'decline':
@@ -100,6 +112,7 @@ class _WorkerBookingDetailScreenState
             return;
           }
           await repo.decline(a.id, reason: reason.isEmpty ? null : reason);
+          _sync(status: 'declined');
           if (mounted) Navigator.pop(context, true);
           AppToast.success('Job declined');
           return;
@@ -109,6 +122,7 @@ class _WorkerBookingDetailScreenState
         case 'complete':
           await repo.complete(a.id);
           _status = 'completed';
+          _sync(status: 'completed');
           AppToast.success('Job completed');
           break;
       }
@@ -125,6 +139,7 @@ class _WorkerBookingDetailScreenState
     try {
       await repo.start(a.id);
       _status = 'in_progress';
+      _sync(status: 'in_progress');
       AppToast.success('Job started');
     } on ApiException catch (e) {
       if (e.code == 'OTP_REQUIRED' || e.code == 'OTP_INVALID') {
@@ -146,6 +161,7 @@ class _WorkerBookingDetailScreenState
         );
         if (otp == null) return;
         _status = 'in_progress';
+        _sync(status: 'in_progress');
         AppToast.success('Job started');
       } else {
         rethrow;
@@ -305,6 +321,7 @@ class _WorkerBookingDetailScreenState
     setState(() => _busyAction = 'collect');
     try {
       await ref.read(workerRepositoryProvider).cashCollect(bookingId);
+      _sync(cashCollected: true);
       if (!mounted) return;
       setState(() {
         _cashCollected = true;
