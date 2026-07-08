@@ -161,7 +161,10 @@ class _OtpDialogState extends State<_OtpDialog> {
     final filled = _code.length == 6;
     return AlertDialog(
       title: const Text('Enter start code'),
-      content: Column(
+      // Scrollable so the extra error line + on-screen keyboard can never
+      // overflow the dialog's bottom on a short screen.
+      content: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Booking # + customer block — mirrors the web StartOtpModal so the
@@ -242,6 +245,7 @@ class _OtpDialogState extends State<_OtpDialog> {
             ),
           ],
         ],
+      ),
       ),
       actions: [
         TextButton(

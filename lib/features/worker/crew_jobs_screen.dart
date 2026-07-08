@@ -43,7 +43,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     _loadJobDays();
   }
 
-  /// Count of jobs per day — for the day-strip dots. Best-effort.
+  /// Count of jobs per day — for the day-strip dots. Best-effort. Also seeds
+  /// the shared crew store with cash-collected state, because the My-Jobs feed
+  /// (/booking-assignments) doesn't send `cashCollected` — so without this a
+  /// booking whose cash was already collected keeps showing "Collect" here.
   Future<void> _loadJobDays() async {
     try {
       final all =
@@ -57,6 +60,9 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         final d = DateUtils.dateOnly(a.scheduledStart!);
         counts[d] = (counts[d] ?? 0) + 1;
       }
+      // Seed cash-collected state (this feed has it; My-Jobs doesn't).
+      ref.read(crewOverridesProvider.notifier).seedCollected(
+          all.where((a) => a.cashCollected).map((a) => a.bookingId));
       setState(() => _jobCounts = counts);
     } catch (_) {}
   }

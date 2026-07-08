@@ -44,6 +44,23 @@ class CrewOverrides extends Notifier<Map<int, CrewPatch>> {
     };
   }
 
+  /// Mark several bookings cash-collected in one state update — used to seed
+  /// from the /workers/me/bookings feed (which has cashCollected) so the
+  /// My-Jobs feed (which doesn't) stops showing "Collect" on them.
+  void seedCollected(Iterable<int?> bookingIds) {
+    final next = {...state};
+    var changed = false;
+    for (final id in bookingIds) {
+      if (id == null || id <= 0) continue;
+      final cur = next[id] ?? const CrewPatch();
+      if (cur.cashCollected != true) {
+        next[id] = cur.merge(const CrewPatch(cashCollected: true));
+        changed = true;
+      }
+    }
+    if (changed) state = next;
+  }
+
   /// Overlay the known patch for this assignment's booking. Status only wins
   /// when it's the same or further along than the server's (so a genuinely
   /// newer server status isn't masked); cashCollected sticks once true.
