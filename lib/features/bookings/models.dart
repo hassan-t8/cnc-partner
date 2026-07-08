@@ -156,7 +156,10 @@ class Assignment {
         final owed = total - _d(b['coinsApplied']);
         return owed > 0 ? owed : 0.0;
       }(),
-      cashCollected: (b['cashCollected'] ?? j['cashCollected']) == true,
+      // Truthy parse: the backend sends cashCollected as an int (1/0), and
+      // `1 == true` is false in Dart — using `== true` made a collected cash
+      // booking reappear as "Collect". _b handles 1 / '1' / true.
+      cashCollected: _b(b['cashCollected'] ?? j['cashCollected']),
     );
   }
 
@@ -311,7 +314,7 @@ class PartnerBooking {
                 _d(j['coinsApplied']);
         return owed > 0 ? owed : 0.0;
       }(),
-      cashCollected: j['cashCollected'] == true,
+      cashCollected: _b(j['cashCollected']),
       customerReviewed: _b(j['customerReviewed']),
       zoneId: _i(j['zoneId']),
     );
