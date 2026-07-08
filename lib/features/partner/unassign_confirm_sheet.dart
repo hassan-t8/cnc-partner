@@ -17,14 +17,22 @@ Future<Map<String, dynamic>?> showUnassignSheet(
   String? customerName,
   required double partnerCost,
   double? penaltyPct, // null = legacy/no penalty, 0 = waived, >0 = active
+  String penaltyType = '', // 'percent' | 'fixed' | ''
+  double? penaltyAmount, // flat AED when type == 'fixed'
   required Future<(Map<String, dynamic>?, String?)> Function(String reason)
       onSubmit,
 }) {
   final reason = TextEditingController();
-  final hasPenalty = penaltyPct != null && penaltyPct > 0;
-  final aed = hasPenalty
-      ? (partnerCost * penaltyPct / 100 * 100).roundToDouble() / 100
-      : 0.0;
+  // Fixed (flat AED) or percent-of-cost, mirroring the web UnassignConfirmModal.
+  final isFixed =
+      penaltyType.toLowerCase() == 'fixed' && (penaltyAmount ?? 0) > 0;
+  final isPercent = !isFixed && penaltyPct != null && penaltyPct > 0;
+  final hasPenalty = isFixed || isPercent;
+  final aed = isFixed
+      ? penaltyAmount!
+      : isPercent
+          ? (partnerCost * penaltyPct / 100 * 100).roundToDouble() / 100
+          : 0.0;
   bool submitting = false;
   String? error;
 
@@ -87,7 +95,11 @@ Future<Map<String, dynamic>?> showUnassignSheet(
                           'AED ${partnerCost.toStringAsFixed(2)}'),
                       if (hasPenalty) ...[
                         const SizedBox(height: 8),
-                        _row('Penalty', 'AED ${aed.toStringAsFixed(2)}',
+                        _row(
+                            'Penalty',
+                            isFixed
+                                ? 'AED ${aed.toStringAsFixed(2)} (flat fee)'
+                                : 'AED ${aed.toStringAsFixed(2)} (${penaltyPct!.toStringAsFixed(penaltyPct % 1 == 0 ? 0 : 1)}%)',
                             valueColor: AppColors.rose),
                       ],
                     ],
@@ -101,7 +113,11 @@ Future<Map<String, dynamic>?> showUnassignSheet(
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                          'A penalty may be applied as per your partner contract.',
+                          hasPenalty
+                              ? (isFixed
+                                  ? 'A flat AED ${aed.toStringAsFixed(2)} penalty is charged when you unassign an accepted booking.'
+                                  : 'A penalty of ${penaltyPct!.toStringAsFixed(penaltyPct % 1 == 0 ? 0 : 1)}% of your partner cost is charged when you unassign an accepted booking.')
+                              : 'A penalty may be applied as per your partner contract.',
                           style: TextStyle(
                               color: AppColors.textMuted, fontSize: 12)),
                     ),

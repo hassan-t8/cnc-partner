@@ -291,6 +291,9 @@ class Partner {
   // Self-unassign penalty as a PERCENT of partnerCost. null = legacy (no
   // penalty), 0 = explicitly waived, > 0 = active penalty config.
   final double? unassignPenaltyPct;
+  // Penalty mode: 'percent' (of partnerCost) | 'fixed' (flat AED) | 'none'/''.
+  final String unassignPenaltyType;
+  final double? unassignPenaltyAmount; // flat AED when type == 'fixed'
 
   const Partner({
     required this.id,
@@ -320,6 +323,8 @@ class Partner {
     this.bankDetails = const [],
     this.uploadFile = '',
     this.unassignPenaltyPct,
+    this.unassignPenaltyType = '',
+    this.unassignPenaltyAmount,
   });
 
   factory Partner.fromJson(Map<String, dynamic> j) {
@@ -379,6 +384,10 @@ class Partner {
       unassignPenaltyPct: j['unassignPenaltyPct'] == null
           ? null
           : _d(j['unassignPenaltyPct']),
+      unassignPenaltyType: _s(j['unassignPenaltyType']),
+      unassignPenaltyAmount: j['unassignPenaltyAmount'] == null
+          ? null
+          : _d(j['unassignPenaltyAmount']),
     );
   }
 }
@@ -1042,4 +1051,33 @@ class AvailabilityException {
 
   bool get isOff => type == 'off';
   bool get isWholeDay => startTime == null && endTime == null;
+}
+
+/// A customer tip on a booking (partner-scope). From GET /tips/partner/me.
+class Tip {
+  final int id;
+  final int? bookingId;
+  final double amount;
+  final String status; // pending | approved | refunded | failed
+  final DateTime? createdAt;
+  final DateTime? paidAt;
+  const Tip({
+    required this.id,
+    this.bookingId,
+    this.amount = 0,
+    this.status = '',
+    this.createdAt,
+    this.paidAt,
+  });
+
+  factory Tip.fromJson(Map<String, dynamic> j) => Tip(
+        id: _i(j['id']) ?? 0,
+        bookingId: _i(j['bookingId']),
+        amount: _d(j['amount']),
+        status: _s(j['status']),
+        createdAt: _dt(j['createdAt']),
+        paidAt: _dt(j['paidAt']),
+      );
+
+  bool get isApproved => status.toLowerCase() == 'approved';
 }

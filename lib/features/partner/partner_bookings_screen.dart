@@ -52,6 +52,8 @@ class _PartnerBookingsScreenState
   // tapped one while its siblings just disable. Empty = nothing in flight.
   final Map<int, String> _acting = {};
   double? _penaltyPct; // partner's self-unassign penalty %, fetched lazily
+  String _penaltyType = ''; // 'percent' | 'fixed' | ''
+  double? _penaltyAmount; // flat AED when type == 'fixed'
   bool _penaltyLoaded = false;
 
   // ----- infinite-scroll pagination -----
@@ -282,6 +284,8 @@ class _PartnerBookingsScreenState
               customerName: b.customerName,
               partnerCost: b.partnerCost,
               penaltyPct: pct,
+              penaltyType: _penaltyType,
+              penaltyAmount: _penaltyAmount,
               onSubmit: (reason) async {
                 try {
                   final r = await repo.partnerUnassign(b.id,
@@ -393,6 +397,8 @@ class _PartnerBookingsScreenState
       if (pid != null) {
         final p = await ref.read(partnerRepositoryProvider).getPartner(pid);
         _penaltyPct = p.unassignPenaltyPct;
+        _penaltyType = p.unassignPenaltyType;
+        _penaltyAmount = p.unassignPenaltyAmount;
       }
     } catch (_) {
       // Leave null — sheet falls back to "no penalty / preview unavailable".

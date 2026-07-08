@@ -148,7 +148,12 @@ class Assignment {
       cashDue: () {
         final explicit = _d(b['cashDue'] ?? b['cashOwed'] ?? b['amountDue']);
         if (explicit > 0) return explicit;
-        final owed = _d(b['totalPrice'] ?? b['price']) - _d(b['coinsApplied']);
+        // Fall back to cncChargesInclVat when totalPrice is null (CNC-customer
+        // bookings persist only the charges column) — else the crew "Collect"
+        // button silently hides. Mirrors the web WorkerBookings cashDueFor fix.
+        final total =
+            _d(b['totalPrice'] ?? b['cncChargesInclVat'] ?? b['price']);
+        final owed = total - _d(b['coinsApplied']);
         return owed > 0 ? owed : 0.0;
       }(),
       cashCollected: (b['cashCollected'] ?? j['cashCollected']) == true,

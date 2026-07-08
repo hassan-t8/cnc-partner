@@ -41,6 +41,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   // when already reviewed → the screen shows the submitted stars/comment.
   Review? _customerReview;
 
+  // Customer tips credited to this partner on this booking (null = not loaded).
+  List<Tip> _tips = const [];
+  double _tipsTotal = 0;
+
   // Captured while `ref` is valid so dispose() can leave the room WITHOUT
   // touching `ref` (using ref after dispose throws on every socket event).
   BookingRealtime? _rt;
@@ -50,10 +54,24 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     super.initState();
     b = widget.booking;
     _loadTeam();
+    _loadTips();
     if (b.status == 'completed') _loadCustomerReview();
     // Live: join this booking's room for dispatch/assignment updates.
     _rt = ref.read(bookingRealtimeProvider.notifier);
     _rt!.joinBooking(b.id);
+  }
+
+  /// Fetch customer tips credited to this partner on this booking.
+  Future<void> _loadTips() async {
+    try {
+      final r = await _repo.listMyTips(bookingId: b.id);
+      if (mounted && r.tips.isNotEmpty) {
+        setState(() {
+          _tips = r.tips;
+          _tipsTotal = r.approvedTotal;
+        });
+      }
+    } catch (_) {}
   }
 
   /// Fetch the partner's existing customer review for this booking so the
@@ -533,6 +551,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               _scheduleCard(),
               const SizedBox(height: 14),
               _paymentCard(),
+              if (_tips.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                _tipsCard(),
+              ],
               const SizedBox(height: 14),
               _teamCard(canManageTeam),
               if (b.status == 'completed' && _customerReview != null) ...[
@@ -1033,6 +1055,85 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _tipsCard() {
+    final money = NumberFormat.currency(symbol: 'AED ', decimalDigits: 2);
+    return _card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(
+            Icons.volunteer_activism_outlined,
+            'Customer tips',
+            trailing: _tipsTotal > 0
+                ? Text(money.format(_tipsTotal),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.brand600))
+                : null,
+          ),
+          for (final t in _tips)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      [
+                        money.format(t.amount),
+                        if (t.createdAt != null)
+                          DateFormat('d MMM y').format(t.createdAt!),
+                      ].join(' · '),
+                      style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary),
+                    ),
+                  ),
+                  _tipStatusChip(t.status),
+                ],
+              ),
+            ),
+          const SizedBox(height: 10),
+          Text('100% of tips go to you — no commission.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+        ],
+      ),
+    );
+  }
+
+  Widget _tipStatusChip(String status) {
+    final s = status.toLowerCase();
+    final Color c;
+    final String label;
+    switch (s) {
+      case 'approved':
+        c = AppColors.brand600;
+        label = 'Paid';
+        break;
+      case 'pending':
+        c = AppColors.amber;
+        label = 'Pending';
+        break;
+      case 'refunded':
+        c = AppColors.textMuted;
+        label = 'Refunded';
+        break;
+      default:
+        c = AppColors.rose;
+        label = 'Failed';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label,
+          style:
+              TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c)),
     );
   }
 

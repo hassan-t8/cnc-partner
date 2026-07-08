@@ -60,6 +60,21 @@ class PartnerRepository {
     return DashboardStats.fromJson(pickMap(res.data));
   }
 
+  /// GET /tips/partner/me[?bookingId=X] — customer tips credited to this
+  /// partner. Returns the rows plus the approved total.
+  Future<({List<Tip> tips, double approvedTotal})> listMyTips(
+      {int? bookingId}) async {
+    final res = await _api.get('/tips/partner/me',
+        query: bookingId != null ? {'bookingId': bookingId} : null);
+    final tips = pickList(res.data).map(Tip.fromJson).toList();
+    final body = res.data;
+    final totals = (body is Map && body['totals'] is Map) ? body['totals'] : {};
+    final approved = (totals['approvedTotal'] is num)
+        ? (totals['approvedTotal'] as num).toDouble()
+        : tips.where((t) => t.isApproved).fold<double>(0, (s, t) => s + t.amount);
+    return (tips: tips, approvedTotal: approved);
+  }
+
   Future<void> acceptBooking(int id) =>
       _api.post('/booking/$id/partner-accept');
   Future<void> declineBooking(int id, {String? reason}) => _api.post(

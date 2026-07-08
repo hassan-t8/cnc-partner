@@ -51,6 +51,7 @@ class AppNotification {
 
   /// Which app section this notification points to.
   String get target {
+    if (type == 'tip') return 'bookings';
     if (type.startsWith('dispatch')) return 'requests';
     if (type.startsWith('booking')) return 'bookings';
     if (type.startsWith('payment')) return 'earnings';
