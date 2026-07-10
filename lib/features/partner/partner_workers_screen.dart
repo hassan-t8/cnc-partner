@@ -141,9 +141,10 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     final prev = _overrides[w.id];
     setState(() => _overrides[w.id] = w.copyWith(status: status));
     try {
-      await ref
-          .read(partnerRepositoryProvider)
-          .updateWorker(w.id, {'status': status});
+      // Dedicated status route — the generic updateWorker rejects
+      // `not_working`, which is one of the options this picker offers, with a
+      // 400. This endpoint accepts it.
+      await ref.read(partnerRepositoryProvider).setWorkerStatus(w.id, status);
       AppToast.success('Status updated');
       return true;
     } on ApiException catch (e) {

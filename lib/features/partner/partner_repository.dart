@@ -158,6 +158,21 @@ class PartnerRepository {
 
   Future<void> updateWorker(int id, Map<String, dynamic> body) =>
       _api.put('/workers/$id', body: body);
+
+  /// Change only a worker's status. This is a DIFFERENT endpoint from
+  /// [updateWorker]: the generic `PUT /workers/:id` validates the smaller enum
+  /// `active | on_leave | suspended | terminated`, so posting `not_working`
+  /// there is rejected with 400 "Invalid status." The dedicated status route
+  /// accepts `active | not_working | on_leave | suspended | terminated`
+  /// (a partner may not set `terminated` — that's 403).
+  ///
+  /// `reason`, when given, is appended to the worker's notes.
+  Future<void> setWorkerStatus(int id, String status, {String? reason}) =>
+      _api.put('/workers/$id/status', body: {
+        'status': status,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      });
+
   Future<void> deleteWorker(int id) => _api.delete('/workers/$id');
 
   // ----- worker account / password -----
