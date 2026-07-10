@@ -25,6 +25,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   String _filter = 'all';
   // Ticks every minute so the relative time + "time left" stay current.
   Timer? _tick;
+  final _scroll = ScrollController();
 
   @override
   void initState() {
@@ -35,11 +36,21 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     _tick = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
+    _scroll.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    // Widen the window a page before the very bottom so it feels seamless.
+    if (_scroll.position.pixels >=
+        _scroll.position.maxScrollExtent - 300) {
+      ref.read(notificationsProvider.notifier).loadMore();
+    }
   }
 
   @override
   void dispose() {
     _tick?.cancel();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -144,15 +155,46 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                                   'New offers and updates will appear here.'),
                         ])
                       : ListView.separated(
+                          controller: _scroll,
                           padding: const EdgeInsets.all(12),
-                          itemCount: items.length,
+                          // A trailing "load older" row on the All tab. The
+                          // other tabs are client-side subsets of the same
+                          // in-memory list, so paging them is meaningless —
+                          // widening the window brings in more of everything.
+                          itemCount: items.length +
+                              (_filter == 'all' && state.hasMore ? 1 : 0),
                           separatorBuilder: (_, __) =>
                               const SizedBox(height: 8),
-                          itemBuilder: (_, i) => _tile(items[i]),
+                          itemBuilder: (_, i) {
+                            if (i >= items.length) {
+                              return _loadMoreFooter(state.loadingMore);
+                            }
+                            return _tile(items[i]);
+                          },
                         ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _loadMoreFooter(bool loading) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(
+        child: loading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.brand600),
+              )
+            : TextButton(
+                onPressed: () =>
+                    ref.read(notificationsProvider.notifier).loadMore(),
+                child: const Text('Load older'),
+              ),
       ),
     );
   }

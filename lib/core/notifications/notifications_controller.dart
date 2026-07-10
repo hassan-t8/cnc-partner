@@ -62,8 +62,34 @@ class AppNotification {
 class NotifState {
   final List<AppNotification> items;
   final bool loading;
-  const NotifState({this.items = const [], this.loading = false});
+
+  /// More rows exist on the server than are currently held.
+  final bool hasMore;
+
+  /// A "load older" fetch is in flight.
+  final bool loadingMore;
+
+  const NotifState({
+    this.items = const [],
+    this.loading = false,
+    this.hasMore = false,
+    this.loadingMore = false,
+  });
+
   int get unread => items.where((n) => !n.isRead).length;
+
+  NotifState copyWith({
+    List<AppNotification>? items,
+    bool? loading,
+    bool? hasMore,
+    bool? loadingMore,
+  }) =>
+      NotifState(
+        items: items ?? this.items,
+        loading: loading ?? this.loading,
+        hasMore: hasMore ?? this.hasMore,
+        loadingMore: loadingMore ?? this.loadingMore,
+      );
 }
 
 final notificationsProvider =
@@ -74,6 +100,16 @@ class NotificationsController extends Notifier<NotifState> {
   Timer? _timer;
   int _lastMaxId = 0;
   bool _first = true;
+
+  static const _pageSize = 30;
+
+  /// The backend caps `limit` at 200. Rather than merge appended pages with the
+  /// 45s replace-poll (fiddly, and the client-side filter reads the whole
+  /// in-memory list), we simply grow the fetch window: "load older" widens
+  /// [_limit] by a page and the poll keeps re-fetching everything currently
+  /// shown, newest-first. 200 / 30 ≈ 6 pages, which is plenty for a bell.
+  static const _maxLimit = 200;
+  int _limit = _pageSize;
 
   @override
   NotifState build() {
@@ -87,17 +123,37 @@ class NotificationsController extends Notifier<NotifState> {
 
   Future<void> refresh() => _fetch();
 
+  /// Widen the window by one page and re-fetch. No-op at the cap or when
+  /// nothing more exists.
+  Future<void> loadMore() async {
+    if (!state.hasMore || state.loadingMore) return;
+    if (_limit >= _maxLimit) return;
+    _limit = (_limit + _pageSize).clamp(_pageSize, _maxLimit);
+    state = state.copyWith(loadingMore: true);
+    await _fetch();
+  }
+
   Future<void> _fetch() async {
     final auth = ref.read(authControllerProvider);
     if (auth.status != AuthStatus.authenticated) return;
     try {
       final res = await ref
           .read(apiClientProvider)
-          .get('/notification', query: {'limit': 30});
+          .get('/notification', query: {'limit': _limit});
       final items = pickList(res.data)
           .map(AppNotification.fromJson)
           .toList()
         ..sort((a, b) => b.id.compareTo(a.id));
+
+      // hasMore: prefer the server's total; fall back to "we filled the window".
+      final body = res.data;
+      final pg = (body is Map && body['pagination'] is Map)
+          ? Map<String, dynamic>.from(body['pagination'] as Map)
+          : const {};
+      final total = pg['totalRecords'];
+      final hasMore = total is num
+          ? items.length < total.toInt()
+          : items.length >= _limit;
       // Surface a system notification for genuinely new unread arrivals. When
       // several land in the same poll (a burst), collapse them into one
       // "N new notifications" summary instead of surfacing only the first —
@@ -123,16 +179,17 @@ class NotificationsController extends Notifier<NotifState> {
       }
       if (items.isNotEmpty) _lastMaxId = items.first.id;
       _first = false;
-      state = NotifState(items: items);
+      state = NotifState(items: items, hasMore: hasMore);
     } catch (_) {
-      state = NotifState(items: state.items);
+      // Keep what we have; just drop any in-flight "loading older" flag.
+      state = state.copyWith(loadingMore: false);
     }
   }
 
   /// Optimistically mark everything read, then tell the server.
   Future<void> markAllRead() async {
     if (state.unread == 0) return;
-    state = NotifState(
+    state = state.copyWith(
         items: state.items.map((n) => n.copyWith(isRead: true)).toList());
     try {
       await ref.read(apiClientProvider).post('/notification/mark-read');
