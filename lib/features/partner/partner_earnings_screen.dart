@@ -3,15 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
+import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import 'withdraw_sheet.dart';
 
 class PartnerEarningsScreen extends ConsumerStatefulWidget {
   const PartnerEarningsScreen({super.key});
@@ -48,10 +51,15 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     final results = await Future.wait([
       repo.wallet(partnerId).catchError((_) => const WalletStatement()),
       repo.bookings().catchError((_) => <PartnerBooking>[]),
+      repo
+          .myCashRequests(type: 'withdraw')
+          .catchError((_) => <PartnerCashRequest>[]),
     ]);
     return _Earn(
-        statement: results[0] as WalletStatement,
-        bookings: results[1] as List<PartnerBooking>);
+      statement: results[0] as WalletStatement,
+      bookings: results[1] as List<PartnerBooking>,
+      requests: results[2] as List<PartnerCashRequest>,
+    );
   }
 
   Future<void> _load() async {
@@ -181,6 +189,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
               'AED ${tips.toStringAsFixed(2)}',
               Icons.volunteer_activism_outlined),
         ],
+        ..._requestsSection(e.requests),
         const SizedBox(height: 16),
         _dateFilterBar(),
         const SizedBox(height: 12),
@@ -225,15 +234,206 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600)),
             ],
+            // Funds locked by a pending withdraw request. Already subtracted
+            // from `balance` server-side, so it is not double-counted here.
+            if (w.heldBalance > 0) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.lock_outline_rounded,
+                      size: 13, color: Colors.white70),
+                  const SizedBox(width: 5),
+                  Text('AED ${w.heldBalance.toStringAsFixed(2)} on hold',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
                 'Lifetime earned AED ${w.lifetimeEarnings.toStringAsFixed(0)} · '
                 'paid out AED ${w.lifetimePaidOut.toStringAsFixed(0)}',
                 style:
                     const TextStyle(color: Colors.white70, fontSize: 11.5)),
+            const SizedBox(height: 14),
+            _withdrawButton(w),
           ],
         ),
       );
+
+  // ---------------- Withdraw ----------------
+
+  /// The button is disabled, with a reason, rather than hidden — a partner who
+  /// can't withdraw should be told why. The server enforces both rules anyway
+  /// (`WALLET_FROZEN` 409, `INSUFFICIENT_BALANCE` 400).
+  Widget _withdrawButton(WalletInfo w) {
+    final blocked = w.isFrozen || w.balance <= 0;
+    final reason = w.isFrozen
+        ? (w.frozenReason.isEmpty
+            ? 'Your wallet is frozen.'
+            : 'Frozen: ${w.frozenReason}')
+        : 'No available balance to withdraw.';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: blocked ? null : () => _openWithdraw(w.balance),
+            icon: const Icon(Icons.south_rounded, size: 16),
+            label: const Text('Withdraw funds'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.brand700,
+              disabledBackgroundColor: Colors.white24,
+              disabledForegroundColor: Colors.white60,
+              elevation: 0,
+            ),
+          ),
+        ),
+        if (blocked) ...[
+          const SizedBox(height: 6),
+          Text(reason,
+              style: const TextStyle(color: Colors.white70, fontSize: 11.5)),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _openWithdraw(double available) async {
+    final submitted =
+        await showWithdrawSheet(context, availableBalance: available);
+    // The hold is already applied server-side, so the wallet is stale.
+    if (submitted) await _refresh();
+  }
+
+  Future<void> _cancelRequest(PartnerCashRequest r) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel withdraw request?'),
+        content: Text(
+          'AED ${r.amount.toStringAsFixed(2)} will be released back to your '
+          'available balance.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep it')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.rose),
+            child: const Text('Cancel request'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(partnerRepositoryProvider).cancelCashRequest(r.id);
+      AppToast.success('Request cancelled — funds released.');
+      await _refresh();
+    } on ApiException catch (e) {
+      // 409 NOT_PENDING: an admin decided it while this screen was open.
+      AppToast.error(e.message);
+      await _refresh();
+    } catch (_) {
+      AppToast.error('Could not cancel the request.');
+    }
+  }
+
+  List<Widget> _requestsSection(List<PartnerCashRequest> requests) {
+    if (requests.isEmpty) return const [];
+    return [
+      const SizedBox(height: 20),
+      const Text('Withdraw requests',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+      const SizedBox(height: 8),
+      for (final r in requests) _requestCard(r),
+    ];
+  }
+
+  Widget _requestCard(PartnerCashRequest r) {
+    final (bg, fg) = switch (r.status.toLowerCase()) {
+      'pending' => (AppColors.amber.withValues(alpha: 0.12), AppColors.amber),
+      'approved' => (
+          AppColors.emerald.withValues(alpha: 0.12),
+          AppColors.emerald
+        ),
+      'rejected' => (AppColors.rose.withValues(alpha: 0.12), AppColors.rose),
+      _ => (Colors.black12, Colors.black54),
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: bg, borderRadius: BorderRadius.circular(999)),
+                child: Text(r.status.toUpperCase(),
+                    style: TextStyle(
+                        color: fg, fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+              const Spacer(),
+              Text('AED ${r.amount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (r.bankName.isNotEmpty || r.bankAccountNumber.isNotEmpty)
+            Text(
+              [r.bankName, r.bankAccountNumber]
+                  .where((s) => s.isNotEmpty)
+                  .join(' · '),
+              style: const TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          if (r.rejectionReason.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('Rejected: ${r.rejectionReason}',
+                  style:
+                      const TextStyle(fontSize: 12, color: AppColors.rose)),
+            ),
+          if (r.createdAt != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                DateFormat('d MMM y · h:mm a').format(r.createdAt!),
+                style: const TextStyle(fontSize: 11.5, color: Colors.black45),
+              ),
+            ),
+          if (r.canCancel) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _cancelRequest(r),
+                icon: const Icon(Icons.close_rounded, size: 15),
+                label: const Text('Cancel'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.rose),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _stat(String label, String value, IconData icon) => Container(
         padding: const EdgeInsets.all(14),
@@ -704,5 +904,16 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
 class _Earn {
   final WalletStatement statement;
   final List<PartnerBooking> bookings;
-  _Earn({required this.statement, required this.bookings});
+
+  /// The partner's own cash requests, withdraw-only. New deposits go through
+  /// the payment gateway now (the submit route rejects them with
+  /// USE_HYPERPAY_DEPOSIT), so the portal filters deposit rows out and so
+  /// do we — historical deposit rows would otherwise be uncancellable clutter.
+  final List<PartnerCashRequest> requests;
+
+  _Earn({
+    required this.statement,
+    required this.bookings,
+    this.requests = const [],
+  });
 }

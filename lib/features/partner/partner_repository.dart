@@ -343,6 +343,71 @@ class PartnerRepository {
     return WalletStatement(wallet: WalletInfo.fromJson(w), transactions: txns);
   }
 
+  // ----- cash requests (withdraw) -----
+  //
+  // partnerId always comes from req.partnerScope server-side, never from the
+  // URL or body, so none of these take one.
+
+  /// `POST /partner-cash-requests` with `type: 'withdraw'`.
+  ///
+  /// The backend moves `amount` from wallet.balance into wallet.heldBalance
+  /// inside a transaction before creating the row, so a successful call has
+  /// already locked the funds.
+  ///
+  /// [clientRequestId] is mandatory (400 `IDEMPOTENCY_REQUIRED` without it) and
+  /// must be STABLE across retries: the server keys on
+  /// `withdraw:<partnerId>:<clientRequestId>` and returns the existing row
+  /// instead of holding the money twice. Mint it once when the form opens.
+  ///
+  /// Throws [ApiException] with `code`:
+  ///   `INSUFFICIENT_BALANCE` (400) — amount exceeds available balance
+  ///   `WALLET_FROZEN`        (409) — withdrawals paused
+  Future<PartnerCashRequest> submitWithdraw({
+    required double amount,
+    required String clientRequestId,
+    required String bankAccountName,
+    required String bankAccountNumber,
+    String? bankName,
+    String? iban,
+    String? notes,
+  }) async {
+    final res = await _api.post('/partner-cash-requests', body: {
+      'type': 'withdraw',
+      'amount': amount,
+      'clientRequestId': clientRequestId,
+      'bankAccountName': bankAccountName,
+      'bankAccountNumber': bankAccountNumber,
+      if (bankName != null && bankName.isNotEmpty) 'bankName': bankName,
+      if (iban != null && iban.isNotEmpty) 'iban': iban,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+    });
+    // Both the 201 and the deduped 200 wrap the row as `data.request`.
+    final data = pickMap(res.data);
+    final row = data['request'] is Map
+        ? Map<String, dynamic>.from(data['request'] as Map)
+        : data;
+    return PartnerCashRequest.fromJson(row);
+  }
+
+  /// `GET /partner-cash-requests/me` — newest first. `limit` caps at 100.
+  Future<List<PartnerCashRequest>> myCashRequests({
+    String? status,
+    String? type,
+    int limit = 25,
+  }) async {
+    final res = await _api.get('/partner-cash-requests/me', query: {
+      if (status != null) 'status': status,
+      if (type != null) 'type': type,
+      'limit': limit,
+    });
+    return pickList(res.data).map(PartnerCashRequest.fromJson).toList();
+  }
+
+  /// `POST /partner-cash-requests/:id/cancel` — releases the hold back to
+  /// balance. 409 `NOT_PENDING` if an admin already decided it.
+  Future<void> cancelCashRequest(int id) =>
+      _api.post('/partner-cash-requests/$id/cancel');
+
   // ----- reviews -----
   Future<RatingSummary> partnerRatingSummary() async {
     final res = await _api.get('/partner/me/rating-summary');

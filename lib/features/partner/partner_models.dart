@@ -752,18 +752,108 @@ class Offer {
 class WalletInfo {
   final double balance;
   final double pendingBalance; // awaiting clearance
+
+  /// Funds locked in a pending withdraw request. Submitting a withdraw moves
+  /// the amount out of [balance] and into here immediately; approval pays it
+  /// out, rejection or cancellation returns it to [balance].
+  final double heldBalance;
+
   final double lifetimeEarnings;
   final double lifetimePaidOut;
-  const WalletInfo(
-      {this.balance = 0,
-      this.pendingBalance = 0,
-      this.lifetimeEarnings = 0,
-      this.lifetimePaidOut = 0});
+
+  /// `active` | `frozen`. A frozen wallet rejects withdraw requests (409).
+  final String status;
+  final String frozenReason;
+
+  const WalletInfo({
+    this.balance = 0,
+    this.pendingBalance = 0,
+    this.heldBalance = 0,
+    this.lifetimeEarnings = 0,
+    this.lifetimePaidOut = 0,
+    this.status = 'active',
+    this.frozenReason = '',
+  });
+
+  bool get isFrozen => status.toLowerCase() == 'frozen';
+
   factory WalletInfo.fromJson(Map<String, dynamic> j) => WalletInfo(
         balance: _d(j['balance']),
         pendingBalance: _d(j['pendingBalance'] ?? j['pendingClearance']),
+        heldBalance: _d(j['heldBalance']),
         lifetimeEarnings: _d(j['lifetimeEarnings']),
         lifetimePaidOut: _d(j['lifetimePaidOut']),
+        status: j['status'] == null ? 'active' : _s(j['status']),
+        frozenReason: _s(j['frozenReason']),
+      );
+}
+
+/// A partner-submitted cash request — `/partner-cash-requests`.
+///
+/// Only `withdraw` can be created now: the backend rejects new `deposit`
+/// submissions with `USE_HYPERPAY_DEPOSIT`, because deposits moved to the
+/// payment gateway. Historical deposit rows still come back from `/me`.
+class PartnerCashRequest {
+  final int id;
+  final String type; // withdraw | deposit
+  final double amount;
+  final String currency;
+  final String status; // pending | approved | rejected | cancelled
+
+  final String bankAccountName;
+  final String bankAccountNumber;
+  final String bankName;
+  final String iban;
+
+  final String paymentMethod;
+  final String externalRef;
+  final String notes;
+  final String rejectionReason;
+
+  final DateTime? createdAt;
+  final DateTime? reviewedAt;
+
+  const PartnerCashRequest({
+    required this.id,
+    required this.type,
+    required this.amount,
+    required this.currency,
+    required this.status,
+    required this.bankAccountName,
+    required this.bankAccountNumber,
+    required this.bankName,
+    required this.iban,
+    required this.paymentMethod,
+    required this.externalRef,
+    required this.notes,
+    required this.rejectionReason,
+    required this.createdAt,
+    required this.reviewedAt,
+  });
+
+  bool get isPending => status.toLowerCase() == 'pending';
+  bool get isWithdraw => type.toLowerCase() == 'withdraw';
+
+  /// Only a pending row can be cancelled; the server answers 409 otherwise.
+  bool get canCancel => isPending;
+
+  factory PartnerCashRequest.fromJson(Map<String, dynamic> j) =>
+      PartnerCashRequest(
+        id: j['id'] is num ? (j['id'] as num).toInt() : 0,
+        type: _s(j['type']),
+        amount: _d(j['amount']),
+        currency: j['currency'] == null ? 'AED' : _s(j['currency']),
+        status: j['status'] == null ? 'pending' : _s(j['status']),
+        bankAccountName: _s(j['bankAccountName']),
+        bankAccountNumber: _s(j['bankAccountNumber']),
+        bankName: _s(j['bankName']),
+        iban: _s(j['iban']),
+        paymentMethod: _s(j['paymentMethod']),
+        externalRef: _s(j['externalRef']),
+        notes: _s(j['notes']),
+        rejectionReason: _s(j['rejectionReason']),
+        createdAt: _dt(j['createdAt']),
+        reviewedAt: _dt(j['reviewedAt']),
       );
 }
 
