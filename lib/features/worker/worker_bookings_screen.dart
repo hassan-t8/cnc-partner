@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import 'package:intl/intl.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
@@ -34,9 +37,14 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   final List<List<Assignment>?> _data = [null, null, null];
   final List<bool> _err = [false, false, false];
 
+  // Captured once while `ref` is valid so dispose() never touches `ref`.
+  BookingRealtime? _rt;
+  Timer? _rtDebounce;
+
   @override
   void initState() {
     super.initState();
+    _rt = ref.read(bookingRealtimeProvider.notifier);
     _tabs = TabController(length: 3, vsync: this);
     for (var i = 0; i < _statuses.length; i++) {
       _fetchInto(i);
@@ -46,17 +54,42 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   Future<void> _fetchInto(int i) async {
     try {
       final rows = await _load(_statuses[i]);
-      if (mounted) setState(() {
-            _data[i] = rows;
-            _err[i] = false;
-          });
+      if (mounted) {
+        setState(() {
+          _data[i] = rows;
+          _err[i] = false;
+        });
+        _syncRooms();
+      }
     } catch (_) {
       if (mounted) setState(() => _err[i] = true);
     }
   }
 
+  /// Subscribe to a `booking_<id>` room for every booking across all tabs. The
+  /// backend has no worker room, so per-booking rooms are the only way this
+  /// screen hears about changes made from the web, the partner, or elsewhere.
+  void _syncRooms() => _rt?.syncBookingRooms(
+      this,
+      _data
+          .whereType<List<Assignment>>()
+          .expand((rows) => rows)
+          .map((a) => a.bookingId)
+          .whereType<int>());
+
+  /// A booking we're watching changed elsewhere — refetch every tab, because a
+  /// status change can move a row between Upcoming and Completed.
+  void _onRealtime() {
+    _rtDebounce?.cancel();
+    _rtDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _reloadAll();
+    });
+  }
+
   @override
   void dispose() {
+    _rtDebounce?.cancel();
+    _rt?.releaseBookingRooms(this);
     _tabs.dispose();
     super.dispose();
   }
@@ -211,6 +244,8 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   Widget build(BuildContext context) {
     // Refetch every tab's data when the bottom-nav tab is (re)tapped.
     ref.listen(tabRefreshProvider, (_, __) => _reloadAll());
+    // Live: a booking we're subscribed to changed somewhere else.
+    ref.listen(bookingRealtimeProvider, (_, __) => _onRealtime());
     // Rebuild when any crew screen changes a booking (shared store).
     ref.watch(crewOverridesProvider);
     return Scaffold(

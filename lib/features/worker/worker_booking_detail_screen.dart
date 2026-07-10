@@ -59,13 +59,12 @@ class _WorkerBookingDetailScreenState
     super.initState();
     _rt = ref.read(bookingRealtimeProvider.notifier);
     final bid = widget.assignment.bookingId;
-    if (bid != null) _rt!.joinBooking(bid);
+    if (bid != null) _rt!.joinBooking(this, bid);
   }
 
   @override
   void dispose() {
-    final bid = widget.assignment.bookingId;
-    if (bid != null) _rt?.leaveBooking(bid);
+    _rt?.releaseBookingRooms(this);
     super.dispose();
   }
 

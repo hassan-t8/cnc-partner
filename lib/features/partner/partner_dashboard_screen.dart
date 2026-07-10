@@ -37,9 +37,14 @@ class _PartnerDashboardScreenState
   // First-seen remaining seconds per offer → the timer bar depletes from full.
   final Map<int, int> _offerStartSecs = {};
 
+  // Captured once while `ref` is valid so dispose() never touches `ref`.
+  BookingRealtime? _rt;
+  Timer? _rtDebounce;
+
   @override
   void initState() {
     super.initState();
+    _rt = ref.read(bookingRealtimeProvider.notifier);
     _load();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && (_data?.offers.isNotEmpty ?? false)) setState(() {});
@@ -49,7 +54,22 @@ class _PartnerDashboardScreenState
   @override
   void dispose() {
     _tick?.cancel();
+    _rtDebounce?.cancel();
+    _rt?.releaseBookingRooms(this);
     super.dispose();
+  }
+
+  /// Subscribe to a room per live offer so this screen hears when an offer is
+  /// withdrawn, expires, or is accepted by another partner — the backend emits
+  /// those to `booking_<id>`, never to a partner room.
+  void _syncRooms() => _rt?.syncBookingRooms(
+      this, (_data?.offers ?? const <Offer>[]).map((o) => o.bookingId).whereType<int>());
+
+  void _onRealtime() {
+    _rtDebounce?.cancel();
+    _rtDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _refresh();
+    });
   }
 
   Future<_Dash> _fetch() async {
@@ -80,6 +100,7 @@ class _PartnerDashboardScreenState
         _data = d;
         _loading = false;
       });
+      _syncRooms();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -96,10 +117,13 @@ class _PartnerDashboardScreenState
   Future<void> _refresh() async {
     try {
       final d = await _fetch();
-      if (mounted) setState(() {
-        _data = d;
-        _error = false;
-      });
+      if (mounted) {
+        setState(() {
+          _data = d;
+          _error = false;
+        });
+        _syncRooms();
+      }
     } catch (_) {
       if (mounted && _data == null) setState(() => _error = true);
     }
@@ -108,9 +132,7 @@ class _PartnerDashboardScreenState
   @override
   Widget build(BuildContext context) {
     // Live KPIs/pending-acceptance: refresh on any booking event.
-    ref.listen(bookingRealtimeProvider, (_, __) {
-      if (mounted) _reload();
-    });
+    ref.listen(bookingRealtimeProvider, (_, __) => _onRealtime());
     // Refetch when the bottom-nav tab is (re)tapped.
     ref.listen(tabRefreshProvider, (_, __) {
       if (mounted) _reload();

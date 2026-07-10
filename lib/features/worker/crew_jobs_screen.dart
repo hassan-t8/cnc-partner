@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
@@ -37,11 +40,39 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   // dot markers on the day strip (more jobs = more dots).
   Map<DateTime, int> _jobCounts = {};
 
+  // Captured once while `ref` is valid so dispose() can leave the booking rooms
+  // without touching `ref` (using ref after dispose throws).
+  BookingRealtime? _rt;
+  Timer? _rtDebounce;
+
   @override
   void initState() {
     super.initState();
+    _rt = ref.read(bookingRealtimeProvider.notifier);
     _load();
     _loadJobDays();
+  }
+
+  @override
+  void dispose() {
+    _rtDebounce?.cancel();
+    _rt?.releaseBookingRooms(this);
+    super.dispose();
+  }
+
+  /// Subscribe to a `booking_<id>` room for every job currently on screen.
+  /// The backend has no worker room, so these per-booking rooms are the only
+  /// way this screen hears about start / cash-collected / completed / cancelled
+  /// happening from the web, the partner, or another device.
+  void _syncRooms() =>
+      _rt?.syncBookingRooms(this, _jobs.map((j) => j.bookingId).whereType<int>());
+
+  /// A booking we're watching changed somewhere else — refetch quietly.
+  void _onRealtime() {
+    _rtDebounce?.cancel();
+    _rtDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _refresh();
+    });
   }
 
   /// Count of jobs per day — for the day-strip dots. Best-effort. Also seeds
@@ -90,6 +121,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         _jobs = jobs;
         _loading = false;
       });
+      _syncRooms();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -107,10 +139,13 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     _loadJobDays();
     try {
       final jobs = await _fetch();
-      if (mounted) setState(() {
-        _jobs = jobs;
-        _error = false;
-      });
+      if (mounted) {
+        setState(() {
+          _jobs = jobs;
+          _error = false;
+        });
+        _syncRooms();
+      }
     } catch (_) {
       if (mounted && _jobs.isEmpty) setState(() => _error = true);
     }
@@ -262,6 +297,9 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   Widget build(BuildContext context) {
     // Refetch when this tab is (re)tapped on the bottom nav.
     ref.listen(tabRefreshProvider, (_, __) => _reload());
+    // Live: a booking we're subscribed to changed (started / cash collected /
+    // completed / cancelled) from the web, the partner, or another device.
+    ref.listen(bookingRealtimeProvider, (_, __) => _onRealtime());
     // Rebuild whenever any crew screen changes a booking, and overlay those
     // changes on this day's server data so state is consistent everywhere.
     ref.watch(crewOverridesProvider);

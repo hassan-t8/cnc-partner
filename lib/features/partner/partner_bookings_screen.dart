@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -75,9 +77,14 @@ class _PartnerBookingsScreenState
     'complete': 'completed',
   };
 
+  // Captured once while `ref` is valid so dispose() never touches `ref`.
+  BookingRealtime? _rt;
+  Timer? _rtDebounce;
+
   @override
   void initState() {
     super.initState();
+    _rt = ref.read(bookingRealtimeProvider.notifier);
     _from = widget.initialFrom;
     _to = widget.initialTo;
     _scroll.addListener(_onScroll);
@@ -86,9 +93,41 @@ class _PartnerBookingsScreenState
 
   @override
   void dispose() {
+    _rtDebounce?.cancel();
+    _rt?.releaseBookingRooms(this);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     super.dispose();
+  }
+
+  /// Subscribe to a `booking_<id>` room per visible booking. The backend never
+  /// emits booking events to a partner's `user_<id>` room, so without these the
+  /// socket delivers nothing to this screen.
+  void _syncRooms() => _rt?.syncBookingRooms(this, _all.map((b) => b.id));
+
+  /// Refetch page 1 in place — no skeleton flash, unlike [_load].
+  Future<void> _quietReload() async {
+    try {
+      final res = await ref
+          .read(partnerRepositoryProvider)
+          .bookingsPage(page: 1, limit: _pageSize);
+      if (!mounted) return;
+      setState(() {
+        _all = res.rows;
+        _page = res.currentPage;
+        _totalRecords = res.totalRecords;
+        _hasMore = res.hasMore;
+        _error = false;
+      });
+      _syncRooms();
+    } catch (_) {}
+  }
+
+  void _onRealtime() {
+    _rtDebounce?.cancel();
+    _rtDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) _quietReload();
+    });
   }
 
   // Append the next page when the user nears the bottom.
@@ -116,6 +155,7 @@ class _PartnerBookingsScreenState
           _hasMore = res.hasMore;
           _loading = false;
         });
+        _syncRooms();
       }
     } catch (_) {
       if (mounted) {
@@ -148,6 +188,7 @@ class _PartnerBookingsScreenState
         _hasMore = res.hasMore;
         _loadingMore = false;
       });
+      _syncRooms();
     } catch (_) {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -545,10 +586,8 @@ class _PartnerBookingsScreenState
 
   @override
   Widget build(BuildContext context) {
-    // Live updates: reload when any booking status/dispatch event arrives.
-    ref.listen(bookingRealtimeProvider, (_, __) {
-      if (mounted) _load();
-    });
+    // Live updates: reload in place when a subscribed booking changes.
+    ref.listen(bookingRealtimeProvider, (_, __) => _onRealtime());
     // Refetch when the bottom-nav tab is (re)tapped.
     ref.listen(tabRefreshProvider, (_, __) {
       if (mounted) _load();

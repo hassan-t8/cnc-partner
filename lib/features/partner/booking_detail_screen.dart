@@ -58,7 +58,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     if (b.status == 'completed') _loadCustomerReview();
     // Live: join this booking's room for dispatch/assignment updates.
     _rt = ref.read(bookingRealtimeProvider.notifier);
-    _rt!.joinBooking(b.id);
+    _rt!.joinBooking(this, b.id);
   }
 
   /// Fetch customer tips credited to this partner on this booking.
@@ -90,7 +90,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   @override
   void dispose() {
-    _rt?.leaveBooking(b.id);
+    _rt?.releaseBookingRooms(this);
     super.dispose();
   }
 

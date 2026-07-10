@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
+import '../realtime/booking_realtime.dart';
 import '../storage/auth_storage.dart';
 import 'auth_repository.dart';
 import 'jwt_user.dart';
@@ -99,6 +100,10 @@ class AuthController extends Notifier<AuthState> {
     _token = null;
     await ref.read(authStorageProvider).clear();
     state = AuthState.signedOut;
+    // Drop the socket now rather than waiting for the next read of the
+    // provider — otherwise it lingers in the old user's rooms, holding the old
+    // JWT, for as long as the login screen is up.
+    ref.invalidate(bookingRealtimeProvider);
   }
 
   /// Re-validate the current token (called on resume); signs out if expired.
