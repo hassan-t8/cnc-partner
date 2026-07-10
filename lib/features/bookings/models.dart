@@ -77,6 +77,12 @@ class Assignment {
     this.cashCollected = false,
   });
 
+  /// This worker's role on the booking: 'lead' | 'crew' | 'driver'.
+  /// Only the LEAD runs the job lifecycle (start / collect cash / complete);
+  /// other crew members and drivers get a read-only view.
+  bool get isLead => role.toLowerCase() == 'lead';
+  bool get isDriverRole => role.toLowerCase() == 'driver';
+
   /// Money still owed on this booking that the worker can collect as cash —
   /// method-agnostic, mirroring the web WorkerBookings `cashDueFor` change
   /// (2026-07-03). Cash bookings AND unpaid card/online bookings the customer

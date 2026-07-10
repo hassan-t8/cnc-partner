@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/booking_ref_chip.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
@@ -465,6 +466,9 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
               Icon(Icons.chevron_right, size: 18, color: AppColors.textFaint),
             ],
           ),
+          // Booking reference (CNC-B-xxxx) so the crew can identify the job.
+          const SizedBox(height: 4),
+          BookingRefChip(a.bookingRef),
           const SizedBox(height: 6),
           _row(Icons.schedule, time),
           if (a.customerName.isNotEmpty)
@@ -503,7 +507,34 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     );
   }
 
+  /// Drivers (and driver-only users) never run the job.
+  bool _isDriverView(Assignment a) {
+    if (a.isDriverRole) return true;
+    final u = ref.read(authControllerProvider).user;
+    return u != null && u.isDriver && !u.isCrew;
+  }
+
+  /// Only the team LEAD may start the job, collect cash or complete it.
+  bool _viewOnly(Assignment a) => _isDriverView(a) || !a.isLead;
+
+  String _viewOnlyNote(Assignment a) => _isDriverView(a)
+      ? 'View only — the crew or partner starts this job.'
+      : 'View only — only the team lead can start or complete this job.';
+
   Widget _actions(Assignment a, bool busy) {
+    // Non-lead crew + drivers see the job read-only once it's accepted.
+    if (_viewOnly(a) && (a.status == 'accepted' || a.status == 'in_progress')) {
+      return Row(
+        children: [
+          Icon(Icons.visibility_outlined, size: 15, color: AppColors.textMuted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(_viewOnlyNote(a),
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+          ),
+        ],
+      );
+    }
     final children = <Widget>[];
     switch (a.status) {
       case 'pending_acceptance':

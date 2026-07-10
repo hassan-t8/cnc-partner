@@ -334,10 +334,16 @@ class _WorkerBookingDetailScreenState
     }
   }
 
+  /// Only the team LEAD runs the job (start / collect cash / complete).
+  /// Drivers transport; other crew members assist — both are read-only.
+  bool get _viewOnly => _isDriverView || !a.isLead;
+
+  String get _viewOnlyNote => _isDriverView
+      ? 'View only — the crew or partner starts this job.'
+      : 'View only — only the team lead can start or complete this job.';
+
   Widget? _actionBar() {
-    // Drivers transport the team — they don't run the job. Show a view-only
-    // note instead of Start/Complete (the crew or partner starts it).
-    if (_isDriverView && (_status == 'accepted' || _status == 'in_progress')) {
+    if (_viewOnly && (_status == 'accepted' || _status == 'in_progress')) {
       return _liftedBar(
         Row(
           children: [
@@ -345,7 +351,7 @@ class _WorkerBookingDetailScreenState
                 size: 18, color: AppColors.textMuted),
             const SizedBox(width: 8),
             Expanded(
-              child: Text('View only — the crew or partner starts this job.',
+              child: Text(_viewOnlyNote,
                   style:
                       TextStyle(fontSize: 12.5, color: AppColors.textMuted)),
             ),

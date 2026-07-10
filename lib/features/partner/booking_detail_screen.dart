@@ -417,10 +417,22 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       scheduledStart: b.scheduledStart,
       zoneId: b.zoneId,
     );
-    if (changed && mounted) {
-      _changed = true;
-      _loadTeam();
-    }
+    if (!mounted) return;
+    if (changed) _changed = true;
+    // ALWAYS reload the team once the sheet closes. Swiping the sheet down (or
+    // tapping the barrier) returns null instead of `_changed`, so relying on the
+    // flag left the team card stale until a manual refresh.
+    _loadTeam();
+  }
+
+  /// Pull-to-refresh: re-pull the booking, its team, tips and review.
+  Future<void> _refreshAll() async {
+    await Future.wait([
+      _reloadBooking(),
+      _loadTeam(),
+      _loadTips(),
+      if (b.status == 'completed') _loadCustomerReview(),
+    ]);
   }
 
   Future<void> _unassign(BookingAssignment a) async {
@@ -540,8 +552,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       child: Scaffold(
         backgroundColor: AppColors.bg,
         appBar: MainAppBar('Booking details'),
-        body: LayoutBuilder(
+        body: RefreshIndicator(
+          onRefresh: _refreshAll,
+          color: AppColors.brand600,
+          child: LayoutBuilder(
           builder: (context, constraints) => ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               _heroCard(),
@@ -563,6 +579,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               ],
             ],
           ),
+        ),
         ),
         bottomNavigationBar:
             actions.isEmpty ? null : _bottomActionBar(actions),

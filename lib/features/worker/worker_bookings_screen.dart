@@ -9,6 +9,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/booking_ref_chip.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
@@ -69,10 +70,18 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   /// user is a driver (and not also crew) — drivers only transport, they don't
   /// start/complete/upload photos.
   bool _isDriverView(Assignment a) {
-    if (a.role.toLowerCase() == 'driver') return true;
+    if (a.isDriverRole) return true;
     final u = ref.read(authControllerProvider).user;
     return u != null && u.isDriver && !u.isCrew;
   }
+
+  /// Only the team LEAD may start the job, collect cash or complete it. Drivers
+  /// and non-lead crew members see the job read-only.
+  bool _viewOnly(Assignment a) => _isDriverView(a) || !a.isLead;
+
+  String _viewOnlyNote(Assignment a) => _isDriverView(a)
+      ? 'View only — the crew or partner starts this job.'
+      : 'View only — only the team lead can start or complete this job.';
 
   Future<void> _openDetail(Assignment a) async {
     await Navigator.of(context).push(MaterialPageRoute(
@@ -301,6 +310,9 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
                   StatusBadge(a.status, worker: true),
                 ],
               ),
+              // Booking reference (CNC-B-xxxx) — easy to identify the booking.
+              const SizedBox(height: 4),
+              BookingRefChip(a.bookingRef),
               if (a.customerName.isNotEmpty || time.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -316,9 +328,6 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
               ],
               Row(
                 children: [
-                  Text('Booking ${a.bookingRef}',
-                      style: TextStyle(
-                          fontSize: 11.5, color: AppColors.textFaint)),
                   const Spacer(),
                   Text('Details',
                       style: TextStyle(
@@ -365,9 +374,9 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
       );
     }
 
-    // Drivers don't run the job — view only (the crew/partner starts it).
-    if (_isDriverView(a) &&
-        (a.status == 'accepted' || a.status == 'in_progress')) {
+    // Drivers and non-lead crew don't run the job — only the team lead can
+    // start it, collect cash or complete it.
+    if (_viewOnly(a) && (a.status == 'accepted' || a.status == 'in_progress')) {
       return [
         const SizedBox(height: 8),
         Row(
@@ -376,7 +385,7 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
                 size: 15, color: AppColors.textMuted),
             const SizedBox(width: 6),
             Expanded(
-              child: Text('View only — the crew or partner starts this job.',
+              child: Text(_viewOnlyNote(a),
                   style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
             ),
           ],
