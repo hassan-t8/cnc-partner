@@ -423,6 +423,34 @@ class PartnerRepository {
   Future<void> cancelCashRequest(int id) =>
       _api.post('/partner-cash-requests/$id/cancel');
 
+  // ----- HyperPay deposit -----
+
+  /// `POST /partner-deposit/initiate` → the checkout the WebView renders.
+  ///
+  /// [clientRequestId] must be STABLE across retries (mint once per attempt):
+  /// the server keys on it and, if the same id maps to a still-pending
+  /// deposit, returns that one with `deduped:true` rather than starting a
+  /// second checkout. Frozen wallet → 409 `WALLET_FROZEN`.
+  Future<DepositInit> initiateDeposit({
+    required double amount,
+    required String paymentMethod, // card | apple_pay
+    required String clientRequestId,
+  }) async {
+    final res = await _api.post('/partner-deposit/initiate', body: {
+      'amount': amount,
+      'paymentMethod': paymentMethod,
+      'clientRequestId': clientRequestId,
+    });
+    return DepositInit.fromJson(pickMap(res.data));
+  }
+
+  /// `GET /partner-deposit/me` — this partner's deposits, newest first.
+  Future<List<PartnerDepositRow>> myDeposits({int limit = 50}) async {
+    final res =
+        await _api.get('/partner-deposit/me', query: {'limit': limit});
+    return pickList(res.data).map(PartnerDepositRow.fromJson).toList();
+  }
+
   // ----- settlement export -----
 
   /// `GET /partner/me/settlement/export.csv` — the raw CSV for this partner's

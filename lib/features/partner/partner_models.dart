@@ -1171,3 +1171,100 @@ class Tip {
 
   bool get isApproved => status.toLowerCase() == 'approved';
 }
+
+/// Result of `POST /partner-deposit/initiate` — everything the WebView needs
+/// to render the HyperPay COPYandPAY widget.
+///
+/// The widget script must be loaded from `eu-test`/`eu-prod.oppwa.com`, which
+/// the response doesn't state directly. But `checkoutUrl` points at the API
+/// host (`test.oppwa.com` for test, `eu-prod.oppwa.com` for prod), so
+/// [widgetBase] derives the environment from it — no extra env var needed.
+class DepositInit {
+  final int depositId;
+  final String checkoutId;
+  final String checkoutUrl;
+
+  /// The backend callback the widget POSTs the result to; it credits the
+  /// wallet, then 302-redirects to the portal's /admin/deposit/result page.
+  final String shopperResultUrl;
+
+  /// e.g. 'VISA MASTER AMEX' (card) or 'APPLEPAY'.
+  final String brands;
+
+  /// HyperPay Sub-Resource Integrity hash for the widget script, when present.
+  final String integrity;
+
+  final double amount;
+  final String paymentMethod; // card | apple_pay
+
+  /// True when the same clientRequestId reused a still-pending deposit — the
+  /// funds/checkout already exist, so we just re-open the widget.
+  final bool deduped;
+
+  const DepositInit({
+    required this.depositId,
+    required this.checkoutId,
+    required this.checkoutUrl,
+    required this.shopperResultUrl,
+    required this.brands,
+    required this.integrity,
+    required this.amount,
+    required this.paymentMethod,
+    required this.deduped,
+  });
+
+  bool get isTest => checkoutUrl.contains('test.oppwa.com');
+
+  /// Origin the paymentWidgets.js script loads from.
+  String get widgetBase =>
+      isTest ? 'https://eu-test.oppwa.com' : 'https://eu-prod.oppwa.com';
+
+  factory DepositInit.fromJson(Map<String, dynamic> j) => DepositInit(
+        depositId: (j['depositId'] is num)
+            ? (j['depositId'] as num).toInt()
+            : int.tryParse('${j['depositId']}') ?? 0,
+        checkoutId: _s(j['checkoutId']),
+        checkoutUrl: _s(j['checkoutUrl']),
+        shopperResultUrl: _s(j['shopperResultUrl']),
+        brands: _s(j['brands']).isEmpty ? 'VISA MASTER AMEX' : _s(j['brands']),
+        integrity: _s(j['integrity']),
+        amount: _d(j['amount']),
+        paymentMethod: _s(j['paymentMethod']).isEmpty
+            ? 'card'
+            : _s(j['paymentMethod']),
+        deduped: j['deduped'] == true,
+      );
+}
+
+/// One row from `GET /partner-deposit/me` — a past top-up attempt.
+class PartnerDepositRow {
+  final int id;
+  final double amount;
+  final String currency;
+  final String status; // pending | approved | failed | ...
+  final String paymentMethod; // card | apple_pay
+  final DateTime? createdAt;
+
+  const PartnerDepositRow({
+    required this.id,
+    required this.amount,
+    required this.currency,
+    required this.status,
+    required this.paymentMethod,
+    required this.createdAt,
+  });
+
+  bool get isApproved => status.toLowerCase() == 'approved';
+  bool get isPending => status.toLowerCase() == 'pending';
+
+  factory PartnerDepositRow.fromJson(Map<String, dynamic> j) =>
+      PartnerDepositRow(
+        id: _i(j['id']) ?? 0,
+        amount: _d(j['amount']),
+        currency: _s(j['currency']).isEmpty ? 'AED' : _s(j['currency']),
+        status: _s(j['status']).isEmpty ? 'pending' : _s(j['status']),
+        paymentMethod:
+            _s(j['paymentMethod']).isEmpty ? 'card' : _s(j['paymentMethod']),
+        createdAt: _dt(j['createdAt']),
+      );
+}

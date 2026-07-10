@@ -16,6 +16,7 @@ import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
+import 'deposit_sheet.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 import 'withdraw_sheet.dart';
@@ -287,6 +288,9 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   /// can't withdraw should be told why. The server enforces both rules anyway
   /// (`WALLET_FROZEN` 409, `INSUFFICIENT_BALANCE` 400).
   Widget _withdrawButton(WalletInfo w) {
+    // Withdrawal needs available balance and an unfrozen wallet; a deposit is
+    // always allowed (topping up a frozen wallet is fine — only withdrawing
+    // from it is paused).
     final blocked = w.isFrozen || w.balance <= 0;
     final reason = w.isFrozen
         ? (w.frozenReason.isEmpty
@@ -294,23 +298,37 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
             : 'Frozen: ${w.frozenReason}')
         : 'No available balance to withdraw.';
 
+    final btnStyle = ElevatedButton.styleFrom(
+      backgroundColor: Colors.white,
+      foregroundColor: AppColors.brand700,
+      disabledBackgroundColor: Colors.white24,
+      disabledForegroundColor: Colors.white60,
+      elevation: 0,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: blocked ? null : () => _openWithdraw(w.balance),
-            icon: const Icon(Icons.south_rounded, size: 16),
-            label: const Text('Withdraw funds'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: AppColors.brand700,
-              disabledBackgroundColor: Colors.white24,
-              disabledForegroundColor: Colors.white60,
-              elevation: 0,
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _openDeposit,
+                icon: const Icon(Icons.add_rounded, size: 16),
+                label: const Text('Add funds'),
+                style: btnStyle,
+              ),
             ),
-          ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: blocked ? null : () => _openWithdraw(w.balance),
+                icon: const Icon(Icons.south_rounded, size: 16),
+                label: const Text('Withdraw'),
+                style: btnStyle,
+              ),
+            ),
+          ],
         ),
         if (blocked) ...[
           const SizedBox(height: 6),
@@ -326,6 +344,12 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         await showWithdrawSheet(context, availableBalance: available);
     // The hold is already applied server-side, so the wallet is stale.
     if (submitted) await _refresh();
+  }
+
+  Future<void> _openDeposit() async {
+    final added = await showDepositSheet(context);
+    // The callback credited the wallet server-side, so refresh to show it.
+    if (added) await _refresh();
   }
 
   Future<void> _cancelRequest(PartnerCashRequest r) async {
