@@ -423,6 +423,21 @@ class PartnerRepository {
   Future<void> cancelCashRequest(int id) =>
       _api.post('/partner-cash-requests/$id/cancel');
 
+  // ----- settlement export -----
+
+  /// `GET /partner/me/settlement/export.csv` — the raw CSV for this partner's
+  /// settlements. `from`/`to` are `YYYY-MM-DD` and must be sent together (the
+  /// server 400s on a half-open range); omit both for all-time. Scoped to
+  /// req.partnerScope server-side, so a partner only ever gets their own rows.
+  ///
+  /// Returns the CSV text (with the leading BOM the server sends).
+  Future<String> settlementCsv({String? from, String? to, String? status}) =>
+      _api.getText('/partner/me/settlement/export.csv', query: {
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
+        if (status != null) 'status': status,
+      });
+
   // ----- reviews -----
   Future<RatingSummary> partnerRatingSummary() async {
     final res = await _api.get('/partner/me/rating-summary');

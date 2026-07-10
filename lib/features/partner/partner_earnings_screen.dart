@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
@@ -29,6 +33,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   bool _error = false;
   String _tab = 'upcoming'; // upcoming | settled
   DateTimeRange? _range; // null = all time
+  bool _exporting = false;
 
   // Dispatch statuses that count as "money still coming".
   static const _upcomingStatuses = {
@@ -106,7 +111,20 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   Widget build(BuildContext context) {
     ref.listen(tabRefreshProvider, (_, __) => _load());
     return Scaffold(
-      appBar: const MainAppBar('Earnings'),
+      appBar: MainAppBar('Earnings', actions: [
+        IconButton(
+          tooltip: 'Export settlements (CSV)',
+          icon: _exporting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.brand600),
+                )
+              : const Icon(Icons.file_download_outlined),
+          onPressed: _exporting ? null : _exportCsv,
+        ),
+      ]),
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: _loading
@@ -518,6 +536,48 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
       setState(() => _range = DateTimeRange(
           start: DateUtils.dateOnly(picked.start),
           end: DateUtils.dateOnly(picked.end)));
+    }
+  }
+
+  // ---------------- CSV export ----------------
+
+  /// Downloads the settlement CSV for the current date range and hands it to
+  /// the OS share sheet — the mobile equivalent of the portal's file download
+  /// (the same columns and rows; the server scopes it to this partner).
+  Future<void> _exportCsv() async {
+    setState(() => _exporting = true);
+    try {
+      final fmt = DateFormat('yyyy-MM-dd');
+      // Both bounds or neither — the endpoint 400s on a half-open range.
+      final from = _range == null ? null : fmt.format(_range!.start);
+      final to = _range == null ? null : fmt.format(_range!.end);
+
+      final csv = await ref
+          .read(partnerRepositoryProvider)
+          .settlementCsv(from: from, to: to);
+
+      if (csv.trim().isEmpty) {
+        if (mounted) AppToast.error('Nothing to export for this range.');
+        return;
+      }
+
+      final label = _range == null
+          ? 'all'
+          : '${fmt.format(_range!.start)}_${fmt.format(_range!.end)}';
+      final file = File(
+          '${(await getTemporaryDirectory()).path}/settlements_$label.csv');
+      await file.writeAsString(csv);
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        subject: 'CNC settlements',
+      );
+    } on ApiException catch (e) {
+      if (mounted) AppToast.error(e.message);
+    } catch (_) {
+      if (mounted) AppToast.error('Could not export settlements.');
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
 

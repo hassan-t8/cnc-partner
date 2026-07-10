@@ -32,6 +32,13 @@ dependencies:
   google_maps_flutter: ^2.9.0
   url_launcher: ^6.3.1
 
+  # HyperPay deposit runs the gateway's payment widget in a WebView.
+  webview_flutter: ^4.10.0
+
+  # Settlement CSV export: write the file, then hand it to the share sheet.
+  path_provider: ^2.1.5
+  share_plus: ^10.1.4
+
   # Media
   image_picker: ^1.1.2
 

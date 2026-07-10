@@ -61,6 +61,18 @@ class ApiClient {
           {Map<String, dynamic>? query}) =>
       _wrap(() => _dio.get(path, queryParameters: query));
 
+  /// GET an endpoint that returns raw text (e.g. a `text/csv` export) rather
+  /// than JSON. Returns the body verbatim; auth + error normalization still
+  /// apply. Dio would otherwise try to JSON-decode the CSV.
+  Future<String> getText(String path, {Map<String, dynamic>? query}) async {
+    final res = await _wrap(() => _dio.get(
+          path,
+          queryParameters: query,
+          options: Options(responseType: ResponseType.plain),
+        ));
+    return res.data?.toString() ?? '';
+  }
+
   Future<Response<dynamic>> post(String path,
           {dynamic body, bool skipAuthRedirect = false}) =>
       _wrap(() => _dio.post(path,
