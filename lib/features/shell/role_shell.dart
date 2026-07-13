@@ -18,6 +18,7 @@ import '../partner/partner_requests_screen.dart';
 import '../profile/profile_hub_screen.dart';
 import '../bookings/models.dart';
 import '../worker/crew_jobs_screen.dart';
+import '../worker/crew_schedule_screen.dart';
 import '../worker/job_alert_popup.dart';
 import '../worker/worker_booking_detail_screen.dart';
 import '../worker/worker_bookings_screen.dart';
@@ -188,6 +189,8 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     }
     if (user.isCrew || !user.isDriver) {
       dests.add(const _Dest('Jobs', Icons.checklist_rounded, CrewJobsScreen()));
+      dests.add(const _Dest(
+          'Schedule', Icons.calendar_month_rounded, CrewScheduleScreen()));
     }
     dests.add(const _Dest(
         'Bookings', Icons.event_note_rounded, WorkerBookingsScreen()));
