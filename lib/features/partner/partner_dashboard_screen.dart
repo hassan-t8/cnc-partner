@@ -15,6 +15,7 @@ import '../../widgets/service_title.dart';
 import 'offer_details_sheet.dart';
 import 'partner_bookings_screen.dart';
 import 'partner_earnings_screen.dart';
+import 'wallet_balance_alert.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 import 'partner_vans_screen.dart';
@@ -163,6 +164,7 @@ class _PartnerDashboardScreenState
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                const WalletBalanceAlert(),
                 Text('Hi, $name 👋',
                     style: const TextStyle(
                         fontSize: 20, fontWeight: FontWeight.w800)),

@@ -451,6 +451,20 @@ class PartnerRepository {
     return pickList(res.data).map(PartnerDepositRow.fromJson).toList();
   }
 
+  /// `GET /partner/me/wallet-thresholds` — the warn/block wallet limits for the
+  /// negative-balance banner. Falls back to the system defaults on any error.
+  Future<({double warn, double block})> walletThresholds() async {
+    try {
+      final res = await _api.get('/partner/me/wallet-thresholds');
+      final m = pickMap(res.data);
+      double d(dynamic v, double dflt) =>
+          v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? dflt;
+      return (warn: d(m['warn'], -1000), block: d(m['block'], -2000));
+    } catch (_) {
+      return (warn: -1000.0, block: -2000.0);
+    }
+  }
+
   // ----- settlement export -----
 
   /// `GET /partner/me/settlement/export.csv` — the raw CSV for this partner's

@@ -17,6 +17,7 @@ import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
 import 'deposit_sheet.dart';
+import 'wallet_balance_alert.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 import 'withdraw_sheet.dart';
@@ -60,11 +61,13 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
       repo
           .myCashRequests(type: 'withdraw')
           .catchError((_) => <PartnerCashRequest>[]),
+      repo.myDeposits().catchError((_) => <PartnerDepositRow>[]),
     ]);
     return _Earn(
       statement: results[0] as WalletStatement,
       bookings: results[1] as List<PartnerBooking>,
       requests: results[2] as List<PartnerCashRequest>,
+      deposits: results[3] as List<PartnerDepositRow>,
     );
   }
 
@@ -182,6 +185,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        WalletBalanceAlert(balance: w.balance),
         _walletCard(w),
         const SizedBox(height: 12),
         Row(
@@ -212,12 +216,15 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         const SizedBox(height: 16),
         _dateFilterBar(),
         const SizedBox(height: 12),
-        _tabs(pending.length + upcomingBookings.length, settled.length),
+        _tabs(pending.length + upcomingBookings.length, settled.length,
+            e.deposits.length),
         const SizedBox(height: 12),
         if (_tab == 'upcoming')
           ..._upcomingList(pending, upcomingBookings, bMap)
+        else if (_tab == 'settled')
+          ..._settledList(settled, bMap)
         else
-          ..._settledList(settled, bMap),
+          ..._depositsList(e.deposits),
         const SizedBox(height: 8),
       ],
     );
@@ -606,7 +613,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   }
 
   // ---------------- Tabs ----------------
-  Widget _tabs(int upcomingCount, int settledCount) {
+  Widget _tabs(int upcomingCount, int settledCount, int depositsCount) {
     Widget seg(String val, String label, int count) {
       final on = _tab == val;
       return Expanded(
@@ -643,9 +650,96 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           seg('upcoming', 'Upcoming', upcomingCount),
           const SizedBox(width: 4),
           seg('settled', 'Settled', settledCount),
+          const SizedBox(width: 4),
+          seg('deposits', 'Deposits', depositsCount),
         ],
       ),
     );
+  }
+
+  // ---------------- Deposits list ----------------
+  List<Widget> _depositsList(List<PartnerDepositRow> deposits) {
+    if (deposits.isEmpty) {
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 28),
+          child: EmptyState(
+              icon: Icons.account_balance_wallet_outlined,
+              title: 'No deposits yet',
+              subtitle: 'Top-ups you make to your wallet will appear here.'),
+        ),
+      ];
+    }
+    final df = DateFormat('d MMM y, h:mm a');
+    Color statusColor(String s) {
+      switch (s.toLowerCase()) {
+        case 'approved':
+          return AppColors.brand600;
+        case 'pending':
+          return AppColors.amber;
+        default:
+          return AppColors.rose;
+      }
+    }
+
+    return [
+      for (final d in deposits)
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.brand50,
+                child: Icon(
+                    d.paymentMethod == 'apple_pay'
+                        ? Icons.apple
+                        : Icons.credit_card,
+                    size: 18,
+                    color: AppColors.brand700),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${d.currency} ${d.amount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text(
+                      [
+                        d.paymentMethod == 'apple_pay' ? 'Apple Pay' : 'Card',
+                        if (d.createdAt != null) df.format(d.createdAt!),
+                      ].join('  ·  '),
+                      style:
+                          TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor(d.status).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(d.status.toUpperCase(),
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: statusColor(d.status))),
+              ),
+            ],
+          ),
+        ),
+    ];
   }
 
   // ---------------- Upcoming list ----------------
@@ -995,9 +1089,13 @@ class _Earn {
   /// do we — historical deposit rows would otherwise be uncancellable clutter.
   final List<PartnerCashRequest> requests;
 
+  /// Wallet top-ups (HyperPay) — history for the Deposits tab.
+  final List<PartnerDepositRow> deposits;
+
   _Earn({
     required this.statement,
     required this.bookings,
     this.requests = const [],
+    this.deposits = const [],
   });
 }
