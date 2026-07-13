@@ -217,7 +217,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         _dateFilterBar(),
         const SizedBox(height: 12),
         _tabs(pending.length + upcomingBookings.length, settled.length,
-            e.deposits.length),
+            _visibleDeposits(e.deposits).length),
         const SizedBox(height: 12),
         if (_tab == 'upcoming')
           ..._upcomingList(pending, upcomingBookings, bMap)
@@ -658,7 +658,27 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   }
 
   // ---------------- Deposits list ----------------
-  List<Widget> _depositsList(List<PartnerDepositRow> deposits) {
+  // Web hides pending/abandoned checkout rows and labels the rest
+  // Credited / Failed / Refunded — match that.
+  List<PartnerDepositRow> _visibleDeposits(List<PartnerDepositRow> all) =>
+      all.where((d) => d.status.toLowerCase() != 'pending').toList();
+
+  String _depositStatusLabel(String s) {
+    switch (s.toLowerCase()) {
+      case 'approved':
+        return 'Credited';
+      case 'failed':
+      case 'rejected':
+        return 'Failed';
+      case 'refunded':
+        return 'Refunded';
+      default:
+        return s.toUpperCase();
+    }
+  }
+
+  List<Widget> _depositsList(List<PartnerDepositRow> allDeposits) {
+    final deposits = _visibleDeposits(allDeposits);
     if (deposits.isEmpty) {
       return const [
         Padding(
@@ -730,7 +750,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                   color: statusColor(d.status).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(d.status.toUpperCase(),
+                child: Text(_depositStatusLabel(d.status).toUpperCase(),
                     style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,

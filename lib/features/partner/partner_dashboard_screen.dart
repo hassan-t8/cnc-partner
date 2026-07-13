@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../widgets/reason_dialog.dart';
 import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
 import '../../core/realtime/booking_realtime.dart';
@@ -371,6 +372,11 @@ class _PartnerDashboardScreenState
       );
 
   Future<void> _offerAct(Offer o, bool accept) async {
+    String? reason;
+    if (!accept) {
+      reason = await showDeclineReasonDialog(context, title: 'Decline offer');
+      if (reason == null || !mounted) return;
+    }
     setState(() => _acting = o.id);
     try {
       final repo = ref.read(partnerRepositoryProvider);
@@ -378,7 +384,7 @@ class _PartnerDashboardScreenState
         await repo.acceptOffer(o.id);
         AppToast.success('Booking accepted');
       } else {
-        await repo.declineOffer(o.id);
+        await repo.declineOffer(o.id, reason: reason!.isEmpty ? null : reason);
         AppToast.success('Declined — passed to the next partner');
       }
       _reload();

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
+import '../../widgets/reason_dialog.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/service_title.dart';
@@ -39,6 +40,11 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
   bool _busy = false;
 
   Future<void> _act(bool accept) async {
+    String? reason;
+    if (!accept) {
+      reason = await showDeclineReasonDialog(context, title: 'Decline offer');
+      if (reason == null || !mounted) return;
+    }
     setState(() => _busy = true);
     final repo = ref.read(partnerRepositoryProvider);
     try {
@@ -46,7 +52,8 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
         await repo.acceptOffer(widget.offer.id);
         AppToast.success('Booking accepted');
       } else {
-        await repo.declineOffer(widget.offer.id);
+        await repo.declineOffer(widget.offer.id,
+            reason: reason!.isEmpty ? null : reason);
         AppToast.success('Declined — passed to the next partner');
       }
       if (mounted) Navigator.pop(context, accept ? 'accept' : 'decline');

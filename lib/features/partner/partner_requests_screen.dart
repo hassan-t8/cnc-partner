@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_client.dart';
+import '../../widgets/reason_dialog.dart';
 import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
@@ -68,6 +69,11 @@ class _PartnerRequestsScreenState
 
   Future<void> _act(Offer o, bool accept,
       {Map<String, dynamic>? substitutions}) async {
+    String? reason;
+    if (!accept) {
+      reason = await showDeclineReasonDialog(context, title: 'Decline offer');
+      if (reason == null || !mounted) return;
+    }
     setState(() => _acting = o.id);
     try {
       final repo = ref.read(partnerRepositoryProvider);
@@ -75,7 +81,7 @@ class _PartnerRequestsScreenState
         await repo.acceptOffer(o.id, substitutions: substitutions);
         AppToast.success('Booking accepted');
       } else {
-        await repo.declineOffer(o.id);
+        await repo.declineOffer(o.id, reason: reason!.isEmpty ? null : reason);
         AppToast.success('Declined — passed to the next partner');
       }
       await _fetch();

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_client.dart';
+import '../../widgets/reason_dialog.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/service_title.dart';
@@ -198,6 +199,11 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
 
   Future<void> _decide(bool accept) async {
     if (_busy) return;
+    String? reason;
+    if (!accept) {
+      reason = await showDeclineReasonDialog(context, title: 'Decline offer');
+      if (reason == null || !mounted) return;
+    }
     setState(() => _busy = true);
     _bar.stop();
     final repo = ref.read(partnerRepositoryProvider);
@@ -206,7 +212,8 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
         await repo.acceptOffer(widget.offer.id);
         AppToast.success('Booking accepted');
       } else {
-        await repo.declineOffer(widget.offer.id);
+        await repo.declineOffer(widget.offer.id,
+            reason: reason!.isEmpty ? null : reason);
         AppToast.success('Declined — passed to the next partner');
       }
       await _dismiss(accept ? 'accept' : 'decline');
