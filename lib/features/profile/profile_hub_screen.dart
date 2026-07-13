@@ -14,6 +14,7 @@ import '../legal/delete_account_screen.dart';
 import '../legal/legal_screen.dart';
 import '../partner/availability_editor.dart';
 import '../partner/partner_earnings_screen.dart';
+import '../partner/partner_roster_screen.dart';
 import '../partner/partner_profile_screen.dart';
 import '../partner/partner_schedule_screen.dart';
 import '../partner/partner_vans_screen.dart';
@@ -140,6 +141,8 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
       if (isPartner) ...[
         _Item(Icons.groups_rounded, 'Workers', AppColors.violet,
             screen: const PartnerWorkersScreen()),
+        _Item(Icons.view_timeline_rounded, 'Roster', AppColors.emerald,
+            screen: const PartnerRosterScreen()),
         _Item(Icons.local_shipping_rounded, 'Vans', AppColors.amber,
             screen: const PartnerVansScreen()),
         _Item(Icons.account_balance_wallet_rounded, 'Earnings',

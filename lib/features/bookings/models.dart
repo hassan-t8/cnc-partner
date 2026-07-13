@@ -52,6 +52,12 @@ class Assignment {
   final String paymentStatus;
   final double cashDue;
   final bool cashCollected;
+  // Who this assignment is for — a crew member (workerId) or the driver
+  // (driverWorkerId), plus their name. Populated by GET /booking-assignments;
+  // used by the partner day-roster to group jobs per worker.
+  final int? workerId;
+  final int? driverWorkerId;
+  final String workerName;
 
   const Assignment({
     required this.id,
@@ -75,6 +81,9 @@ class Assignment {
     this.paymentStatus = '',
     this.cashDue = 0,
     this.cashCollected = false,
+    this.workerId,
+    this.driverWorkerId,
+    this.workerName = '',
   });
 
   /// This worker's role on the booking: 'lead' | 'crew' | 'driver'.
@@ -166,6 +175,11 @@ class Assignment {
       // `1 == true` is false in Dart — using `== true` made a collected cash
       // booking reappear as "Collect". _b handles 1 / '1' / true.
       cashCollected: _b(b['cashCollected'] ?? j['cashCollected']),
+      workerId: _i(j['workerId']),
+      driverWorkerId: _i(j['driverWorkerId']),
+      workerName: _s((j['worker'] is Map ? j['worker']['name'] : null) ??
+          (j['driverWorker'] is Map ? j['driverWorker']['name'] : null) ??
+          ''),
     );
   }
 

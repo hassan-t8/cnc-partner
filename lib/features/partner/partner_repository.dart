@@ -110,6 +110,20 @@ class PartnerRepository {
     return pickList(res.data).map(BookingAssignment.fromJson).toList();
   }
 
+  /// GET /booking-assignments?from&to — every assignment for the partner's team
+  /// in the window (partner scope resolved server-side, no workerId). Powers the
+  /// day roster (who's on what).
+  Future<List<Assignment>> dayAssignments({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final res = await _api.get('/booking-assignments', query: {
+      'from': from.toIso8601String(),
+      'to': to.toIso8601String(),
+    });
+    return pickList(res.data).map(Assignment.fromJson).toList();
+  }
+
   Future<void> assignWorker(int bookingId, int workerId,
       {String role = 'crew', int? vanId}) {
     final isDriver = role == 'driver';
