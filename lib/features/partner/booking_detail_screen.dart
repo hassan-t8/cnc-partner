@@ -905,16 +905,18 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       );
 
   /// Assignment / team.
-  /// "3 assigned · 2 accepted" — makes it plain that the WHOLE team is listed,
-  /// not a filtered subset.
+  /// "2 assigned · 2 accepted" — counted off the DE-DUPED team, so the header
+  /// can never disagree with the rows below it. Counting the raw rows would say
+  /// "8 assigned" for a booking that has been re-dispatched three times.
   String get _teamSummary {
     final t = _team;
     if (t == null || t.isEmpty) return '';
-    final accepted = t
+    final live = _dedupeTeam(t);
+    final accepted = live
         .where((a) => const ['accepted', 'in_progress', 'completed']
             .contains(a.status.toLowerCase().trim()))
         .length;
-    return '${t.length} assigned · $accepted accepted';
+    return '${live.length} assigned · $accepted accepted';
   }
 
   Widget _teamCard(bool canManageTeam) => _card(
@@ -992,53 +994,64 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         ),
       );
     }
-    // De-duplicate: the API can return the same worker+role more than once.
-    //
-    // The key used to be `workerName|role`, which silently DROPPED team members:
-    // two assignments with an empty worker name and the same role (a van/driver
-    // slot not yet named, say) collapsed into one. Key on the worker id where we
-    // have one, and fall back to the assignment id so a distinct row is never
-    // discarded.
-    final seen = <String>{};
-    final unique = [
-      for (final a in team)
-        if (seen.add(a.workerId != null ? 'w${a.workerId}|${a.role}' : 'a${a.id}'))
-          a
-    ];
-
-    // Accepted first — that's the crew actually turning up. Anything downstream
-    // of acceptance (en route, arrived, in progress, completed) implies accepted
-    // and ranks with it. Pending sits next, and declined/cancelled/no-show sink
-    // to the bottom. Sorted with the original index as a tiebreak so the order
-    // inside each group stays stable (List.sort isn't stable on its own).
-    int rank(BookingAssignment a) {
-      final s = a.status.toLowerCase().trim();
-      if (const ['declined', 'cancelled', 'canceled', 'rejected', 'no_show']
-          .contains(s)) {
-        return 2;
-      }
-      if (const ['pending', 'pending_acceptance', 'assigned', 'offered']
-          .contains(s)) {
-        return 1;
-      }
-      return 0; // accepted + every post-acceptance state
-    }
-
-    final ordered = unique.indexed.toList()
-      ..sort((a, b) {
-        final byRank = rank(a.$2).compareTo(rank(b.$2));
-        return byRank != 0 ? byRank : a.$1.compareTo(b.$1);
-      });
-
+    final ordered = _dedupeTeam(team);
     return Column(
       children: [
         for (var i = 0; i < ordered.length; i++)
           Padding(
             padding: EdgeInsets.only(bottom: i == ordered.length - 1 ? 0 : 8),
-            child: _teamRow(ordered[i].$2, canManageTeam),
+            child: _teamRow(ordered[i], canManageTeam),
           ),
       ],
     );
+  }
+
+  /// Accepted first — that's the crew actually turning up. Anything downstream
+  /// of acceptance (in progress, completed) implies accepted and ranks with it.
+  /// Pending sits next; declined / cancelled / no-show sink to the bottom.
+  int _teamRank(BookingAssignment a) {
+    final s = a.status.toLowerCase().trim();
+    if (const ['declined', 'cancelled', 'canceled', 'rejected', 'no_show']
+        .contains(s)) {
+      return 2;
+    }
+    if (const ['pending', 'pending_acceptance', 'assigned', 'offered']
+        .contains(s)) {
+      return 1;
+    }
+    return 0; // accepted + every post-acceptance state
+  }
+
+  /// One row per person+role, keeping the row that is actually LIVE, sorted
+  /// accepted-first.
+  ///
+  /// Re-dispatching a booking leaves the old assignments behind as `cancelled`
+  /// rows, so the API returns the same worker several times — booking 2807 came
+  /// back as 8 rows for 2 people: 6 stale `cancelled` and 2 live `accepted`.
+  /// Keeping the FIRST row seen (which is what this used to do) picked a stale
+  /// cancelled one, so both cards showed "Cancelled" and nothing survived
+  /// ranking as accepted — which is why accepted-on-top never appeared.
+  ///
+  /// Keep the best-ranked row per identity, breaking ties on the highest id (the
+  /// most recent assignment).
+  List<BookingAssignment> _dedupeTeam(List<BookingAssignment> team) {
+    bool better(BookingAssignment a, BookingAssignment b) {
+      final r = _teamRank(a).compareTo(_teamRank(b));
+      return r != 0 ? r < 0 : a.id > b.id;
+    }
+
+    final byKey = <String, BookingAssignment>{};
+    for (final a in team) {
+      final key = a.workerId != null ? 'w${a.workerId}|${a.role}' : 'a${a.id}';
+      final existing = byKey[key];
+      if (existing == null || better(a, existing)) byKey[key] = a;
+    }
+
+    return byKey.values.toList()
+      ..sort((a, b) {
+        final byRank = _teamRank(a).compareTo(_teamRank(b));
+        return byRank != 0 ? byRank : a.id.compareTo(b.id);
+      });
   }
 
   /// Acceptance state as a colour-coded badge, so the accepted-first ordering
