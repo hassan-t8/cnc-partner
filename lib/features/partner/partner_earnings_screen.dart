@@ -212,19 +212,28 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
               'AED ${tips.toStringAsFixed(2)}',
               Icons.volunteer_activism_outlined),
         ],
-        ..._requestsSection(e.requests),
+        // Above the tabs: only a compact "you have a request pending" banner.
+        // The full history (and the Cancel action) lives in the Withdrawals tab,
+        // so this section stops duplicating it.
+        ..._pendingWithdrawBanner(e.requests),
         const SizedBox(height: 16),
         _dateFilterBar(),
         const SizedBox(height: 12),
-        _tabs(pending.length + upcomingBookings.length, settled.length,
-            _visibleDeposits(e.deposits).length),
+        _tabs(
+          pending.length + upcomingBookings.length,
+          settled.length,
+          _visibleDeposits(e.deposits).length,
+          e.requests.length,
+        ),
         const SizedBox(height: 12),
         if (_tab == 'upcoming')
           ..._upcomingList(pending, upcomingBookings, bMap)
         else if (_tab == 'settled')
           ..._settledList(settled, bMap)
+        else if (_tab == 'deposits')
+          ..._depositsList(e.deposits)
         else
-          ..._depositsList(e.deposits),
+          ..._withdrawalsList(e.requests),
         const SizedBox(height: 8),
       ],
     );
@@ -394,15 +403,95 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     }
   }
 
-  List<Widget> _requestsSection(List<PartnerCashRequest> requests) {
-    if (requests.isEmpty) return const [];
+  /// Compact "you have a withdrawal in review" banner. Only PENDING requests
+  /// belong above the tabs — the full history and the Cancel action now live in
+  /// the Withdrawals tab, so this no longer duplicates the whole list.
+  ///
+  /// Tapping it jumps to that tab.
+  List<Widget> _pendingWithdrawBanner(List<PartnerCashRequest> requests) {
+    final pending = requests
+        .where((r) => r.status.toLowerCase() == 'pending')
+        .toList();
+    if (pending.isEmpty) return const [];
+
+    final total = pending.fold<double>(0, (s, r) => s + r.amount);
+    final one = pending.length == 1;
+
     return [
-      const SizedBox(height: 20),
-      const Text('Withdraw requests',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-      const SizedBox(height: 8),
-      for (final r in requests) _requestCard(r),
+      const SizedBox(height: 16),
+      InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() => _tab = 'withdrawals'),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.amber.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(14),
+            border:
+                Border.all(color: AppColors.amber.withValues(alpha: 0.45)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.hourglass_top_rounded,
+                  size: 20, color: AppColors.amber),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      one
+                          ? 'Withdrawal in review'
+                          : '${pending.length} withdrawals in review',
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'AED ${total.toStringAsFixed(2)} on hold until an admin '
+                      'decides.',
+                      style: const TextStyle(
+                          fontSize: 11.5, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 20, color: AppColors.amber),
+            ],
+          ),
+        ),
+      ),
     ];
+  }
+
+  /// Withdrawals tab — the FULL request history (pending, approved, rejected,
+  /// cancelled), each with its Cancel action while it is still cancellable.
+  List<Widget> _withdrawalsList(List<PartnerCashRequest> requests) {
+    if (requests.isEmpty) {
+      return [
+        const SizedBox(height: 28),
+        Center(
+          child: Column(
+            children: [
+              Icon(Icons.account_balance_outlined,
+                  size: 38, color: AppColors.textMuted.withValues(alpha: 0.6)),
+              const SizedBox(height: 10),
+              const Text('No withdrawal requests yet',
+                  style: TextStyle(
+                      fontSize: 13.5, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text(
+                'Use Withdraw above to move your available balance to your bank.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11.5, color: Colors.black54),
+              ),
+            ],
+          ),
+        ),
+      ];
+    }
+    return [for (final r in requests) _requestCard(r)];
   }
 
   Widget _requestCard(PartnerCashRequest r) {
@@ -613,27 +702,28 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   }
 
   // ---------------- Tabs ----------------
-  Widget _tabs(int upcomingCount, int settledCount, int depositsCount) {
+  Widget _tabs(int upcomingCount, int settledCount, int depositsCount,
+      int withdrawalsCount) {
+    // Four segments no longer fit as equal Expanded thirds on a phone — the
+    // labels would ellipsise to "Withdraw…". The strip scrolls horizontally
+    // instead, so every tab keeps its full label and count.
     Widget seg(String val, String label, int count) {
       final on = _tab == val;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => setState(() => _tab = val),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: on ? AppColors.brand600 : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text('$label ($count)',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: on ? Colors.white : AppColors.textMuted)),
+      return GestureDetector(
+        onTap: () => setState(() => _tab = val),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? AppColors.brand600 : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
           ),
+          child: Text('$label ($count)',
+              maxLines: 1,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: on ? Colors.white : AppColors.textMuted)),
         ),
       );
     }
@@ -645,14 +735,19 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
-        children: [
-          seg('upcoming', 'Upcoming', upcomingCount),
-          const SizedBox(width: 4),
-          seg('settled', 'Settled', settledCount),
-          const SizedBox(width: 4),
-          seg('deposits', 'Deposits', depositsCount),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            seg('upcoming', 'Upcoming', upcomingCount),
+            const SizedBox(width: 4),
+            seg('settled', 'Settled', settledCount),
+            const SizedBox(width: 4),
+            seg('deposits', 'Deposits', depositsCount),
+            const SizedBox(width: 4),
+            seg('withdrawals', 'Withdrawals', withdrawalsCount),
+          ],
+        ),
       ),
     );
   }
