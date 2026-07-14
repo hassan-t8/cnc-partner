@@ -47,19 +47,23 @@ class OfferAlertOverlay {
   }) {
     final overlay = Overlay.of(context, rootOverlay: true);
     if (_entry == null) {
+      // The entry must render _OfferStack DIRECTLY. Its root is a
+      // Positioned.fill, and Positioned is a ParentDataWidget that has to be a
+      // direct child of the Overlay's Stack. Wrapping it here (in a
+      // ValueListenableBuilder / IgnorePointer / Opacity, as this briefly did)
+      // detaches it from that Stack, Flutter throws "Incorrect use of
+      // ParentDataWidget", the entry fails to build — and in RELEASE a failed
+      // widget renders as a blank grey box filling the screen. That was the
+      // white screen with no offer popup.
+      //
+      // The suspend wrapper now lives INSIDE _OfferStack, under the Positioned.
       _entry = OverlayEntry(
-        builder: (_) => ValueListenableBuilder<bool>(
-          valueListenable: suspended,
-          child: _OfferStack(key: _key, ref: ref, onEmpty: _collapse),
-          builder: (_, isSuspended, child) => IgnorePointer(
-            ignoring: isSuspended,
-            child: Opacity(opacity: isSuspended ? 0 : 1, child: child),
-          ),
-        ),
+        builder: (_) => _OfferStack(key: _key, ref: ref, onEmpty: _collapse),
       );
       overlay.insert(_entry!);
       WidgetsBinding.instance.addPostFrameCallback(
-          (_) => _key.currentState?.add(offer, onAction));
+        (_) => _key.currentState?.add(offer, onAction),
+      );
     } else {
       _key.currentState?.add(offer, onAction);
     }
@@ -81,8 +85,7 @@ class _OfferData {
 class _OfferStack extends ConsumerStatefulWidget {
   final WidgetRef ref;
   final VoidCallback onEmpty;
-  const _OfferStack(
-      {super.key, required this.ref, required this.onEmpty});
+  const _OfferStack({super.key, required this.ref, required this.onEmpty});
   @override
   ConsumerState<_OfferStack> createState() => _OfferStackState();
 }
@@ -109,49 +112,67 @@ class _OfferStackState extends ConsumerState<_OfferStack> {
     final hidden = _items.length - visible.length;
     // Centered on screen (was top-anchored). A dim scrim sits behind so the
     // offer draws focus; still scrollable if several stack up.
+    //
+    // Positioned.fill stays the OUTERMOST widget — it is a ParentDataWidget and
+    // must be a direct child of the Overlay's Stack. The suspend wrapper (which
+    // hides the stack while a dialog it opened is on screen) therefore goes
+    // INSIDE it, never around it.
     return Positioned.fill(
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.25),
-        alignment: Alignment.center,
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-            child: Material(
-              color: Colors.transparent,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-            for (var i = 0; i < visible.length; i++)
-              _OfferAlertCard(
-                // Key by offer id so Flutter keeps each card's state as the
-                // list shifts when one above it is dismissed.
-                key: ValueKey(visible[i].offer.id),
-                ref: widget.ref,
-                offer: visible[i].offer,
-                depth: i,
-                onResolved: (a) => _resolve(visible[i], a),
-              ),
-            if (hidden > 0)
-              Container(
-                margin: const EdgeInsets.only(top: 2),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 10),
+      child: ValueListenableBuilder<bool>(
+        valueListenable: OfferAlertOverlay.instance.suspended,
+        builder: (_, isSuspended, child) => IgnorePointer(
+          ignoring: isSuspended,
+          child: Opacity(opacity: isSuspended ? 0.0 : 1.0, child: child),
+        ),
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.25),
+          alignment: Alignment.center,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+              child: Material(
+                color: Colors.transparent,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < visible.length; i++)
+                      _OfferAlertCard(
+                        // Key by offer id so Flutter keeps each card's state as the
+                        // list shifts when one above it is dismissed.
+                        key: ValueKey(visible[i].offer.id),
+                        ref: widget.ref,
+                        offer: visible[i].offer,
+                        depth: i,
+                        onResolved: (a) => _resolve(visible[i], a),
+                      ),
+                    if (hidden > 0)
+                      Container(
+                        margin: const EdgeInsets.only(top: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          '+$hidden more offer${hidden == 1 ? '' : 's'}',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
-                child: Text('+$hidden more offer${hidden == 1 ? '' : 's'}',
-                    style: TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700)),
-              ),
-                ],
               ),
             ),
           ),
@@ -191,8 +212,9 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
   void initState() {
     super.initState();
     _appear = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 260))
-      ..forward();
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    )..forward();
     _bar = AnimationController(vsync: this, duration: widget.window)
       ..addStatusListener((s) {
         if (s == AnimationStatus.completed && mounted && !_busy) {
@@ -249,8 +271,10 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
         await repo.acceptOffer(widget.offer.id);
         AppToast.success('Booking accepted');
       } else {
-        await repo.declineOffer(widget.offer.id,
-            reason: reason!.isEmpty ? null : reason);
+        await repo.declineOffer(
+          widget.offer.id,
+          reason: reason!.isEmpty ? null : reason,
+        );
         AppToast.success('Declined — passed to the next partner');
       }
       await _dismiss(accept ? 'accept' : 'decline');
@@ -291,14 +315,14 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
           opacity: (t * dim).clamp(0.0, 1.0),
           child: Transform.translate(
             offset: Offset(0, (1 - t) * -24),
-            child: Transform.scale(scale: scale * (0.96 + 0.04 * t), child: child),
+            child: Transform.scale(
+              scale: scale * (0.96 + 0.04 * t),
+              child: child,
+            ),
           ),
         );
       },
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: _card(),
-      ),
+      child: Padding(padding: const EdgeInsets.only(bottom: 8), child: _card()),
     );
   }
 
@@ -312,26 +336,24 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.22),
-              blurRadius: 26,
-              offset: const Offset(0, 10)),
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
+          ),
         ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ClipRRect(
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             child: AnimatedBuilder(
               animation: _bar,
               builder: (_, __) {
                 final remaining = (1 - _bar.value).clamp(0.0, 1.0);
                 final col = remaining < 0.33
                     ? AppColors.rose
-                    : (remaining < 0.66
-                        ? AppColors.amber
-                        : AppColors.brand600);
+                    : (remaining < 0.66 ? AppColors.amber : AppColors.brand600);
                 return LinearProgressIndicator(
                   value: remaining,
                   minHeight: 6,
@@ -350,7 +372,9 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 9, vertical: 4),
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.brand50,
                         borderRadius: BorderRadius.circular(20),
@@ -358,15 +382,21 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.bolt_rounded,
-                              size: 15, color: AppColors.brand700),
+                          Icon(
+                            Icons.bolt_rounded,
+                            size: 15,
+                            color: AppColors.brand700,
+                          ),
                           const SizedBox(width: 3),
-                          Text('NEW OFFER',
-                              style: TextStyle(
-                                  color: AppColors.brand700,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 11,
-                                  letterSpacing: 0.5)),
+                          Text(
+                            'NEW OFFER',
+                            style: TextStyle(
+                              color: AppColors.brand700,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -374,14 +404,18 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                     AnimatedBuilder(
                       animation: _bar,
                       builder: (_, __) {
-                        final left = (secs - (_bar.value * secs))
-                            .ceil()
-                            .clamp(0, secs);
-                        return Text('${left}s',
-                            style: TextStyle(
-                                color: AppColors.textMuted,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13));
+                        final left = (secs - (_bar.value * secs)).ceil().clamp(
+                          0,
+                          secs,
+                        );
+                        return Text(
+                          '${left}s',
+                          style: TextStyle(
+                            color: AppColors.textMuted,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        );
                       },
                     ),
                     const SizedBox(width: 4),
@@ -390,8 +424,11 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                       borderRadius: BorderRadius.circular(20),
                       child: Padding(
                         padding: const EdgeInsets.all(2),
-                        child: Icon(Icons.close_rounded,
-                            size: 20, color: AppColors.textFaint),
+                        child: Icon(
+                          Icons.close_rounded,
+                          size: 20,
+                          color: AppColors.textFaint,
+                        ),
                       ),
                     ),
                   ],
@@ -399,25 +436,32 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                 const SizedBox(height: 10),
                 ServiceTitle(o.serviceName, titleSize: 17),
                 const SizedBox(height: 6),
-                if (o.address.isNotEmpty)
-                  _row(Icons.place_outlined, o.address),
+                if (o.address.isNotEmpty) _row(Icons.place_outlined, o.address),
                 if (o.crewRequired > 0)
                   _row(
-                      Icons.group_outlined,
-                      '${o.crewRequired} ${o.crewRequired == 1 ? "person" : "people"}'
-                      '${o.vanName.isNotEmpty ? " · ${o.vanName}" : ""}'),
+                    Icons.group_outlined,
+                    '${o.crewRequired} ${o.crewRequired == 1 ? "person" : "people"}'
+                    '${o.vanName.isNotEmpty ? " · ${o.vanName}" : ""}',
+                  ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Text('You earn',
-                        style: TextStyle(
-                            color: AppColors.textMuted, fontSize: 13)),
+                    Text(
+                      'You earn',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
+                    ),
                     const Spacer(),
-                    Text('AED ${o.earnings.toStringAsFixed(2)}',
-                        style: TextStyle(
-                            color: AppColors.brand700,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 19)),
+                    Text(
+                      'AED ${o.earnings.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: AppColors.brand700,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 19,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -429,13 +473,17 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.rose,
                           side: BorderSide(
-                              color: AppColors.rose.withValues(alpha: 0.5)),
+                            color: AppColors.rose.withValues(alpha: 0.5),
+                          ),
                           padding: const EdgeInsets.symmetric(vertical: 13),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        child: const Text('Decline',
-                            style: TextStyle(fontWeight: FontWeight.w700)),
+                        child: const Text(
+                          'Decline',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -448,18 +496,25 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 13),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         child: _busy
                             ? const SizedBox(
                                 height: 18,
                                 width: 18,
                                 child: CircularProgressIndicator(
-                                    strokeWidth: 2.2, color: Colors.white))
-                            : const Text('Accept',
+                                  strokeWidth: 2.2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Accept',
                                 style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 15)),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -473,17 +528,19 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
   }
 
   Widget _row(IconData icon, String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 5),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 16, color: AppColors.textMuted),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(text,
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 13.5)),
-            ),
-          ],
+    padding: const EdgeInsets.only(bottom: 5),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: AppColors.textMuted),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13.5),
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
