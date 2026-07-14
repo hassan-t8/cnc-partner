@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/main_app_bar.dart';
 import '../bookings/models.dart';
+import 'worker_booking_detail_screen.dart';
 import 'worker_repository.dart';
 
 /// The crew worker's own day schedule — their assignments for the picked day,
@@ -147,6 +148,15 @@ class _CrewScheduleScreenState extends ConsumerState<CrewScheduleScreen> {
     );
   }
 
+  /// Open the job. The schedule was read-only — every other list of jobs in the
+  /// app opens its detail on tap, so this one looked broken by comparison.
+  /// Refresh on return: the status may have changed in there (started, completed).
+  Future<void> _openDetail(Assignment a) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => WorkerBookingDetailScreen(assignment: a)));
+    if (mounted) _fetch();
+  }
+
   Widget _card(Assignment a) {
     final start = a.scheduledStart != null
         ? DateFormat('h:mm').format(a.scheduledStart!)
@@ -159,14 +169,17 @@ class _CrewScheduleScreenState extends ConsumerState<CrewScheduleScreen> {
         : '';
     final (bg, fg) = AppColors.dispatchStatus(a.status);
     final label = a.status.replaceAll('_', ' ');
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
+    return InkWell(
+      onTap: () => _openDetail(a),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
@@ -242,7 +255,10 @@ class _CrewScheduleScreenState extends ConsumerState<CrewScheduleScreen> {
               ],
             ),
           ),
-        ],
+          Icon(Icons.chevron_right_rounded,
+              size: 20, color: AppColors.textMuted),
+          ],
+        ),
       ),
     );
   }

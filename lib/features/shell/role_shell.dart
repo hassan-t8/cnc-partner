@@ -119,8 +119,11 @@ class _RoleShellState extends ConsumerState<RoleShell> {
         ref,
         o,
         onAction: (action) {
-          // On accept/decline refresh the data in place; on timeout/close the
-          // offer simply stays in the Requests tab.
+          // accept / decline / stale → refetch so the row disappears from the
+          // dashboard's "New requests" and the Requests tab. 'stale' is a dead
+          // offer (withdrawn, expired, taken by another partner): the refetch is
+          // what drops it from BOTH lists, not just the popup.
+          // On 'later' (timeout / dismiss) the offer legitimately stays put.
           if (action != 'later' && mounted) {
             ref.read(tabRefreshProvider.notifier).state++;
           }

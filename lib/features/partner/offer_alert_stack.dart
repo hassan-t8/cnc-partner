@@ -6,6 +6,7 @@ import '../../widgets/reason_dialog.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/service_title.dart';
+import 'offer_errors.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -254,6 +255,15 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
       }
       await _dismiss(accept ? 'accept' : 'decline');
     } on ApiException catch (e) {
+      // A dead offer (withdrawn / expired / already taken) can never succeed.
+      // Leaving the card up with a toast just invites the partner to tap it
+      // again and hit the same wall — take it down and let the host refresh its
+      // list so the stale row disappears everywhere.
+      if (isStaleOffer(e)) {
+        AppToast.error(staleOfferMessage(e));
+        await _dismiss('stale');
+        return;
+      }
       AppToast.error(e.message);
       if (mounted) {
         setState(() => _busy = false);

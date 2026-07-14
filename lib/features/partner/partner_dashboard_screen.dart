@@ -14,6 +14,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
 import 'offer_details_sheet.dart';
+import 'offer_errors.dart';
 import 'partner_bookings_screen.dart';
 import 'partner_earnings_screen.dart';
 import 'wallet_balance_alert.dart';
@@ -399,7 +400,15 @@ class _PartnerDashboardScreenState
       }
       _reload();
     } on ApiException catch (e) {
-      AppToast.error(e.message);
+      // A dead offer (withdrawn / expired / already taken) can never succeed —
+      // refetch so it drops out of the list instead of sitting there inviting
+      // another tap that hits the same wall.
+      if (isStaleOffer(e)) {
+        AppToast.error(staleOfferMessage(e));
+        _reload();
+      } else {
+        AppToast.error(e.message);
+      }
     } finally {
       if (mounted) setState(() => _acting = -1);
     }
