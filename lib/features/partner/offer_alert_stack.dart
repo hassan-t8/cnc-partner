@@ -23,6 +23,19 @@ class OfferAlertOverlay {
   OverlayEntry? _entry;
   final GlobalKey<_OfferStackState> _key = GlobalKey<_OfferStackState>();
 
+  /// Hides the stack while a dialog opened FROM it is on screen.
+  ///
+  /// The stack lives in an OverlayEntry appended to the ROOT overlay, so it
+  /// renders ABOVE every Navigator route — including dialogs. The decline-reason
+  /// prompt was therefore pushed UNDERNEATH the offer card: the card stayed
+  /// visible on top of it and swallowed every tap, so neither Cancel nor Decline
+  /// responded.
+  ///
+  /// Suspending makes the stack transparent AND pointer-transparent, so the
+  /// dialog below it is both visible and tappable. It is NOT unmounted — the
+  /// card's BuildContext has to stay valid for the dialog it just opened.
+  final ValueNotifier<bool> suspended = ValueNotifier<bool>(false);
+
   /// Push an offer onto the stack. Creates the overlay on first use.
   /// [onAction] fires with 'accept' | 'decline' | 'later' when it resolves.
   void push(
@@ -34,7 +47,14 @@ class OfferAlertOverlay {
     final overlay = Overlay.of(context, rootOverlay: true);
     if (_entry == null) {
       _entry = OverlayEntry(
-        builder: (_) => _OfferStack(key: _key, ref: ref, onEmpty: _collapse),
+        builder: (_) => ValueListenableBuilder<bool>(
+          valueListenable: suspended,
+          child: _OfferStack(key: _key, ref: ref, onEmpty: _collapse),
+          builder: (_, isSuspended, child) => IgnorePointer(
+            ignoring: isSuspended,
+            child: Opacity(opacity: isSuspended ? 0 : 1, child: child),
+          ),
+        ),
       );
       overlay.insert(_entry!);
       WidgetsBinding.instance.addPostFrameCallback(
@@ -47,6 +67,7 @@ class OfferAlertOverlay {
   void _collapse() {
     _entry?.remove();
     _entry = null;
+    suspended.value = false;
   }
 }
 
@@ -198,11 +219,26 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
   }
 
   Future<void> _decide(bool accept) async {
-    if (_busy) return;
+    if (_busy || _dismissing) return;
     String? reason;
     if (!accept) {
-      reason = await showDeclineReasonDialog(context, title: 'Decline offer');
-      if (reason == null || !mounted) return;
+      // Freeze the countdown: it would otherwise fire _dismiss('later') and rip
+      // this card out from under the prompt that is still open.
+      _bar.stop();
+      // Hide the stack so the prompt isn't rendered underneath it — see
+      // OfferAlertOverlay.suspended.
+      OfferAlertOverlay.instance.suspended.value = true;
+      try {
+        reason = await showDeclineReasonDialog(context, title: 'Decline offer');
+      } finally {
+        OfferAlertOverlay.instance.suspended.value = false;
+      }
+      if (reason == null) {
+        // Cancelled — put the card back and resume its countdown.
+        if (mounted) _bar.forward();
+        return;
+      }
+      if (!mounted) return;
     }
     setState(() => _busy = true);
     _bar.stop();

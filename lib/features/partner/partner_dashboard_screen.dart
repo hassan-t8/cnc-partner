@@ -165,6 +165,13 @@ class _PartnerDashboardScreenState
             final week = d.stats.bookingsWeek;
             final weekEarn = d.stats.earningsWeek;
 
+            // "New requests" must only list offers you can still ACT on. An
+            // expired offer has already been passed to the next partner, so
+            // showing it (with a dead "Expired" countdown) was inviting a tap
+            // that could only fail. The 1s ticker rebuilds this, so an offer
+            // drops out the moment its window closes — no refetch needed.
+            final offers = d.offers.where((o) => !o.isExpired).toList();
+
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -218,21 +225,21 @@ class _PartnerDashboardScreenState
                         style: TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w800)),
                     const SizedBox(width: 8),
-                    if (d.offers.isNotEmpty)
+                    if (offers.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 7, vertical: 1),
                         decoration: BoxDecoration(
                             color: AppColors.rose.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(20)),
-                        child: Text('${d.offers.length}',
+                        child: Text('${offers.length}',
                             style: const TextStyle(
                                 color: AppColors.rose,
                                 fontWeight: FontWeight.w800,
                                 fontSize: 12)),
                       ),
                     const Spacer(),
-                    if (d.offers.length > 3)
+                    if (offers.length > 3)
                       TextButton(
                         onPressed: () =>
                             ref.read(shellIndexProvider.notifier).state = 2,
@@ -246,7 +253,7 @@ class _PartnerDashboardScreenState
                   ],
                 ),
                 const SizedBox(height: 10),
-                if (d.offers.isEmpty)
+                if (offers.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: EmptyState(
@@ -255,14 +262,14 @@ class _PartnerDashboardScreenState
                         subtitle: 'New dispatch offers will appear here.'),
                   )
                 else ...[
-                  ...d.offers.take(3).map(_offerCard),
-                  if (d.offers.length > 3)
+                  ...offers.take(3).map(_offerCard),
+                  if (offers.length > 3)
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton(
                         onPressed: () =>
                             ref.read(shellIndexProvider.notifier).state = 2,
-                        child: Text('See all ${d.offers.length} requests'),
+                        child: Text('See all ${offers.length} requests'),
                       ),
                     ),
                 ],

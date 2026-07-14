@@ -747,6 +747,15 @@ class Offer {
       driverName: personName(snap['driver']),
     );
   }
+
+  /// True once the acceptance window has closed.
+  ///
+  /// An expired offer can no longer be accepted — the server has already passed
+  /// it to the next partner — so it must not sit in "New requests" pretending to
+  /// be actionable. Time-based, so it also becomes true while the screen is open
+  /// and the countdown runs out, without needing a refetch.
+  bool get isExpired =>
+      expiresAt != null && !expiresAt!.isAfter(DateTime.now());
 }
 
 class WalletInfo {
