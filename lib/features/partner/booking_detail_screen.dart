@@ -458,35 +458,51 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           ? null
           : (onTap ?? () => _act(action));
       final showSpinner = _busyAction == action;
-      return SizedBox(
-        height: 46,
-        child: outlined
-            ? OutlinedButton.icon(
-                onPressed: handler,
-                icon: Icon(icon, size: 18, color: color),
-                label: Text(label,
-                    style: TextStyle(
-                        color: color, fontWeight: FontWeight.w700)),
-                style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: color.withValues(alpha: 0.5))),
-              )
-            : ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: color,
-                  disabledBackgroundColor: color.withValues(alpha: 0.35),
-                  disabledForegroundColor: Colors.white.withValues(alpha: 0.8),
-                ),
-                onPressed: handler,
-                icon: showSpinner
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.2, color: Colors.white))
-                    : Icon(icon, size: 18),
-                label: Text(label),
+
+      // The height used to be hard-clamped with SizedBox(height: 46). In the
+      // bottom bar these sit in Expanded, so with two of them each gets half the
+      // width — and a long label like "Collect AED 1250" WRAPPED to two lines,
+      // which needs more than 46px and overflowed the bottom.
+      //
+      // Fix both ends: the label never wraps (ellipsis instead), and the height
+      // is a MINIMUM rather than a cap, so the button can still grow if the
+      // system font scale is large.
+      Widget labelOf(TextStyle? style) => Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          );
+
+      return outlined
+          ? OutlinedButton.icon(
+              onPressed: handler,
+              icon: Icon(icon, size: 18, color: color),
+              label: labelOf(
+                  TextStyle(color: color, fontWeight: FontWeight.w700)),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(46),
+                side: BorderSide(color: color.withValues(alpha: 0.5)),
               ),
-      );
+            )
+          : ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size.fromHeight(46),
+                backgroundColor: color,
+                disabledBackgroundColor: color.withValues(alpha: 0.35),
+                disabledForegroundColor: Colors.white.withValues(alpha: 0.8),
+              ),
+              onPressed: handler,
+              icon: showSpinner
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.2, color: Colors.white))
+                  : Icon(icon, size: 18),
+              label: labelOf(null),
+            );
     }
     switch (b.status) {
       case 'awaiting_acceptance':
