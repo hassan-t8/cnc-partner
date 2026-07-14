@@ -67,14 +67,21 @@ class _DepositCheckoutScreenState extends State<DepositCheckoutScreen> {
           }
         },
       ))
-      ..loadHtmlString(_html, baseUrl: _baseUrl);
-  }
-
-  /// Same origin as the shopperResultUrl (the backend callback), so the shell
-  /// and the redirect target aren't cross-origin.
-  String get _baseUrl {
-    final u = Uri.tryParse(widget.init.shopperResultUrl);
-    return u == null ? 'https://localhost' : '${u.scheme}://${u.host}';
+      // NO baseUrl — deliberately.
+      //
+      // HyperPay checks the origin of the page hosting the widget against the
+      // `merchant.url` baked into the checkout, and the backend sets that to the
+      // PARTNER PORTAL origin (partnerDepositController → partnerPortalBase()).
+      // We were passing the BACKEND origin here (derived from shopperResultUrl),
+      // so the widget presented a concrete origin that did not match
+      // merchant.url — and HyperPay rejected the card on Pay with
+      // "invalid or missing parameters".
+      //
+      // Passing no baseUrl leaves the page on an opaque (about:blank) origin,
+      // which has nothing to mismatch. That is exactly what the customer app
+      // (cncapp) does against the same gateway, and it works in production.
+      // A concrete-but-wrong origin is worse than no origin at all.
+      ..loadHtmlString(_html);
   }
 
   NavigationDecision _onNavigation(NavigationRequest req) {
@@ -186,11 +193,19 @@ class _DepositCheckoutScreenState extends State<DepositCheckoutScreen> {
       paymentTarget: '_top',
       shopperResultUrl: '$safeResult'
     };
+    // The web sets wpwl.options as well as wpwlOptions — mirror it, so the
+    // widget reads the same config however it looks it up.
+    window.wpwl = window.wpwl || { options: wpwlOptions };
+    window.wpwl.options = wpwlOptions;
   </script>
   <script src="${i.widgetBase}/v1/paymentWidgets.js?checkoutId=${i.checkoutId}" $integrityAttrs></script>
 </head>
 <body>
-  <form action="$safeResult" class="paymentWidgets" data-brands="${i.brands}"></form>
+  <!-- No action attribute: the result URL is supplied via
+       wpwlOptions.shopperResultUrl, exactly as the partner web portal does.
+       An action="" (which is what an empty/missing shopperResultUrl produced)
+       is itself one of the things HyperPay rejects. -->
+  <form class="paymentWidgets" data-brands="${i.brands}"></form>
 </body>
 </html>
 ''';

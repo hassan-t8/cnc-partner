@@ -138,19 +138,23 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final keyboard = mq.viewInsets.bottom;
+    // Clear the system gesture / nav bar so the submit button isn't flush
+    // against it. Skipped while the keyboard is up (the nav bar is behind it).
+    final systemBottom = keyboard > 0 ? 0.0 : mq.viewPadding.bottom;
+
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: keyboard),
       child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.9,
-        ),
+        constraints: BoxConstraints(maxHeight: mq.size.height * 0.9),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             _header(),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + systemBottom),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

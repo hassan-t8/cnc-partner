@@ -155,18 +155,21 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final keyboard = mq.viewInsets.bottom;
+    // Clearance for the system gesture / navigation bar, so the Continue button
+    // isn't flush against it. Skipped while the keyboard is up — the nav bar sits
+    // behind the keyboard then, and adding both would leave a dead gap.
+    final systemBottom = keyboard > 0 ? 0.0 : mq.viewPadding.bottom;
+
     // The body must SCROLL. This was a fixed Column, so opening the keyboard
     // shrank the available height (viewInsets) while the content stayed the same
     // size — a guaranteed bottom overflow. Pin the header, scroll the rest, and
     // cap the sheet, exactly as the withdraw sheet already does.
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: keyboard),
       child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.9,
-        ),
+        constraints: BoxConstraints(maxHeight: mq.size.height * 0.9),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,7 +214,9 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
             ),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                // Bottom padding clears the system gesture / nav bar so the
+                // Continue button isn't flush against it.
+                padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + systemBottom),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
