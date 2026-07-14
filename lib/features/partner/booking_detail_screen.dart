@@ -905,13 +905,25 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       );
 
   /// Assignment / team.
+  /// "3 assigned · 2 accepted" — makes it plain that the WHOLE team is listed,
+  /// not a filtered subset.
+  String get _teamSummary {
+    final t = _team;
+    if (t == null || t.isEmpty) return '';
+    final accepted = t
+        .where((a) => const ['accepted', 'in_progress', 'completed']
+            .contains(a.status.toLowerCase().trim()))
+        .length;
+    return '${t.length} assigned · $accepted accepted';
+  }
+
   Widget _teamCard(bool canManageTeam) => _card(
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _sectionHeader(
               Icons.groups_outlined,
-              'Team',
+              _teamSummary.isEmpty ? 'Team' : 'Team  ·  $_teamSummary',
               trailing: canManageTeam
                   ? TextButton.icon(
                       onPressed: _openAssignTeam,
@@ -1029,6 +1041,34 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     );
   }
 
+  /// Acceptance state as a colour-coded badge, so the accepted-first ordering
+  /// is actually legible. Backend enum: pending_acceptance | accepted |
+  /// declined | in_progress | completed | cancelled | no_show.
+  Widget _teamStatusBadge(String status) {
+    final s = status.toLowerCase().trim();
+    final (label, color) = switch (s) {
+      'accepted' => ('Accepted', AppColors.emerald),
+      'in_progress' => ('On the job', AppColors.brand600),
+      'completed' => ('Completed', AppColors.brand600),
+      'pending_acceptance' || 'pending' => ('Pending', AppColors.amber),
+      'declined' => ('Declined', AppColors.rose),
+      'cancelled' || 'canceled' => ('Cancelled', AppColors.rose),
+      'no_show' => ('No-show', AppColors.rose),
+      _ => (s.replaceAll('_', ' '), AppColors.textMuted),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 10, fontWeight: FontWeight.w800)),
+    );
+  }
+
   Widget _teamRow(BookingAssignment a, bool canManage) => Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -1053,16 +1093,33 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(a.workerName.isEmpty ? 'Worker' : a.workerName,
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                  if ([a.role, if (a.status.isNotEmpty) a.status]
-                      .where((s) => s.isNotEmpty)
-                      .isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                            a.workerName.isEmpty ? 'Worker' : a.workerName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                      // The acceptance state was buried as raw enum text in the
+                      // subtitle ("crew · pending_acceptance"), so you couldn't
+                      // actually SEE that accepted crew sort to the top. Badge it.
+                      if (a.status.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        _teamStatusBadge(a.status),
+                      ],
+                    ],
+                  ),
+                  if (a.role.isNotEmpty || a.vanLabel.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                        [a.role, if (a.status.isNotEmpty) a.status]
+                        [a.role, if (a.vanLabel.isNotEmpty) a.vanLabel]
                             .where((s) => s.isNotEmpty)
                             .join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                             color: AppColors.textMuted, fontSize: 12)),
                   ],
