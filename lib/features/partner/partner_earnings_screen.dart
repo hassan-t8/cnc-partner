@@ -171,6 +171,15 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           .compareTo(a.createdAt ?? DateTime(0)));
 
     final completed = e.bookings.where((b) => b.status == 'completed').length;
+    // Earnings actually CREDITED — the `earning` ledger rows, minus anything
+    // reversed. The screen only ever showed a completed-booking COUNT, so a
+    // partner could see "12 completed" and still have no idea what they had
+    // made. The web leads with the money; now so do we. With no date filter
+    // this is the all-time figure.
+    final earned = txns
+        .where((t) =>
+            t.type == 'earning' && !t.isReversed && _inRange(t.createdAt))
+        .fold<double>(0, (s, t) => s + t.amount);
     // Physical cash collected at the door this period — canonical source is the
     // informational `cash_collected` ledger row (incl-VAT), per web parity.
     final cashCollected = txns
@@ -187,6 +196,14 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
       children: [
         WalletBalanceAlert(balance: w.balance),
         _walletCard(w),
+        const SizedBox(height: 12),
+        // Money first. "Completed: 12" told a partner nothing about what they
+        // had actually earned.
+        _stat(
+          _range == null ? 'Earnings (all time)' : 'Earnings (period)',
+          'AED ${earned.toStringAsFixed(2)}',
+          Icons.trending_up_rounded,
+        ),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -847,6 +864,8 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('${d.currency} ${d.amount.toStringAsFixed(2)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontWeight: FontWeight.w800, fontSize: 15)),
                     Text(
@@ -854,6 +873,8 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                         d.paymentMethod == 'apple_pay' ? 'Apple Pay' : 'Card',
                         if (d.createdAt != null) df.format(d.createdAt!),
                       ].join('  ·  '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style:
                           TextStyle(color: AppColors.textMuted, fontSize: 12),
                     ),
@@ -1130,6 +1151,13 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     );
   }
 
+  /// A meta chip on a settled row.
+  ///
+  /// The text used to be unconstrained inside a `mainAxisSize.min` Row, so the
+  /// pill claimed its full intrinsic width — and a long one (the timestamp,
+  /// "14 Jul 2026 · 1:30 PM") is wider than the narrow column these sit in, which
+  /// blew the row out to the right. Wrapping the text in Flexible lets the pill
+  /// take the width it's given by the Wrap and ellipsise instead of overflowing.
   Widget _pill(IconData icon, String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
@@ -1142,11 +1170,15 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           children: [
             Icon(icon, size: 12, color: AppColors.textMuted),
             const SizedBox(width: 4),
-            Text(text,
-                style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary)),
+            Flexible(
+              child: Text(text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textSecondary)),
+            ),
           ],
         ),
       );
