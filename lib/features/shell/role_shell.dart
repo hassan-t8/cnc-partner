@@ -61,8 +61,7 @@ class _RoleShellState extends ConsumerState<RoleShell> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _check());
-    _offerPoll =
-        Timer.periodic(const Duration(seconds: 12), (_) => _check());
+    _offerPoll = Timer.periodic(const Duration(seconds: 12), (_) => _check());
   }
 
   @override
@@ -145,8 +144,11 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     }
     if (!mounted) return;
     // Auto-assigned jobs the worker hasn't started yet.
-    final active =
-        jobs.where((a) => a.status == 'accepted' || a.status == 'pending_acceptance').toList();
+    final active = jobs
+        .where(
+          (a) => a.status == 'accepted' || a.status == 'pending_acceptance',
+        )
+        .toList();
 
     if (!_jobsSeeded) {
       for (final a in active) {
@@ -168,8 +170,11 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     _jobPopupOpen = false;
     if (!mounted) return;
     if (action == 'view') {
-      Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => WorkerBookingDetailScreen(assignment: fresh.first)));
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => WorkerBookingDetailScreen(assignment: fresh.first),
+        ),
+      );
     }
   }
 
@@ -185,18 +190,28 @@ class _RoleShellState extends ConsumerState<RoleShell> {
     // Worker (crew / driver)
     final dests = <_Dest>[];
     if (user.isDriver) {
+      dests.add(const _Dest('Route', Icons.map_rounded, DriverRouteScreen()));
       dests.add(
-          const _Dest('Route', Icons.map_rounded, DriverRouteScreen()));
-      dests.add(const _Dest(
-          'Schedule', Icons.calendar_month_rounded, DriverScheduleScreen()));
+        const _Dest(
+          'Schedule',
+          Icons.calendar_month_rounded,
+          DriverScheduleScreen(),
+        ),
+      );
     }
     if (user.isCrew || !user.isDriver) {
       dests.add(const _Dest('Jobs', Icons.checklist_rounded, CrewJobsScreen()));
-      dests.add(const _Dest(
-          'Schedule', Icons.calendar_month_rounded, CrewScheduleScreen()));
+      dests.add(
+        const _Dest(
+          'Schedule',
+          Icons.calendar_month_rounded,
+          CrewScheduleScreen(),
+        ),
+      );
     }
-    dests.add(const _Dest(
-        'Bookings', Icons.event_note_rounded, WorkerBookingsScreen()));
+    dests.add(
+      const _Dest('Bookings', Icons.event_note_rounded, WorkerBookingsScreen()),
+    );
     dests.add(const _Dest('Profile', Icons.person_rounded, ProfileHubScreen()));
     return dests;
   }
@@ -217,48 +232,62 @@ class _RoleShellState extends ConsumerState<RoleShell> {
         index: index,
         children: dests.map((d) => d.screen).toList(),
       ),
+      // Android 15 (API 35) enforces edge-to-edge, so the app draws UNDER the
+      // system gesture bar. Without this the nav bar sat beneath it — which is
+      // why it looked wrong on the Realme (Android 15) but fine on the Samsung
+      // (Android 14) and on iOS.
+      //
+      // The Container's colour is painted BEHIND the inset (so the bar's
+      // background still fills the gesture area, no white gap), while SafeArea
+      // lifts the actual NavigationBar clear of it.
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
           border: Border(top: BorderSide(color: AppColors.border)),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 12,
-                offset: const Offset(0, -2)),
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, -2),
+            ),
           ],
         ),
-        child: NavigationBarTheme(
-          data: NavigationBarThemeData(
-            labelTextStyle: WidgetStateProperty.resolveWith((states) {
-              final on = states.contains(WidgetState.selected);
-              return TextStyle(
-                fontSize: 11.5,
-                fontWeight: on ? FontWeight.w700 : FontWeight.w500,
-                color: on ? AppColors.brand600 : AppColors.textMuted,
-              );
-            }),
-          ),
-          child: NavigationBar(
-            selectedIndex: index,
-            onDestinationSelected: (i) {
-              ref.read(shellIndexProvider.notifier).state = i;
-              // Signal the kept-alive tab screens to refetch fresh data.
-              ref.read(tabRefreshProvider.notifier).state++;
-            },
-            backgroundColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            elevation: 0,
-            height: 66,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            indicatorColor: AppColors.brand50,
-            destinations: dests
-                .map((d) => NavigationDestination(
+        child: SafeArea(
+          top: false,
+          child: NavigationBarTheme(
+            data: NavigationBarThemeData(
+              labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                final on = states.contains(WidgetState.selected);
+                return TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                  color: on ? AppColors.brand600 : AppColors.textMuted,
+                );
+              }),
+            ),
+            child: NavigationBar(
+              selectedIndex: index,
+              onDestinationSelected: (i) {
+                ref.read(shellIndexProvider.notifier).state = i;
+                // Signal the kept-alive tab screens to refetch fresh data.
+                ref.read(tabRefreshProvider.notifier).state++;
+              },
+              backgroundColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              height: 66,
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+              indicatorColor: AppColors.brand50,
+              destinations: dests
+                  .map(
+                    (d) => NavigationDestination(
                       icon: Icon(d.icon, color: AppColors.textMuted),
                       selectedIcon: Icon(d.icon, color: AppColors.brand600),
                       label: d.label,
-                    ))
-                .toList(),
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
         ),
       ),
