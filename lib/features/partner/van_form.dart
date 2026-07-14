@@ -9,7 +9,6 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/location_picker_screen.dart';
 import '../../widgets/searchable_picker.dart';
-import 'availability_editor.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -369,20 +368,10 @@ class _VanFormState extends ConsumerState<VanForm> {
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
               onChanged: _saveAutoAssign,
             ),
-            if (_isEdit) ...[
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => AvailabilityEditor(
-                        ownerType: 'van',
-                        ownerId: widget.van!.id,
-                        title: '${widget.van!.name} · hours'))),
-                icon: const Icon(Icons.schedule, size: 18),
-                label: const Text('Working hours'),
-                style: OutlinedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(46)),
-              ),
-            ],
+            // No "Working hours" here. A van doesn't work shifts — the crew and
+            // driver assigned to it do, and their availability is what dispatch
+            // actually reads. The partner web portal has no van-hours UI either;
+            // this was app-only cruft offering a setting that means nothing.
             const SizedBox(height: 8),
           ],
         ),
