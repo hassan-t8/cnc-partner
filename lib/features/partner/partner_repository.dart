@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/config/env.dart';
 import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
 import '../bookings/models.dart';
@@ -464,7 +465,27 @@ class PartnerRepository {
       'paymentMethod': paymentMethod,
       'clientRequestId': clientRequestId,
     });
-    return DepositInit.fromJson(pickMap(res.data));
+
+    final map = Map<String, dynamic>.from(pickMap(res.data));
+
+    // The backend's DEDUPED branch (an existing pending deposit, returned when
+    // the same clientRequestId is replayed) omits `shopperResultUrl` — only the
+    // fresh branch sends it. Handing HyperPay an empty result URL renders
+    // `<form action="">` and the widget rejects the card with "invalid or
+    // missing parameters" the moment you press Pay.
+    //
+    // The URL is deterministic server-side
+    // (`{base}/partner-deposit/hyperpay-callback?depositId={id}`) and depositId
+    // comes back on BOTH branches, so rebuild it rather than shipping a broken
+    // checkout page.
+    final resultUrl = (map['shopperResultUrl'] ?? '').toString().trim();
+    if (resultUrl.isEmpty && map['depositId'] != null) {
+      final base = Env.apiUrl.replaceAll(RegExp(r'/+$'), '');
+      map['shopperResultUrl'] =
+          '$base/partner-deposit/hyperpay-callback?depositId=${map['depositId']}';
+    }
+
+    return DepositInit.fromJson(map);
   }
 
   /// `GET /partner-deposit/me` — this partner's deposits, newest first.

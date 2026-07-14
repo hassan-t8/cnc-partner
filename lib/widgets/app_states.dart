@@ -30,6 +30,61 @@ class LoadingList extends StatelessWidget {
   }
 }
 
+/// Loading placeholder shaped like the Partner dashboard.
+///
+/// The dashboard used a generic `LoadingList(count: 4, height: 96)` — four
+/// identical rows, which matched nothing on the real screen and left the lower
+/// half blank. This mirrors the actual layout (greeting → KPI row → earnings
+/// card → offers) so the transition to real content doesn't jump.
+class DashboardSkeleton extends StatelessWidget {
+  const DashboardSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget box(double h, {double? w, double r = 12}) => Container(
+          height: h,
+          width: w,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(r),
+          ),
+        );
+
+    return Shimmer.fromColors(
+      baseColor: Colors.grey.shade200,
+      highlightColor: Colors.grey.shade100,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Greeting
+          box(24, w: 180, r: 8),
+          const SizedBox(height: 18),
+          // KPI row (Today / Week / Earnings)
+          Row(
+            children: [
+              Expanded(child: box(84)),
+              const SizedBox(width: 12),
+              Expanded(child: box(84)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Weekly earnings card
+          box(104),
+          const SizedBox(height: 22),
+          // "Pending offers" section heading
+          box(16, w: 140, r: 8),
+          const SizedBox(height: 12),
+          // Offer cards — enough to fill the rest of the screen.
+          for (var i = 0; i < 3; i++) ...[
+            box(96),
+            const SizedBox(height: 12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;

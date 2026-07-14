@@ -145,7 +145,10 @@ class _PartnerDashboardScreenState
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: _loading
-            ? const LoadingList(count: 4, height: 96)
+            // Shaped like the real dashboard (greeting → KPIs → earnings →
+            // offers). The old generic 4x96 list matched nothing on screen and
+            // left the bottom half empty.
+            ? const DashboardSkeleton()
             : (_error && _data == null)
                 ? ListView(children: [
                     const SizedBox(height: 60),

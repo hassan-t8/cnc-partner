@@ -38,13 +38,14 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
   Worker _apply(Worker w) => _overrides[w.id] ?? w;
 
   void _reload() => setState(() {
-        _overrides.clear();
-        _future = ref.read(partnerRepositoryProvider).workers();
-      });
+    _overrides.clear();
+    _future = ref.read(partnerRepositoryProvider).workers();
+  });
 
   Future<void> _openForm([Worker? w]) async {
-    await Navigator.of(context).push<bool>(
-        MaterialPageRoute(builder: (_) => WorkerForm(worker: w)));
+    await Navigator.of(
+      context,
+    ).push<bool>(MaterialPageRoute(builder: (_) => WorkerForm(worker: w)));
     // Always refresh — the form may have saved the auto-assign toggle
     // immediately without returning a "saved" flag.
     if (mounted) _reload();
@@ -58,8 +59,9 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
         content: Text('Remove "${w.name}"? This can\'t be undone.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.rose),
             onPressed: () => Navigator.pop(ctx, true),
@@ -92,7 +94,8 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => _AccountSheet(
         worker: w,
         repo: repo,
@@ -106,7 +109,8 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       context: context,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -114,16 +118,19 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-              child: Text('Set status · ${w.name}',
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w800)),
+              child: Text(
+                'Set status · ${w.name}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
             for (final e in _statusLabels.entries)
               ListTile(
                 title: Text(e.value),
                 trailing: w.status == e.key
-                    ? const Icon(Icons.check_rounded,
-                        color: AppColors.brand600)
+                    ? const Icon(Icons.check_rounded, color: AppColors.brand600)
                     : null,
                 onTap: () => Navigator.pop(context, e.key),
               ),
@@ -165,9 +172,9 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     // Optimistic: flip the switch right away.
     setState(() => _overrides[w.id] = w.copyWith(acceptAutoAssign: value));
     try {
-      await ref
-          .read(partnerRepositoryProvider)
-          .updateWorker(w.id, {'acceptAutoAssign': value});
+      await ref.read(partnerRepositoryProvider).updateWorker(w.id, {
+        'acceptAutoAssign': value,
+      });
       AppToast.success(value ? 'Auto-assign on' : 'Auto-assign off');
     } on ApiException catch (e) {
       setState(() {
@@ -199,8 +206,12 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
         }
       }
       if (q.isEmpty) return true;
-      return [w.name, w.code, w.phone, w.email]
-          .any((s) => s.toLowerCase().contains(q));
+      return [
+        w.name,
+        w.code,
+        w.phone,
+        w.email,
+      ].any((s) => s.toLowerCase().contains(q));
     }).toList();
   }
 
@@ -227,19 +238,27 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                 _status = m['status'] ?? 'all';
               }),
               groups: const [
-                FilterGroup(key: 'role', label: 'Role', options: [
-                  FilterOption('all', 'All roles'),
-                  FilterOption('crew', 'Crew'),
-                  FilterOption('driver', 'Driver'),
-                ]),
-                FilterGroup(key: 'status', label: 'Status', options: [
-                  FilterOption('all', 'All statuses'),
-                  FilterOption('active', 'Active'),
-                  FilterOption('not_working', 'Not working'),
-                  FilterOption('pending', 'Pending'),
-                  FilterOption('on_leave', 'On leave'),
-                  FilterOption('suspended', 'Suspended'),
-                ]),
+                FilterGroup(
+                  key: 'role',
+                  label: 'Role',
+                  options: [
+                    FilterOption('all', 'All roles'),
+                    FilterOption('crew', 'Crew'),
+                    FilterOption('driver', 'Driver'),
+                  ],
+                ),
+                FilterGroup(
+                  key: 'status',
+                  label: 'Status',
+                  options: [
+                    FilterOption('all', 'All statuses'),
+                    FilterOption('active', 'Active'),
+                    FilterOption('not_working', 'Not working'),
+                    FilterOption('pending', 'Pending'),
+                    FilterOption('on_leave', 'On leave'),
+                    FilterOption('suspended', 'Suspended'),
+                  ],
+                ),
               ],
             ),
           ),
@@ -254,17 +273,22 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                   }
                   if (snap.hasError) {
                     return ErrorRetry(
-                        message: 'Couldn\'t load workers.', onRetry: _reload);
+                      message: 'Couldn\'t load workers.',
+                      onRetry: _reload,
+                    );
                   }
                   final rows = _filter(snap.data ?? const []);
                   if (rows.isEmpty) {
-                    return ListView(children: const [
-                      SizedBox(height: 80),
-                      EmptyState(
+                    return ListView(
+                      children: const [
+                        SizedBox(height: 80),
+                        EmptyState(
                           icon: Icons.groups_outlined,
                           title: 'No workers',
-                          subtitle: 'Add workers from the web portal.'),
-                    ]);
+                          subtitle: 'Add workers from the web portal.',
+                        ),
+                      ],
+                    );
                   }
                   return ListView.separated(
                     padding: const EdgeInsets.all(16),
@@ -294,7 +318,10 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
       tween: Tween(begin: 0, end: 1),
       builder: (context, t, child) => Opacity(
         opacity: t,
-        child: Transform.translate(offset: Offset(0, (1 - t) * 14), child: child),
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * 14),
+          child: child,
+        ),
       ),
       child: Container(
         decoration: BoxDecoration(
@@ -342,182 +369,235 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                       child: Text(
                         (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 20),
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 20,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(w.name.isEmpty ? 'Worker' : w.name,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            w.name.isEmpty ? 'Worker' : w.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontWeight: FontWeight.w800, fontSize: 16)),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Icon(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
                                 isDriver
                                     ? Icons.directions_car_filled
                                     : Icons.cleaning_services,
                                 size: 13,
-                                color: AppColors.textFaint),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
+                                color: AppColors.textFaint,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
                                   w.code.isEmpty
                                       ? roleLabel
                                       : '$roleLabel · ${w.code}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                      color: AppColors.textMuted,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600)),
-                            ),
-                            if (w.ratingCount > 0) ...[
-                              const SizedBox(width: 8),
-                              Icon(Icons.star_rounded,
-                                  size: 14, color: AppColors.star),
-                              const SizedBox(width: 2),
-                              Text(w.ratingAvg.toStringAsFixed(1),
+                                    color: AppColors.textMuted,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              if (w.ratingCount > 0) ...[
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.star_rounded,
+                                  size: 14,
+                                  color: AppColors.star,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  w.ratingAvg.toStringAsFixed(1),
                                   style: const TextStyle(
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w700)),
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ],
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  GestureDetector(
-                    onTap: () => _changeStatus(w),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        StatusBadge(w.displayStatus, worker: true),
-                        Icon(Icons.expand_more,
-                            size: 16, color: AppColors.textFaint),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // ── Info block: phone · address · auto-assign ─────────
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.bg,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    _infoRow(Icons.phone_outlined,
-                        w.phone.isEmpty ? 'No phone' : w.phone),
-                    if (w.email.isNotEmpty)
-                      _infoRow(Icons.mail_outline_rounded, w.email),
-                    if (w.homeAddress.isNotEmpty)
-                      _infoRow(Icons.place_outlined, w.homeAddress),
-                    Divider(height: 12, color: AppColors.border),
-                    Row(
-                      children: [
-                        Icon(Icons.bolt_outlined,
-                            size: 16, color: AppColors.brand600),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text('Auto-assign new bookings',
-                              style: TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w600)),
-                        ),
-                        SizedBox(
-                          height: 28,
-                          child: Switch(
-                            value: w.acceptAutoAssign,
-                            activeThumbColor: AppColors.brand600,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                            onChanged: (v) => _toggleAutoAssign(w, v),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => _changeStatus(w),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          StatusBadge(w.displayStatus, worker: true),
+                          Icon(
+                            Icons.expand_more,
+                            size: 16,
+                            color: AppColors.textFaint,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 12),
-              // ── Schedule (recurring shifts + leaves) ──────────────
-              SizedBox(
-                width: double.infinity,
-                child: _actionBtn(
-                    Icons.calendar_month_outlined, 'Schedule + leaves', () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => PartnerScheduleScreen(initialWorker: w)));
-                }),
-              ),
-              const SizedBox(height: 8),
-              // ── Actions ───────────────────────────────────────────
-              Row(
-                children: [
-                  Expanded(
-                      child: _actionBtn(Icons.key_outlined, 'Account',
-                          () => _manageAccount(w))),
-                  const SizedBox(width: 8),
-                  Expanded(
+                const SizedBox(height: 12),
+                // ── Info block: phone · address · auto-assign ─────────
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      _infoRow(
+                        Icons.phone_outlined,
+                        w.phone.isEmpty ? 'No phone' : w.phone,
+                      ),
+                      if (w.email.isNotEmpty)
+                        _infoRow(Icons.mail_outline_rounded, w.email),
+                      if (w.homeAddress.isNotEmpty)
+                        _infoRow(Icons.place_outlined, w.homeAddress),
+                      Divider(height: 12, color: AppColors.border),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.bolt_outlined,
+                            size: 16,
+                            color: AppColors.brand600,
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Auto-assign new bookings',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            height: 28,
+                            child: Switch(
+                              value: w.acceptAutoAssign,
+                              activeThumbColor: AppColors.brand600,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
+                              onChanged: (v) => _toggleAutoAssign(w, v),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // ── Schedule (recurring shifts + leaves) ──────────────
+                SizedBox(
+                  width: double.infinity,
+                  child: _actionBtn(
+                    Icons.calendar_month_outlined,
+                    'Schedule + leaves',
+                    () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              PartnerScheduleScreen(initialWorker: w),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // ── Actions ───────────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
                       child: _actionBtn(
-                          Icons.edit_outlined, 'Edit', () => _openForm(w))),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: _actionBtn(Icons.delete_outline, 'Delete',
-                          () => _delete(w),
-                          danger: true)),
-                ],
-              ),
-            ],
+                        Icons.key_outlined,
+                        'Account',
+                        () => _manageAccount(w),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _actionBtn(
+                        Icons.edit_outlined,
+                        'Edit',
+                        () => _openForm(w),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _actionBtn(
+                        Icons.delete_outline,
+                        'Delete',
+                        () => _delete(w),
+                        danger: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
 
   Widget _infoRow(IconData icon, String text) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(
-          children: [
-            Icon(icon, size: 15, color: AppColors.textFaint),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(text,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: AppColors.textMuted, fontSize: 13)),
-            ),
-          ],
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      children: [
+        Icon(icon, size: 15, color: AppColors.textFaint),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+          ),
         ),
-      );
+      ],
+    ),
+  );
 
-  Widget _actionBtn(IconData icon, String label, VoidCallback onTap,
-          {bool danger = false}) =>
-      OutlinedButton.icon(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: danger ? AppColors.rose : AppColors.textMuted,
-          side: BorderSide(color: AppColors.border),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-        ),
-        icon: Icon(icon, size: 16),
-        label: Text(label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-      );
+  Widget _actionBtn(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    bool danger = false,
+  }) => OutlinedButton.icon(
+    onPressed: onTap,
+    style: OutlinedButton.styleFrom(
+      foregroundColor: danger ? AppColors.rose : AppColors.textMuted,
+      side: BorderSide(color: AppColors.border),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+    icon: Icon(icon, size: 16),
+    label: Text(
+      label,
+      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+    ),
+  );
 }
 
 /// Worker account sheet: shows login status and lets the partner set a password
@@ -548,15 +628,18 @@ class _AccountSheetState extends State<_AccountSheet> {
   @override
   void initState() {
     super.initState();
-    widget.repo.workerLoginInfo(widget.worker.id).then((m) {
-      if (!mounted) return;
-      setState(() {
-        _info = m;
-        _loading = false;
-      });
-    }).catchError((_) {
-      if (mounted) setState(() => _loading = false);
-    });
+    widget.repo
+        .workerLoginInfo(widget.worker.id)
+        .then((m) {
+          if (!mounted) return;
+          setState(() {
+            _info = m;
+            _loading = false;
+          });
+        })
+        .catchError((_) {
+          if (mounted) setState(() => _loading = false);
+        });
   }
 
   @override
@@ -631,166 +714,210 @@ class _AccountSheetState extends State<_AccountSheet> {
   Widget build(BuildContext context) {
     final hasLogin = _info?['hasLogin'] == true;
     final email = '${_info?['email'] ?? widget.worker.email}';
+    // Must scroll: opening the keyboard for the password field shrinks the
+    // available height (viewInsets) while this fixed Column keeps its size —
+    // straight into a bottom overflow. Cap the sheet and scroll the content.
     return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${widget.worker.name} · account',
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.9,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${widget.worker.name} · account',
                   style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: SizedBox(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (_loading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: SizedBox(
                       height: 18,
                       width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2.2)),
-                )
-              else
-                Row(
-                  children: [
-                    Icon(hasLogin ? Icons.check_circle : Icons.info_outline,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    ),
+                  )
+                else
+                  Row(
+                    children: [
+                      Icon(
+                        hasLogin ? Icons.check_circle : Icons.info_outline,
                         size: 15,
-                        color:
-                            hasLogin ? AppColors.brand600 : AppColors.amber),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
+                        color: hasLogin ? AppColors.brand600 : AppColors.amber,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
                           hasLogin
                               ? 'Has login · ${email.isEmpty ? '—' : email}'
                               : 'No login yet${email.isEmpty ? '' : ' · $email'}',
                           style: TextStyle(
-                              color: AppColors.textMuted, fontSize: 12.5)),
+                            color: AppColors.textMuted,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      'STATUS',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _statusColor(_status).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _statusText[_status] ?? _status,
+                        style: TextStyle(
+                          color: _statusColor(_status),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Text('STATUS',
-                      style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.4)),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _statusColor(_status).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(_statusText[_status] ?? _status,
-                        style: TextStyle(
-                            color: _statusColor(_status),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Text('Set password',
-                  style: TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _pw,
-                obscureText: _obscure,
-                decoration: InputDecoration(
-                  hintText: 'New password (min 6)',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    icon: Icon(_obscure
-                        ? Icons.visibility_outlined
-                        : Icons.visibility_off_outlined),
-                    onPressed: () => setState(() => _obscure = !_obscure),
-                  ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Set password',
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: ElevatedButton(
-                  onPressed: _busy ? null : _setPassword,
-                  child: const Text('Set password'),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: OutlinedButton.icon(
-                  onPressed: (_busy || email.isEmpty) ? null : _sendReset,
-                  icon: const Icon(Icons.email_outlined, size: 18),
-                  label: Text(email.isEmpty
-                      ? 'No email on file'
-                      : 'Email a reset link'),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text('ACCOUNT STATUS',
-                  style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.4)),
-              const SizedBox(height: 10),
-              // On leave ⇄ active (operational only — login stays active).
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: OutlinedButton(
-                  onPressed: _busy
-                      ? null
-                      : () => _changeStatus(
-                          _status == 'on_leave' ? 'active' : 'on_leave'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.amber,
-                    side: BorderSide(color: AppColors.amber),
-                  ),
-                  child: Text(_status == 'on_leave'
-                      ? 'End leave (set active)'
-                      : 'Put on leave'),
-                ),
-              ),
-              const SizedBox(height: 10),
-              // Suspend ⇄ reactivate (blocks login + auto-dispatch).
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: _status == 'suspended'
-                    ? ElevatedButton.icon(
-                        onPressed: _busy ? null : () => _changeStatus('active'),
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.brand600),
-                        icon: const Icon(Icons.check_circle_outline, size: 18),
-                        label: const Text('Reactivate account'),
-                      )
-                    : ElevatedButton.icon(
-                        onPressed:
-                            _busy ? null : () => _changeStatus('suspended'),
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.rose),
-                        icon: const Icon(Icons.block, size: 18),
-                        label: const Text('Suspend account'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _pw,
+                  obscureText: _obscure,
+                  decoration: InputDecoration(
+                    hintText: 'New password (min 6)',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
                       ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Suspended workers can't log in and are excluded from "
-                'auto-dispatch. Leave is operational only — login stays active.',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 11.5),
-              ),
-            ],
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: _busy ? null : _setPassword,
+                    child: const Text('Set password'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: OutlinedButton.icon(
+                    onPressed: (_busy || email.isEmpty) ? null : _sendReset,
+                    icon: const Icon(Icons.email_outlined, size: 18),
+                    label: Text(
+                      email.isEmpty ? 'No email on file' : 'Email a reset link',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'ACCOUNT STATUS',
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // On leave ⇄ active (operational only — login stays active).
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: OutlinedButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _changeStatus(
+                            _status == 'on_leave' ? 'active' : 'on_leave',
+                          ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.amber,
+                      side: BorderSide(color: AppColors.amber),
+                    ),
+                    child: Text(
+                      _status == 'on_leave'
+                          ? 'End leave (set active)'
+                          : 'Put on leave',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // Suspend ⇄ reactivate (blocks login + auto-dispatch).
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: _status == 'suspended'
+                      ? ElevatedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => _changeStatus('active'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.brand600,
+                          ),
+                          icon: const Icon(
+                            Icons.check_circle_outline,
+                            size: 18,
+                          ),
+                          label: const Text('Reactivate account'),
+                        )
+                      : ElevatedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => _changeStatus('suspended'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.rose,
+                          ),
+                          icon: const Icon(Icons.block, size: 18),
+                          label: const Text('Suspend account'),
+                        ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "Suspended workers can't log in and are excluded from "
+                  'auto-dispatch. Leave is operational only — login stays active.',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 11.5),
+                ),
+              ],
+            ),
           ),
         ),
       ),
