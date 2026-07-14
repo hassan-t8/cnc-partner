@@ -304,21 +304,30 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 1; i <= 5; i++)
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      onPressed: submitting ? null : () => setD(() => stars = i),
-                      icon: Icon(
-                          i <= stars
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
-                          color: AppColors.amber,
-                          size: 34),
-                    ),
-                ],
+              // IconButton keeps a 48px minimum touch target even with zero
+              // padding — five of them need 240px, more than an AlertDialog's
+              // ~232px of content width on a phone, so the row overflowed right.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 1; i <= 5; i++)
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                            minWidth: 40, minHeight: 44),
+                        onPressed:
+                            submitting ? null : () => setD(() => stars = i),
+                        icon: Icon(
+                            i <= stars
+                                ? Icons.star_rounded
+                                : Icons.star_border_rounded,
+                            color: AppColors.amber,
+                            size: 32),
+                      ),
+                  ],
+                ),
               ),
               TextField(
                 controller: comment,
@@ -972,17 +981,49 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       );
     }
     // De-duplicate: the API can return the same worker+role more than once.
+    //
+    // The key used to be `workerName|role`, which silently DROPPED team members:
+    // two assignments with an empty worker name and the same role (a van/driver
+    // slot not yet named, say) collapsed into one. Key on the worker id where we
+    // have one, and fall back to the assignment id so a distinct row is never
+    // discarded.
     final seen = <String>{};
     final unique = [
       for (final a in team)
-        if (seen.add('${a.workerName.toLowerCase()}|${a.role}')) a
+        if (seen.add(a.workerId != null ? 'w${a.workerId}|${a.role}' : 'a${a.id}'))
+          a
     ];
+
+    // Accepted first — that's the crew actually turning up. Anything downstream
+    // of acceptance (en route, arrived, in progress, completed) implies accepted
+    // and ranks with it. Pending sits next, and declined/cancelled/no-show sink
+    // to the bottom. Sorted with the original index as a tiebreak so the order
+    // inside each group stays stable (List.sort isn't stable on its own).
+    int rank(BookingAssignment a) {
+      final s = a.status.toLowerCase().trim();
+      if (const ['declined', 'cancelled', 'canceled', 'rejected', 'no_show']
+          .contains(s)) {
+        return 2;
+      }
+      if (const ['pending', 'pending_acceptance', 'assigned', 'offered']
+          .contains(s)) {
+        return 1;
+      }
+      return 0; // accepted + every post-acceptance state
+    }
+
+    final ordered = unique.indexed.toList()
+      ..sort((a, b) {
+        final byRank = rank(a.$2).compareTo(rank(b.$2));
+        return byRank != 0 ? byRank : a.$1.compareTo(b.$1);
+      });
+
     return Column(
       children: [
-        for (var i = 0; i < unique.length; i++)
+        for (var i = 0; i < ordered.length; i++)
           Padding(
-            padding: EdgeInsets.only(bottom: i == unique.length - 1 ? 0 : 8),
-            child: _teamRow(unique[i], canManageTeam),
+            padding: EdgeInsets.only(bottom: i == ordered.length - 1 ? 0 : 8),
+            child: _teamRow(ordered[i].$2, canManageTeam),
           ),
       ],
     );

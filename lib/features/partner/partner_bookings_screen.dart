@@ -469,21 +469,32 @@ class _PartnerBookingsScreenState
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 1; i <= 5; i++)
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      onPressed: submitting ? null : () => setD(() => stars = i),
-                      icon: Icon(
-                          i <= stars
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
-                          color: AppColors.amber,
-                          size: 34),
-                    ),
-                ],
+              // IconButton keeps a 48px minimum touch target even with zero
+              // padding, so five of them need 240px — more than an AlertDialog's
+              // ~232px of content width on a phone, which overflowed to the
+              // right. Constrain them, and wrap in a FittedBox so the row can
+              // never overflow at any width or text scale.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 1; i <= 5; i++)
+                      IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                            minWidth: 40, minHeight: 44),
+                        onPressed:
+                            submitting ? null : () => setD(() => stars = i),
+                        icon: Icon(
+                            i <= stars
+                                ? Icons.star_rounded
+                                : Icons.star_border_rounded,
+                            color: AppColors.amber,
+                            size: 32),
+                      ),
+                  ],
+                ),
               ),
               TextField(
                 controller: comment,
