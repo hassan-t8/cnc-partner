@@ -200,8 +200,12 @@ class _WorkerServicesPickerPageState extends State<_WorkerServicesPickerPage> {
                 ),
               ],
             ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      // viewPadding, not SafeArea — SafeArea reads MediaQuery.padding, which an
+      // ancestor that already consumed the inset zeroes out, leaving the button
+      // sitting on the Android 15 gesture bar.
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.fromLTRB(
+            16, 8, 16, 12 + MediaQuery.viewPaddingOf(context).bottom),
         child: SizedBox(
           height: 50,
           child: ElevatedButton(

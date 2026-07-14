@@ -231,7 +231,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
             _field('First name *', _first,
                 validator: (v) => (v ?? '').trim().isEmpty ? 'Required' : null),
@@ -551,8 +551,14 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
         ),
       ),
       // Sticky save bar — always visible (no need to scroll to the bottom).
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      //
+      // Pad by viewPadding, NOT SafeArea. SafeArea reads MediaQuery.padding,
+      // which any ancestor that already consumed the inset zeroes out — leaving
+      // only the 12px minimum and parking the button right on top of the Android
+      // 15 gesture bar. viewPadding always reports the real system inset.
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.fromLTRB(
+            16, 8, 16, 12 + MediaQuery.viewPaddingOf(context).bottom),
         child: SizedBox(
           height: 50,
           child: ElevatedButton(
