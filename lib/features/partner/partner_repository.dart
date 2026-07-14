@@ -357,8 +357,17 @@ class PartnerRepository {
   }
 
   // ----- earnings -----
+  /// Wallet ledger for the Earnings screen.
+  ///
+  /// The backend defaults this endpoint to 50 rows and clamps it at 200
+  /// (settlementController: `min(200, query.limit || 50)`). Without an explicit
+  /// limit the app was reading only the newest 50 rows, so the Settled tab, the
+  /// pending-clearance list and the period cash/tips totals were all computed
+  /// off a partial ledger — showing different money than the web, which asks for
+  /// the full 200.
   Future<WalletStatement> wallet(int partnerId) async {
-    final res = await _api.get('/settlement/wallet/$partnerId/statement');
+    final res = await _api.get('/settlement/wallet/$partnerId/statement',
+        query: {'limit': 200});
     final data = pickMap(res.data);
     final w = data['wallet'] is Map
         ? Map<String, dynamic>.from(data['wallet'])

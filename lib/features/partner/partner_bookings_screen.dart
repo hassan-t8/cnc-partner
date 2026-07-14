@@ -8,6 +8,7 @@ import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
 import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/util/request_id.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
@@ -331,8 +332,7 @@ class _PartnerBookingsScreenState
                 try {
                   final r = await repo.partnerUnassign(b.id,
                       reason: reason,
-                      clientRequestId:
-                          'app-${DateTime.now().microsecondsSinceEpoch}');
+                      clientRequestId: newRequestId('unassign'));
                   return (r, null);
                 } on ApiException catch (e) {
                   return (null, e.message);

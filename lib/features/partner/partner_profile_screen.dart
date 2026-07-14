@@ -40,6 +40,11 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
   final List<_BankEntry> _banks = [];
   List<String> _phones = ['+971'];
   String _status = 'active';
+
+  /// suspended / terminated are set by CNC admins, not the partner. When the
+  /// account is in one of those states the control is read-only (web parity) and
+  /// the status is never included in the save payload.
+  bool get _statusLocked => _status == 'suspended' || _status == 'terminated';
   bool _autoAssign = true;
   int? _zoneId;
   List<int> _serviceZoneIds = const [];
@@ -102,7 +107,11 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
     _contact.text = p.contactPerson;
     _website.text = p.website;
     _phones = p.phones.isNotEmpty ? List<String>.from(p.phones) : ['+971'];
-    _status = p.status == 'not_working' ? 'not_working' : 'active';
+    // Keep the server's real status. Coercing anything that wasn't
+    // 'not_working' to 'active' meant opening a SUSPENDED partner's profile and
+    // saving silently reactivated them. suspended/terminated are admin-only —
+    // preserve them and lock the control (see [_statusLocked]).
+    _status = p.status.trim().isEmpty ? 'active' : p.status.trim();
     _autoAssign = p.acceptAutoAssign;
     _zoneId = p.primaryZoneId;
     _serviceZoneIds = p.serviceZoneIds;
@@ -153,7 +162,9 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
       'partnerName': _name.text.trim(),
       'contactPerson': _contact.text.trim(),
       'partnerWebsite': _website.text.trim(),
-      'status': _status,
+      // suspended / terminated are admin-controlled — never post them back from
+      // the partner's own profile, or a save would attempt to un-suspend.
+      if (!_statusLocked) 'status': _status,
       'acceptAutoAssign': _autoAssign,
       if (_zoneId != null) 'primaryZoneId': _zoneId,
       'serviceZoneIds':
@@ -777,11 +788,48 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
         ),
         const SizedBox(height: 14),
         _editLabel('Status'),
-        Row(children: [
-          _statusChip('active', 'Active'),
-          const SizedBox(width: 8),
-          _statusChip('not_working', 'Not working'),
-        ]),
+        if (_statusLocked)
+          // Admin-controlled — read-only, with the reason (web parity).
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.amber.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.amber.withOpacity(0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_outline, size: 18, color: AppColors.amber),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _status == 'suspended' ? 'Suspended' : 'Terminated',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 13.5),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Your status is admin-controlled. Contact CNC support '
+                        'to change it.',
+                        style: TextStyle(
+                            fontSize: 11.5, color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Row(children: [
+            _statusChip('active', 'Active'),
+            const SizedBox(width: 8),
+            _statusChip('not_working', 'Not working'),
+          ]),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           value: _autoAssign,

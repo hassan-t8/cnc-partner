@@ -1,4 +1,4 @@
-import 'dart:math';
+import '../../core/util/request_id.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,11 +60,14 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
   double get _amountValue => double.tryParse(_amount.text.trim()) ?? 0;
   bool get _canSubmit => !_busy && _amountValue > 0;
 
-  static String _newRequestId() {
-    final ts = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-    final r = Random().nextInt(1 << 32).toRadixString(36);
-    return 'deposit-$ts-$r';
-  }
+  /// Idempotency key for this deposit attempt.
+  ///
+  /// Minted ONCE per sheet (as the withdraw sheet already does). It used to be
+  /// called inline at the request site, so a retry after a network drop sent a
+  /// FRESH id — the server could not dedupe and opened a second pending deposit
+  /// plus a second HyperPay checkout. Reusing the same id lets the server
+  /// re-open the existing checkout instead.
+  late final String _clientRequestId = newRequestId('deposit');
 
   Future<void> _start() async {
     if (!_canSubmit) return;
@@ -73,13 +76,13 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
       _error = null;
     });
     try {
-      // Minted per attempt. If the network drops after the server created the
-      // checkout, retrying with the same id re-opens that one (deduped) rather
+      // Stable across retries: if the network drops after the server created
+      // the checkout, resending the SAME id re-opens that one (deduped) rather
       // than starting a second.
       final init = await ref.read(partnerRepositoryProvider).initiateDeposit(
             amount: _amountValue,
             paymentMethod: _method,
-            clientRequestId: _newRequestId(),
+            clientRequestId: _clientRequestId,
           );
       if (!mounted) return;
 

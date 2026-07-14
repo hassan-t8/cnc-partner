@@ -1,4 +1,4 @@
-import 'dart:math';
+import '../../core/util/request_id.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -57,11 +57,7 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
   bool _busy = false;
   String? _error;
 
-  static String _newRequestId() {
-    final ts = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-    final r = Random().nextInt(1 << 32).toRadixString(36);
-    return 'withdraw-$ts-$r';
-  }
+  static String _newRequestId() => newRequestId('withdraw');
 
   @override
   void initState() {
