@@ -704,26 +704,51 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   // ---------------- Tabs ----------------
   Widget _tabs(int upcomingCount, int settledCount, int depositsCount,
       int withdrawalsCount) {
-    // Four segments no longer fit as equal Expanded thirds on a phone — the
-    // labels would ellipsise to "Withdraw…". The strip scrolls horizontally
-    // instead, so every tab keeps its full label and count.
+    // All four segments must be VISIBLE. Laying them out side by side as
+    // "Label (n)" doesn't fit on a phone, and the previous fix — letting the
+    // strip scroll — just hid Withdrawals off the right edge with no hint that
+    // anything was there. A tab you can't see is a tab that doesn't exist.
+    //
+    // Stacking the count over the label makes each segment narrow enough that
+    // four fit as equal columns, so nothing is off-screen and nothing scrolls.
     Widget seg(String val, String label, int count) {
       final on = _tab == val;
-      return GestureDetector(
-        onTap: () => setState(() => _tab = val),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: on ? AppColors.brand600 : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
+      final fg = on ? Colors.white : AppColors.textMuted;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _tab = val),
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 2),
+            decoration: BoxDecoration(
+              color: on ? AppColors.brand600 : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$count',
+                    maxLines: 1,
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        height: 1.1,
+                        color: fg)),
+                const SizedBox(height: 1),
+                // Shrink rather than ellipsise, so "Withdrawals" stays readable
+                // at any width or text scale.
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(label,
+                      maxLines: 1,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: fg)),
+                ),
+              ],
+            ),
           ),
-          child: Text('$label ($count)',
-              maxLines: 1,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: on ? Colors.white : AppColors.textMuted)),
         ),
       );
     }
@@ -735,19 +760,16 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            seg('upcoming', 'Upcoming', upcomingCount),
-            const SizedBox(width: 4),
-            seg('settled', 'Settled', settledCount),
-            const SizedBox(width: 4),
-            seg('deposits', 'Deposits', depositsCount),
-            const SizedBox(width: 4),
-            seg('withdrawals', 'Withdrawals', withdrawalsCount),
-          ],
-        ),
+      child: Row(
+        children: [
+          seg('upcoming', 'Upcoming', upcomingCount),
+          const SizedBox(width: 4),
+          seg('settled', 'Settled', settledCount),
+          const SizedBox(width: 4),
+          seg('deposits', 'Deposits', depositsCount),
+          const SizedBox(width: 4),
+          seg('withdrawals', 'Withdrawals', withdrawalsCount),
+        ],
       ),
     );
   }
