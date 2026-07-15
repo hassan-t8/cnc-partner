@@ -630,7 +630,9 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
 
   // ---------- EDIT ----------
   Widget _editView(Partner p, List<Zone> zones) {
-    _zoneId ??= zones.isNotEmpty ? zones.first.id : null;
+    // Don't auto-select a zone. This used to silently pick the first zone in the
+    // flat list for a partner who had none, and Save then committed it as their
+    // primary zone. The field is required — make the partner choose explicitly.
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [

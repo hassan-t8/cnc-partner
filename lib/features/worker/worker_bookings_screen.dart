@@ -13,6 +13,7 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/booking_ref_chip.dart';
+import '../../widgets/reason_dialog.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
@@ -89,12 +90,107 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
   @override
   void dispose() {
     _rtDebounce?.cancel();
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
     _rt?.releaseBookingRooms(this);
     _tabs.dispose();
     super.dispose();
   }
 
   int _acting = -1;
+
+  // Client-side search + date-range + pagination — mirrors the web
+  // WorkerBookings page (the backend only filters by status). Shared across
+  // all three tabs, like the web.
+  final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
+  String _q = '';
+  String _range = ''; // '' | this_week | last_week | this_month | ... | custom
+  DateTime? _from;
+  DateTime? _to;
+  int _visible = 10;
+
+  ({DateTime from, DateTime to})? _rangeFor(String preset) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    switch (preset) {
+      case 'this_week':
+      case 'last_week':
+        final monday = today.subtract(Duration(
+            days: (today.weekday - 1) + (preset == 'last_week' ? 7 : 0)));
+        return (from: monday, to: monday.add(const Duration(days: 6)));
+      case 'this_month':
+      case 'last_month':
+        final delta = preset == 'last_month' ? -1 : 0;
+        return (
+          from: DateTime(now.year, now.month + delta, 1),
+          to: DateTime(now.year, now.month + delta + 1, 0),
+        );
+      case 'this_year':
+        return (from: DateTime(now.year, 1, 1), to: DateTime(now.year, 12, 31));
+      default:
+        return null;
+    }
+  }
+
+  /// A row passes the (client-side) search + date filters.
+  bool _matchesFilters(Assignment a) {
+    if (_q.isNotEmpty) {
+      final needle = _q.toLowerCase();
+      if (!a.bookingCode.toLowerCase().contains(needle) &&
+          !(a.bookingId?.toString() ?? '').contains(needle) &&
+          !a.id.toString().contains(needle)) {
+        return false;
+      }
+    }
+    if (_from != null || _to != null) {
+      final d = a.scheduledStart;
+      if (d == null) return false;
+      final day = DateTime(d.year, d.month, d.day);
+      if (_from != null && day.isBefore(_from!)) return false;
+      if (_to != null && day.isAfter(_to!)) return false;
+    }
+    return true;
+  }
+
+  void _onSearchChanged(String v) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      setState(() {
+        _q = v.trim();
+        _visible = 10;
+      });
+    });
+  }
+
+  Future<void> _setRange(String preset) async {
+    if (preset == 'custom') {
+      final picked = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(DateTime.now().year + 1, 12, 31),
+        initialDateRange: (_from != null && _to != null)
+            ? DateTimeRange(start: _from!, end: _to!)
+            : null,
+      );
+      if (picked == null) return;
+      setState(() {
+        _range = 'custom';
+        _from = DateTime(picked.start.year, picked.start.month, picked.start.day);
+        _to = DateTime(picked.end.year, picked.end.month, picked.end.day);
+        _visible = 10;
+      });
+      return;
+    }
+    final r = _rangeFor(preset);
+    setState(() {
+      _range = preset;
+      _from = r?.from;
+      _to = r?.to;
+      _visible = 10;
+    });
+  }
 
   Future<List<Assignment>> _load(String status) =>
       ref.read(workerRepositoryProvider).myBookings(status: status);
@@ -134,6 +230,17 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
           await repo.accept(a.id);
           AppToast.success('Job accepted');
           newStatus = 'accepted';
+          break;
+        case 'decline':
+          final reason =
+              await showDeclineReasonDialog(context, title: 'Decline job');
+          if (reason == null) {
+            setState(() => _acting = -1);
+            return;
+          }
+          await repo.decline(a.id, reason: reason.isEmpty ? null : reason);
+          AppToast.success('Job declined');
+          newStatus = 'declined';
           break;
         case 'start':
           if (!await _start(a)) return; // cancelled — nothing changed
@@ -261,26 +368,110 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabs,
+      body: Column(
         children: [
-          for (var i = 0; i < 3; i++) _list(i),
+          _filterBar(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                for (var i = 0; i < 3; i++) _list(i),
+              ],
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  static const _rangePresets = [
+    ('', 'All dates'),
+    ('this_week', 'Week'),
+    ('last_week', 'Last week'),
+    ('this_month', 'This month'),
+    ('last_month', 'Last month'),
+    ('this_year', 'This year'),
+    ('custom', 'Custom'),
+  ];
+
+  Widget _filterBar() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: TextField(
+            controller: _searchCtrl,
+            onChanged: _onSearchChanged,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Search booking ID',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _q.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        _searchCtrl.clear();
+                        setState(() {
+                          _q = '';
+                          _visible = 10;
+                        });
+                      },
+                    ),
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 40,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: _rangePresets.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final (val, label) = _rangePresets[i];
+              final sel = _range == val;
+              final text = (val == 'custom' &&
+                      sel &&
+                      _from != null &&
+                      _to != null)
+                  ? '${DateFormat('d MMM').format(_from!)} – ${DateFormat('d MMM').format(_to!)}'
+                  : label;
+              return ChoiceChip(
+                label: Text(text, style: const TextStyle(fontSize: 12.5)),
+                selected: sel,
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) => _setRange(val),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+      ],
     );
   }
 
   Widget _list(int i) {
     final base = _data[i];
     // Overlay shared crew patches, then keep only rows that still belong in
-    // this tab (a completed job leaves "Upcoming", etc.).
+    // this tab (a completed job leaves "Upcoming", etc.) and pass the search /
+    // date filters.
     final ov = ref.read(crewOverridesProvider.notifier);
-    final rows = base == null
+    final filtered = base == null
         ? null
         : [
             for (final a in base.map(ov.apply))
-              if (_belongsInTab(i, a.status)) a
+              if (_belongsInTab(i, a.status) && _matchesFilters(a)) a
           ];
+    // Client-side pagination: show the first _visible, with a Load More below.
+    final hasMore = (filtered?.length ?? 0) > _visible;
+    final rows = filtered?.take(_visible).toList();
+    final filtering = _q.isNotEmpty || _from != null || _to != null;
     Widget child;
     if (rows == null) {
       // First load (no cached data yet).
@@ -293,16 +484,31 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
             ])
           : const LoadingList();
     } else if (rows.isEmpty) {
-      child = ListView(children: const [
-        SizedBox(height: 80),
-        EmptyState(icon: Icons.event_note_outlined, title: 'Nothing here yet'),
+      child = ListView(children: [
+        const SizedBox(height: 80),
+        EmptyState(
+            icon: Icons.event_note_outlined,
+            title: filtering ? 'No matching bookings' : 'Nothing here yet',
+            subtitle: filtering ? 'Try a different search or date range.' : null),
       ]);
     } else {
       child = ListView.separated(
         padding: const EdgeInsets.all(16),
-        itemCount: rows.length,
+        itemCount: rows.length + (hasMore ? 1 : 0),
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (_, k) => _row(rows[k]),
+        itemBuilder: (_, k) {
+          if (k >= rows.length) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: OutlinedButton.icon(
+                onPressed: () => setState(() => _visible += 10),
+                icon: const Icon(Icons.expand_more, size: 18),
+                label: Text('Load more (${filtered!.length - rows.length})'),
+              ),
+            );
+          }
+          return _row(rows[k]);
+        },
       );
     }
     return RefreshIndicator(
@@ -427,9 +633,30 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
         ),
       ];
     }
+    Widget outlineBtn(String label, Color color, String action) {
+      final handler = busy ? null : () => _act(a, action);
+      return SizedBox(
+        height: 42,
+        width: double.infinity,
+        child: OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: color,
+            side: BorderSide(color: color.withValues(alpha: 0.6)),
+          ),
+          onPressed: handler,
+          child: Text(label),
+        ),
+      );
+    }
+
     switch (a.status) {
       case 'pending_acceptance':
-        return [const SizedBox(height: 10), btn('Accept', AppColors.brand600, 'accept')];
+        return [
+          const SizedBox(height: 10),
+          btn('Accept', AppColors.brand600, 'accept'),
+          const SizedBox(height: 8),
+          outlineBtn('Decline', AppColors.rose, 'decline'),
+        ];
       case 'accepted':
         return [const SizedBox(height: 10), btn('Start job', AppColors.violet, 'start')];
       case 'in_progress':

@@ -193,7 +193,7 @@ class _RoleShellState extends ConsumerState<RoleShell> {
       dests.add(const _Dest('Route', Icons.map_rounded, DriverRouteScreen()));
       dests.add(
         const _Dest(
-          'Schedule',
+          'Route plan',
           Icons.calendar_month_rounded,
           DriverScheduleScreen(),
         ),
@@ -203,7 +203,7 @@ class _RoleShellState extends ConsumerState<RoleShell> {
       dests.add(const _Dest('Jobs', Icons.checklist_rounded, CrewJobsScreen()));
       dests.add(
         const _Dest(
-          'Schedule',
+          'Shifts',
           Icons.calendar_month_rounded,
           CrewScheduleScreen(),
         ),

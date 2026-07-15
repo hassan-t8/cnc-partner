@@ -1,3 +1,5 @@
+import 'dart:convert' show jsonDecode;
+
 import '../bookings/models.dart' show PartnerBooking;
 
 int? _i(dynamic v) =>
@@ -672,6 +674,16 @@ class Offer {
   final List<String> workerNames;
   final String driverName;
 
+  // Per-service lines for a package booking (a booking can bundle several
+  // services). Was ignored, so a package offer showed only its first service.
+  final List<String> serviceNames;
+  // True when the discount cap floor protected the partner's payout — surfaced
+  // as a trust badge on the offer card (web parity: Requests page).
+  final bool capApplied;
+  // Payout split the web shows in the offer breakdown.
+  final double onlineDue;
+  final double cashHeld;
+
   const Offer({
     required this.id,
     this.bookingId,
@@ -689,7 +701,15 @@ class Offer {
     this.vanName = '',
     this.workerNames = const [],
     this.driverName = '',
+    this.serviceNames = const [],
+    this.capApplied = false,
+    this.onlineDue = 0,
+    this.cashHeld = 0,
   });
+
+  /// Extra service lines beyond the primary [serviceName], for the "+N more".
+  int get extraServiceCount =>
+      serviceNames.length > 1 ? serviceNames.length - 1 : 0;
 
   factory Offer.fromJson(Map<String, dynamic> j) {
     final b = j['booking'] is Map ? Map<String, dynamic>.from(j['booking']) : const {};
@@ -745,7 +765,31 @@ class Offer {
               .toList()
           : const [],
       driverName: personName(snap['driver']),
+      serviceNames: _parseServiceNames(b['bookingServices']),
+      capApplied: _b(b['capApplied']),
+      onlineDue: _d(b['onlineDue']),
+      cashHeld: _d(b['cashHeld']),
     );
+  }
+
+  /// bookingServices is a per-service array (or a JSON string of one). Pull each
+  /// service's display name so a package offer can list every line.
+  static List<String> _parseServiceNames(dynamic raw) {
+    dynamic v = raw;
+    if (v is String && v.trim().isNotEmpty) {
+      try {
+        v = jsonDecode(v);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (v is! List) return const [];
+    return v
+        .whereType<Map>()
+        .map((m) =>
+            _s(m['serviceName'] ?? m['name'] ?? m['service'] ?? m['title']))
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 
   /// True once the acceptance window has closed.

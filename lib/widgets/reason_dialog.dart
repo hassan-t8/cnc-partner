@@ -10,6 +10,7 @@ Future<String?> showDeclineReasonDialog(
   String title = 'Decline',
   String hint = 'Reason (optional)',
   String confirmLabel = 'Decline',
+  Color confirmColor = AppColors.rose,
 }) {
   final ctrl = TextEditingController();
   return showDialog<String>(
@@ -30,7 +31,7 @@ Future<String?> showDeclineReasonDialog(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel')),
         FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: AppColors.rose),
+          style: FilledButton.styleFrom(backgroundColor: confirmColor),
           onPressed: () => Navigator.pop(context, ctrl.text.trim()),
           child: Text(confirmLabel),
         ),

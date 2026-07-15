@@ -279,11 +279,13 @@ class _WorkerBookingDetailScreenState
                     (a.customerPhone ?? '').isNotEmpty) ...[
                   if (a.fullAddress.isNotEmpty) const SizedBox(width: 10),
                   Expanded(
-                    child: _ghost(Icons.call_outlined, 'Call', () {
-                      final phone = (a.partnerPhone ?? '').isNotEmpty
-                          ? a.partnerPhone!
-                          : a.customerPhone!;
-                      launchUrl(Uri.parse('tel:$phone'));
+                    child: _ghost(Icons.call_outlined, 'Call customer', () {
+                      // Crew on the job need the CUSTOMER, not the partner.
+                      final phone = (a.customerPhone ?? '').isNotEmpty
+                          ? a.customerPhone!
+                          : a.partnerPhone!;
+                      launchUrl(
+                          Uri.parse('tel:${phone.replaceAll(' ', '')}'));
                     }),
                   ),
                 ],

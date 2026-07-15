@@ -46,6 +46,14 @@ class BookingRealtime extends Notifier<int> {
     'newBookingPopup',
   ];
 
+  // Wallet events go to a SEPARATE signal so booking-list screens don't refetch
+  // bookings on a deposit/withdraw change. The backend emits these to the
+  // partner's user room (user_<adminUserId>), which we're already in.
+  static const _walletEvents = [
+    'partnerDeposit:updated',
+    'partnerCashRequest:updated',
+  ];
+
   @override
   int build() {
     // Rebuild (and therefore reconnect) whenever the signed-in user changes —
@@ -89,6 +97,15 @@ class BookingRealtime extends Notifier<int> {
     for (final e in _events) {
       socket.off(e);
       socket.on(e, (data) => _onEvent(e, data));
+    }
+    for (final e in _walletEvents) {
+      socket.off(e);
+      socket.on(e, (_) {
+        debugPrint('[partner-socket] wallet event $e');
+        // Bump the dedicated wallet signal → the Earnings screen refreshes
+        // balance + history without a manual reload.
+        ref.read(walletEventsProvider.notifier).state++;
+      });
     }
     socket.connect();
   }
@@ -146,3 +163,7 @@ class BookingRealtime extends Notifier<int> {
 
 final bookingRealtimeProvider =
     NotifierProvider<BookingRealtime, int>(BookingRealtime.new);
+
+/// Increments on every partner wallet event (deposit / cash-request updated).
+/// Screens showing wallet state `ref.listen` to it to refresh live.
+final walletEventsProvider = StateProvider<int>((_) => 0);

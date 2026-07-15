@@ -133,6 +133,9 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
                     if (o.crewRequired > 0)
                       _row(Icons.groups_outlined, 'Crew',
                           '${o.crewRequired} required'),
+                    if (o.extraServiceCount > 0)
+                      _row(Icons.list_alt_outlined, 'Services',
+                          o.serviceNames.join(', ')),
                     _row(
                         Icons.payments_outlined,
                         'You earn',
@@ -140,6 +143,27 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
                         '${o.commissionPct != null ? '  ·  comm ${o.commissionPct!.toStringAsFixed(0)}%' : ''}',
                         valueColor: AppColors.brand700,
                         bold: true),
+                    if (o.capApplied)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2, bottom: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.verified_user_outlined,
+                                size: 14, color: AppColors.emerald),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Your payout is protected at your floor for '
+                                'this booking.',
+                                style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: AppColors.emerald,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 8),
                     // Auto-assigned team (read-only — created on dispatch).
                     Text('Assigned team',
