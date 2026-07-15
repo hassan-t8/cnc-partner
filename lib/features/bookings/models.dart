@@ -247,6 +247,18 @@ class PartnerBooking {
   final bool customerReviewed;
   final int? zoneId;
 
+  // Customer contact + destination. The getPartnerBookings response carries all
+  // of this (Booking model spreads `...b`); the app just never parsed it, so a
+  // partner-admin couldn't phone the customer or navigate to the job.
+  final String? customerPhone;
+  final String? customerEmail;
+  final String address;
+  final String specialInstructions;
+  final String accessInstructions;
+  final double? lat;
+  final double? lng;
+  final String pinLocation;
+
   const PartnerBooking({
     required this.id,
     this.ref = '',
@@ -265,7 +277,37 @@ class PartnerBooking {
     this.cashDue = 0,
     this.cashCollected = false,
     this.customerReviewed = false,
+    this.customerPhone,
+    this.customerEmail,
+    this.address = '',
+    this.specialInstructions = '',
+    this.accessInstructions = '',
+    this.lat,
+    this.lng,
+    this.pinLocation = '',
   });
+
+  /// Address + area for display, deduped/joined.
+  String get fullAddress =>
+      [address, area].where((s) => s.trim().isNotEmpty).join(', ');
+
+  /// Best directions link (pin → coordinates → text address), or null when
+  /// there's nothing to point at. Mirrors the Assignment.mapUrl logic.
+  String? get mapUrl {
+    final pin = pinLocation.trim();
+    if (pin.startsWith('http')) return pin;
+    String? dest;
+    if (pin.isNotEmpty) {
+      dest = pin;
+    } else if (lat != null && lng != null && !(lat == 0 && lng == 0)) {
+      dest = '$lat,$lng';
+    } else if (fullAddress.isNotEmpty) {
+      dest = fullAddress;
+    }
+    if (dest == null) return null;
+    return 'https://www.google.com/maps/dir/?api=1&destination='
+        '${Uri.encodeComponent(dest)}';
+  }
 
   /// Cap-aware take-home for this booking (net of CNC commission, cap-floor
   /// protected). Alias of [partnerCost] — mirrors the backend `partnerNet`.
@@ -302,6 +344,14 @@ class PartnerBooking {
         cashCollected: cashCollected ?? this.cashCollected,
         customerReviewed: customerReviewed ?? this.customerReviewed,
         zoneId: zoneId,
+        customerPhone: customerPhone,
+        customerEmail: customerEmail,
+        address: address,
+        specialInstructions: specialInstructions,
+        accessInstructions: accessInstructions,
+        lat: lat,
+        lng: lng,
+        pinLocation: pinLocation,
       );
 
   factory PartnerBooking.fromJson(Map<String, dynamic> j) {
@@ -337,6 +387,14 @@ class PartnerBooking {
       cashCollected: _b(j['cashCollected']),
       customerReviewed: _b(j['customerReviewed']),
       zoneId: _i(j['zoneId']),
+      customerPhone: _s(cust['phone'] ?? j['phone'] ?? j['customerPhone']),
+      customerEmail: _s(cust['email'] ?? j['email'] ?? j['customerEmail']),
+      address: _s(j['address'] ?? cust['address']),
+      specialInstructions: _s(j['specialInstructions'] ?? j['instructions']),
+      accessInstructions: _s(j['accessInstructions']),
+      lat: _dn(j['latitude'] ?? j['lat']),
+      lng: _dn(j['longitude'] ?? j['lng']),
+      pinLocation: _s(j['pinLocation'] ?? j['location']),
     );
   }
 }

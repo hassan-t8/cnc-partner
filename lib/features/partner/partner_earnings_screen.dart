@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
+import '../../core/realtime/booking_realtime.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
@@ -37,6 +39,12 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   DateTimeRange? _range; // null = all time
   bool _exporting = false;
 
+  // Booking-ID search — narrows the Upcoming/Settled tables to one booking,
+  // mirroring the web earnings page. KPI cards stay on the full period totals.
+  final _searchCtrl = TextEditingController();
+  Timer? _searchDebounce;
+  String _search = '';
+
   // Dispatch statuses that count as "money still coming".
   static const _upcomingStatuses = {
     'awaiting_acceptance',
@@ -51,6 +59,58 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     super.initState();
     _load();
   }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _txMatchesSearch(WalletTransaction t, Map<int, PartnerBooking> bMap) {
+    if (_search.isEmpty) return true;
+    final needle = _search.toLowerCase();
+    final rawId = t.bookingRef ?? '';
+    if (rawId.toLowerCase().contains(needle)) return true;
+    final human = bMap[int.tryParse(rawId)]?.ref;
+    return human != null && human.toLowerCase().contains(needle);
+  }
+
+  bool _bookingMatchesSearch(PartnerBooking b) {
+    if (_search.isEmpty) return true;
+    final needle = _search.toLowerCase();
+    return b.ref.toLowerCase().contains(needle) ||
+        b.id.toString().contains(needle);
+  }
+
+  Widget _searchField() => TextField(
+        controller: _searchCtrl,
+        onChanged: (v) {
+          _searchDebounce?.cancel();
+          _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+            if (mounted) setState(() => _search = v.trim());
+          });
+        },
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Search by booking ID',
+          prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: _search.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () {
+                    _searchCtrl.clear();
+                    setState(() => _search = '');
+                  },
+                ),
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border:
+              OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
 
   Future<_Earn> _fetch() async {
     final repo = ref.read(partnerRepositoryProvider);
@@ -114,6 +174,9 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   @override
   Widget build(BuildContext context) {
     ref.listen(tabRefreshProvider, (_, __) => _load());
+    // Live wallet updates: a deposit approval or a withdraw decision refreshes
+    // balance + history in place (no skeleton flash), no manual pull needed.
+    ref.listen(walletEventsProvider, (_, __) => _refresh());
     return Scaffold(
       appBar: MainAppBar('Earnings', actions: [
         IconButton(
@@ -169,6 +232,15 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         .toList()
       ..sort((a, b) => (b.createdAt ?? DateTime(0))
           .compareTo(a.createdAt ?? DateTime(0)));
+
+    // Booking-ID search narrows the Upcoming/Settled tables (not the KPI cards
+    // or the deposits/withdrawals tabs, which aren't booking-scoped).
+    final pendingView =
+        pending.where((t) => _txMatchesSearch(t, bMap)).toList();
+    final settledView =
+        settled.where((t) => _txMatchesSearch(t, bMap)).toList();
+    final upcomingBookingsView =
+        upcomingBookings.where(_bookingMatchesSearch).toList();
 
     final completed = e.bookings.where((b) => b.status == 'completed').length;
     // Earnings actually CREDITED — the `earning` ledger rows, minus anything
@@ -234,19 +306,21 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         // so this section stops duplicating it.
         ..._pendingWithdrawBanner(e.requests),
         const SizedBox(height: 16),
+        _searchField(),
+        const SizedBox(height: 12),
         _dateFilterBar(),
         const SizedBox(height: 12),
         _tabs(
-          pending.length + upcomingBookings.length,
-          settled.length,
+          pendingView.length + upcomingBookingsView.length,
+          settledView.length,
           _visibleDeposits(e.deposits).length,
           e.requests.length,
         ),
         const SizedBox(height: 12),
         if (_tab == 'upcoming')
-          ..._upcomingList(pending, upcomingBookings, bMap)
+          ..._upcomingList(pendingView, upcomingBookingsView, bMap)
         else if (_tab == 'settled')
-          ..._settledList(settled, bMap)
+          ..._settledList(settledView, bMap)
         else if (_tab == 'deposits')
           ..._depositsList(e.deposits)
         else

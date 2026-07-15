@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/realtime/booking_realtime.dart';
@@ -800,18 +801,81 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       );
 
   /// Customer & location.
-  Widget _customerCard() => _card(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _sectionHeader(Icons.person_outline, 'Customer'),
-            _infoRow(Icons.badge_outlined, 'Name',
-                b.customerName.isEmpty ? '—' : b.customerName),
-            _infoRow(Icons.place_outlined, 'Area',
-                b.area.isEmpty ? '—' : b.area),
+  Widget _customerCard() {
+    final phone = (b.customerPhone ?? '').trim();
+    final email = (b.customerEmail ?? '').trim();
+    final addr = b.fullAddress;
+    final maps = b.mapUrl;
+    return _card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(Icons.person_outline, 'Customer'),
+          _infoRow(Icons.badge_outlined, 'Name',
+              b.customerName.isEmpty ? '—' : b.customerName),
+          if (phone.isNotEmpty)
+            _infoRow(Icons.call_outlined, 'Phone', phone),
+          if (email.isNotEmpty)
+            _infoRow(Icons.email_outlined, 'Email', email),
+          _infoRow(Icons.place_outlined, 'Address',
+              addr.isEmpty ? (b.area.isEmpty ? '—' : b.area) : addr),
+          if (b.specialInstructions.trim().isNotEmpty)
+            _infoRow(Icons.info_outline, 'Instructions',
+                b.specialInstructions.trim()),
+          if (b.accessInstructions.trim().isNotEmpty)
+            _infoRow(Icons.vpn_key_outlined, 'Access',
+                b.accessInstructions.trim()),
+          if (phone.isNotEmpty || maps != null) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (phone.isNotEmpty)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _dial(phone),
+                      icon: const Icon(Icons.call, size: 17),
+                      label: const Text('Call customer'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.brand600,
+                        side: const BorderSide(color: AppColors.brand600),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                      ),
+                    ),
+                  ),
+                if (phone.isNotEmpty && maps != null)
+                  const SizedBox(width: 10),
+                if (maps != null)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openUrl(maps),
+                      icon: const Icon(Icons.directions_outlined, size: 17),
+                      label: const Text('Directions'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.sky,
+                        side: const BorderSide(color: AppColors.sky),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ],
-        ),
-      );
+        ],
+      ),
+    );
+  }
+
+  Future<void> _dial(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone.replaceAll(' ', ''));
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   /// Schedule.
   Widget _scheduleCard() => _card(

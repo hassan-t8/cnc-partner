@@ -26,10 +26,25 @@ class PartnerRepository {
   /// infinite-scroll. Backend response shape:
   ///   { success, totalCount, data:[...],
   ///     pagination:{ totalRecords, currentPage, totalPages, pageSize } }
-  Future<PartnerBookingsPage> bookingsPage(
-      {int page = 1, int limit = 30}) async {
-    final res = await _api.get('/booking/getPartnerBookings',
-        query: {'page': page, 'limit': limit});
+  Future<PartnerBookingsPage> bookingsPage({
+    int page = 1,
+    int limit = 30,
+    String? q,
+    String? status,
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    // Server-side search/filter (backend added 2026-07-13). Filtering client-
+    // side over the loaded pages missed matches on any page not yet scrolled in.
+    final res = await _api.get('/booking/getPartnerBookings', query: {
+      'page': page,
+      'limit': limit,
+      if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      if (status != null && status.isNotEmpty && status != 'all')
+        'status': status,
+      if (from != null) 'from': from.toIso8601String(),
+      if (to != null) 'to': to.toIso8601String(),
+    });
     final rows = pickList(res.data).map(PartnerBooking.fromJson).toList();
     final body = res.data;
     final pag = (body is Map && body['pagination'] is Map)

@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../bookings/models.dart';
+import '../worker/today_summary.dart';
 import '../worker/worker_repository.dart';
 import 'driver_repository.dart';
 
@@ -208,6 +209,9 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
+                // Today's at-a-glance counts (parity with crew Jobs). Self-
+                // fetches for the driver when no jobs list is passed.
+                if (_range == 'today') const TodaySummary(),
                 if (_pending.isNotEmpty) _pendingSection(),
                 _bookingSelector(),
                 ..._routeBody(),
@@ -418,6 +422,33 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
   }
 
   // ---- route (map + stops) ----
+  /// Route-plan warnings (e.g. "no van assigned", "stop outside your zone").
+  /// The Schedule screen already surfaces these; the map-centric Route screen
+  /// fetched them but never showed them.
+  List<Widget> _warnings(DriverDayPlan plan) => [
+        for (final w in plan.warnings)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.amber.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded,
+                    color: AppColors.amber, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(w,
+                        style: const TextStyle(
+                            fontSize: 12.5, fontWeight: FontWeight.w600))),
+              ],
+            ),
+          ),
+      ];
+
   List<Widget> _routeBody() {
     final plan = _plan;
     if (plan == null) {
@@ -433,6 +464,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
     }
     if (plan.stops.isEmpty) {
       return [
+        ..._warnings(plan),
         const Padding(
           padding: EdgeInsets.only(top: 40),
           child: EmptyState(
@@ -445,6 +477,7 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
     final located =
         plan.stops.where((s) => s.lat != null && s.lng != null).toList();
     return [
+      ..._warnings(plan),
       if (plan.vanName.isNotEmpty || plan.totalDistanceMeters > 0)
         Container(
           width: double.infinity,

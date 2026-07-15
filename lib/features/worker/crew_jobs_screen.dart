@@ -44,6 +44,8 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
   // without touching `ref` (using ref after dispose throws).
   BookingRealtime? _rt;
   Timer? _rtDebounce;
+  // Ticks the "Up next" countdown label. Minute-granularity, so 30s is plenty.
+  Timer? _tick;
 
   @override
   void initState() {
@@ -51,13 +53,43 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     _rt = ref.read(bookingRealtimeProvider.notifier);
     _load();
     _loadJobDays();
+    _tick = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
     _rtDebounce?.cancel();
+    _tick?.cancel();
     _rt?.releaseBookingRooms(this);
     super.dispose();
+  }
+
+  /// The job the crew should focus on next: an in-progress job takes priority,
+  /// else the soonest accepted job. Mirrors the web crew "Up next" hero.
+  Assignment? _upNext(List<Assignment> jobs) {
+    int byStart(Assignment a, Assignment b) =>
+        (a.scheduledStart ?? DateTime(2100))
+            .compareTo(b.scheduledStart ?? DateTime(2100));
+    final inProg = jobs.where((j) => j.status == 'in_progress').toList()
+      ..sort(byStart);
+    if (inProg.isNotEmpty) return inProg.first;
+    final accepted = jobs.where((j) => j.status == 'accepted').toList()
+      ..sort(byStart);
+    return accepted.isNotEmpty ? accepted.first : null;
+  }
+
+  /// "in 2h 15m" / "in 25m" / "starts now" / "5m late".
+  String? _countdownLabel(DateTime? start) {
+    if (start == null) return null;
+    final diff = start.difference(DateTime.now());
+    final abs = diff.abs();
+    final parts =
+        abs.inHours > 0 ? '${abs.inHours}h ${abs.inMinutes % 60}m' : '${abs.inMinutes}m';
+    if (diff.inMinutes > 1) return 'in $parts';
+    if (diff.inMinutes < -1) return '$parts late';
+    return 'starts now';
   }
 
   /// Subscribe to a `booking_<id>` room for every job currently on screen.
@@ -305,6 +337,12 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     ref.watch(crewOverridesProvider);
     final ov = ref.read(crewOverridesProvider.notifier);
     final jobs = [for (final j in _jobs) ov.apply(j)];
+    // "Up next" hero — only for today, so it stays a genuine "what's next".
+    final isToday = DateUtils.isSameDay(_date, DateTime.now());
+    final upNext = isToday ? _upNext(jobs) : null;
+    // Drop the hero job from the list so it isn't shown twice.
+    final listJobs =
+        upNext == null ? jobs : [for (final j in jobs) if (j.id != upNext.id) j];
     return Scaffold(
       appBar: const MainAppBar('My jobs'),
       body: Column(
@@ -335,14 +373,123 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
                             ])
                           : ListView.separated(
                               padding: const EdgeInsets.all(16),
-                              itemCount: jobs.length,
+                              itemCount:
+                                  listJobs.length + (upNext != null ? 1 : 0),
                               separatorBuilder: (_, __) =>
                                   const SizedBox(height: 12),
-                              itemBuilder: (_, i) => _jobCard(jobs[i]),
+                              itemBuilder: (_, i) {
+                                if (upNext != null && i == 0) {
+                                  return _upNextCard(upNext);
+                                }
+                                final j =
+                                    listJobs[upNext != null ? i - 1 : i];
+                                return _jobCard(j);
+                              },
                             ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Prominent hero card for the next/active job with a live countdown.
+  Widget _upNextCard(Assignment a) {
+    final inProgress = a.status == 'in_progress';
+    final accent = inProgress ? AppColors.amber : AppColors.emerald;
+    final countdown = _countdownLabel(a.scheduledStart);
+    final time = a.scheduledStart != null
+        ? DateFormat('EEE d MMM · h:mm a').format(a.scheduledStart!)
+        : null;
+    return InkWell(
+      onTap: () => _openDetail(a),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: accent.withValues(alpha: 0.5)),
+          boxShadow: [
+            BoxShadow(
+                color: accent.withValues(alpha: 0.12),
+                blurRadius: 14,
+                offset: const Offset(0, 4)),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(height: 3, color: accent),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(inProgress ? Icons.bolt : Icons.arrow_forward_rounded,
+                          size: 14, color: accent),
+                      const SizedBox(width: 5),
+                      Text(inProgress ? 'WORKING NOW' : 'UP NEXT',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                              color: accent)),
+                      const Spacer(),
+                      if (countdown != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20)),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.timer_outlined, size: 12, color: accent),
+                              const SizedBox(width: 4),
+                              Text(countdown,
+                                  style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: accent)),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ServiceTitle(a.serviceName, titleSize: 16),
+                  const SizedBox(height: 2),
+                  Text(a.bookingRef,
+                      style: TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textMuted,
+                          fontWeight: FontWeight.w600)),
+                  if (time != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.schedule_outlined,
+                            size: 15, color: AppColors.textMuted),
+                        const SizedBox(width: 6),
+                        Text(time,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary)),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  _actions(a, _acting == a.id),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -511,10 +658,21 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
           _row(Icons.schedule, time),
           if (a.customerName.isNotEmpty)
             _row(Icons.person_outline, a.customerName,
-                trailing: (a.partnerPhone?.isNotEmpty ?? false)
-                    ? _miniAction(Icons.call, 'Call',
-                        () => launchUrl(Uri.parse('tel:${a.partnerPhone}')))
-                    : null),
+                // Call the CUSTOMER (fall back to partner only if we have no
+                // customer number). Previously dialled the partner, and showed
+                // no Call button at all when partnerPhone was empty.
+                trailing: () {
+                  final phone = (a.customerPhone?.isNotEmpty ?? false)
+                      ? a.customerPhone!
+                      : (a.partnerPhone ?? '');
+                  return phone.isNotEmpty
+                      ? _miniAction(
+                          Icons.call,
+                          'Call',
+                          () => launchUrl(Uri.parse(
+                              'tel:${phone.replaceAll(' ', '')}')))
+                      : null;
+                }()),
           if (a.fullAddress.isNotEmpty || a.mapUrl != null)
             _row(Icons.place_outlined,
                 a.fullAddress.isNotEmpty ? a.fullAddress : 'Pinned location',

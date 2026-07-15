@@ -6,6 +6,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/reason_dialog.dart';
 import '../../widgets/status_badge.dart';
 import '../../widgets/search_filter_bar.dart';
 import 'partner_models.dart';
@@ -145,13 +146,29 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
 
   // Optimistic status update shared by the status picker and the Account sheet.
   Future<bool> _applyStatus(Worker w, String status) async {
+    // Taking someone off active duty carries a reason on the web (it's shown
+    // in the worker's history) — capture it here too. Going back to Active
+    // needs none.
+    String? reason;
+    if (status != 'active') {
+      reason = await showDeclineReasonDialog(
+        context,
+        title: '${_statusLabels[status] ?? status} · ${w.name}',
+        hint: 'Reason (optional)',
+        confirmLabel: 'Confirm',
+        confirmColor: AppColors.brand600,
+      );
+      if (reason == null) return false; // cancelled — leave status unchanged
+    }
     final prev = _overrides[w.id];
     setState(() => _overrides[w.id] = w.copyWith(status: status));
     try {
       // Dedicated status route — the generic updateWorker rejects
       // `not_working`, which is one of the options this picker offers, with a
       // 400. This endpoint accepts it.
-      await ref.read(partnerRepositoryProvider).setWorkerStatus(w.id, status);
+      await ref
+          .read(partnerRepositoryProvider)
+          .setWorkerStatus(w.id, status, reason: reason);
       AppToast.success('Status updated');
       return true;
     } on ApiException catch (e) {

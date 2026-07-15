@@ -21,14 +21,19 @@ import 'booking_detail_screen.dart';
 import 'partner_repository.dart';
 import 'unassign_confirm_sheet.dart';
 
+// Mirrors the web admin/bookings status dropdown (STATUS_COLORS keys), incl.
+// the pre-dispatch states so a partner can isolate e.g. failed-to-assign jobs.
 const _statusOptions = [
   'all',
+  'unassigned',
+  'pending_dispatch',
   'awaiting_acceptance',
   'accepted',
   'in_progress',
   'completed',
   'declined',
   'cancelled',
+  'failed_to_assign',
 ];
 
 class PartnerBookingsScreen extends ConsumerStatefulWidget {
@@ -95,6 +100,7 @@ class _PartnerBookingsScreenState
   @override
   void dispose() {
     _rtDebounce?.cancel();
+    _searchDebounce?.cancel();
     _rt?.releaseBookingRooms(this);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
@@ -111,7 +117,13 @@ class _PartnerBookingsScreenState
     try {
       final res = await ref
           .read(partnerRepositoryProvider)
-          .bookingsPage(page: 1, limit: _pageSize);
+          .bookingsPage(
+              page: 1,
+              limit: _pageSize,
+              q: _query,
+              status: _status,
+              from: _from,
+              to: _to);
       if (!mounted) return;
       setState(() {
         _all = res.rows;
@@ -147,7 +159,13 @@ class _PartnerBookingsScreenState
     try {
       final res = await ref
           .read(partnerRepositoryProvider)
-          .bookingsPage(page: 1, limit: _pageSize);
+          .bookingsPage(
+              page: 1,
+              limit: _pageSize,
+              q: _query,
+              status: _status,
+              from: _from,
+              to: _to);
       if (mounted) {
         setState(() {
           _all = res.rows;
@@ -177,7 +195,13 @@ class _PartnerBookingsScreenState
       final next = _page + 1;
       final res = await ref
           .read(partnerRepositoryProvider)
-          .bookingsPage(page: next, limit: _pageSize);
+          .bookingsPage(
+              page: next,
+              limit: _pageSize,
+              q: _query,
+              status: _status,
+              from: _from,
+              to: _to);
       if (!mounted) return;
       // De-dupe defensively in case a new row shifted paging between fetches.
       final seen = {for (final b in _all) b.id};
@@ -244,21 +268,19 @@ class _PartnerBookingsScreenState
     }
   }
 
-  List<PartnerBooking> _filter(List<PartnerBooking> all) {
-    final q = _query.toLowerCase();
-    return all.where((b) {
-      if (_status != 'all' && b.status != _status) return false;
-      final d = b.scheduledStart;
-      if (_from != null && (d == null || d.isBefore(_from!))) return false;
-      if (_to != null &&
-          (d == null ||
-              d.isAfter(DateTime(_to!.year, _to!.month, _to!.day, 23, 59)))) {
-        return false;
-      }
-      if (q.isEmpty) return true;
-      return [b.ref, b.customerName, b.serviceName, b.area]
-          .any((s) => s.toLowerCase().contains(q));
-    }).toList();
+  Timer? _searchDebounce;
+
+  /// Filters now run SERVER-SIDE (page 1 refetch with q/status/from/to), so a
+  /// match on an unloaded page is no longer missed. Search typing is debounced;
+  /// status/date changes apply immediately.
+  void _onFiltersChanged({bool debounce = false}) {
+    _searchDebounce?.cancel();
+    if (debounce) {
+      _searchDebounce =
+          Timer(const Duration(milliseconds: 350), () => _load());
+    } else {
+      _load();
+    }
   }
 
   Future<void> _act(PartnerBooking b, String action) async {
@@ -394,7 +416,13 @@ class _PartnerBookingsScreenState
     try {
       final res = await ref
           .read(partnerRepositoryProvider)
-          .bookingsPage(page: 1, limit: _pageSize);
+          .bookingsPage(
+              page: 1,
+              limit: _pageSize,
+              q: _query,
+              status: _status,
+              from: _from,
+              to: _to);
       if (!mounted) return;
       final fresh = {for (final b in res.rows) b.id: b};
       setState(() {
@@ -617,7 +645,9 @@ class _PartnerBookingsScreenState
                   return ErrorRetry(
                       message: 'Couldn\'t load bookings.', onRetry: _reload);
                 }
-                final rows = _filter(_all);
+                // Server already filtered — no client-side pass (which used to
+                // hide server matches on unloaded pages).
+                final rows = _all;
                 if (rows.isEmpty) {
                   return ListView(
                       controller: _scroll,
@@ -687,7 +717,10 @@ class _PartnerBookingsScreenState
                   ],
                 ),
               ),
-              onChanged: (v) => setState(() => _query = v.trim()),
+              onChanged: (v) {
+                setState(() => _query = v.trim());
+                _onFiltersChanged(debounce: true);
+              },
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -701,7 +734,10 @@ class _PartnerBookingsScreenState
                     child: ChoiceChip(
                       label: Text(s == 'all' ? 'All' : s.replaceAll('_', ' ')),
                       selected: on,
-                      onSelected: (_) => setState(() => _status = s),
+                      onSelected: (_) {
+                        setState(() => _status = s);
+                        _onFiltersChanged();
+                      },
                       selectedColor: AppColors.brand600,
                       labelStyle: TextStyle(
                           color: on ? Colors.white : AppColors.textSecondary,
@@ -723,16 +759,23 @@ class _PartnerBookingsScreenState
                   scrollDirection: Axis.horizontal,
                   children: [
                     if (_from != null)
-                      _appliedChip('From ${_fmt(_from!)}',
-                          () => setState(() => _from = null)),
+                      _appliedChip('From ${_fmt(_from!)}', () {
+                        setState(() => _from = null);
+                        _onFiltersChanged();
+                      }),
                     if (_to != null)
-                      _appliedChip(
-                          'To ${_fmt(_to!)}', () => setState(() => _to = null)),
+                      _appliedChip('To ${_fmt(_to!)}', () {
+                        setState(() => _to = null);
+                        _onFiltersChanged();
+                      }),
                     _appliedChip('Clear dates',
-                        () => setState(() {
-                              _from = null;
-                              _to = null;
-                            }),
+                        () {
+                              setState(() {
+                                _from = null;
+                                _to = null;
+                              });
+                              _onFiltersChanged();
+                            },
                         solid: true),
                   ],
                 ),
@@ -870,6 +913,7 @@ class _PartnerBookingsScreenState
                               _to = to;
                             });
                             Navigator.pop(ctx);
+                            _onFiltersChanged();
                           },
                           child: const Text('Apply filters'),
                         ),
