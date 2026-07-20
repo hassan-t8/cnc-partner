@@ -210,7 +210,7 @@ class _PartnerRequestsScreenState
             _row(Icons.list_alt_outlined,
                 '+${o.extraServiceCount} more service${o.extraServiceCount == 1 ? '' : 's'}'),
           _row(Icons.payments_outlined,
-              'Your earnings: AED ${o.earnings.toStringAsFixed(2)}'),
+              'Your earnings: AED ${o.earnings.toStringAsFixed(2)} (excl. VAT)'),
           if (o.capApplied) _capBadge(),
           if (o.crewRequired > 0)
             _row(Icons.groups_outlined, '${o.crewRequired} crew required'),

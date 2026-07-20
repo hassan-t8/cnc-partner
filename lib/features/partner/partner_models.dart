@@ -739,15 +739,21 @@ class Offer {
       // Partner take-home: prefer the first POSITIVE figure — partnerEarnings
       // can be 0 (cap edge / not yet computed), in which case we show the
       // booking amount rather than a misleading "AED 0.00".
+      // Partner take-home, EXCL VAT — matching the partner web portal exactly
+      // (`admin/requests/page.tsx`): prefer the server-computed, cap-aware
+      // `partnerEarnings`, and fall back to `cncChargesExclVat` only for older
+      // deploys that predate it.
+      //
+      // Deliberately does NOT fall through to cncChargesInclVat / totalPrice.
+      // Those are the CUSTOMER price on a different VAT basis — showing them
+      // under "Your earnings" overstates what the partner is actually paid,
+      // and disagrees with the wallet ledger that eventually gets written.
       earnings: _firstPositive([
         b['partnerEarnings'],
-        b['cncChargesExclVat'],
-        b['cncChargesInclVat'],
-        b['totalPrice'],
         j['partnerEarnings'],
-        j['earnings'],
-        j['partnerCost'],
         b['partnerCost'],
+        j['partnerCost'],
+        b['cncChargesExclVat'],
       ]),
       commissionPct: b['commissionPct'] == null ? null : _d(b['commissionPct']),
       rank: _i(j['rank']) ?? 1,
