@@ -262,6 +262,18 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     final tips = txns
         .where((t) => t.type == 'tip' && _inRange(t.createdAt))
         .fold<double>(0, (s, t) => s + t.amount);
+    // Commission owed to CNC on the cash collected at the door. Without an
+    // aggregate a partner could only reconstruct this by scrolling every row
+    // and adding it up. Net of any commission returned by a cash refund.
+    final commissionOwed = txns
+        .where((t) => t.type == 'cash_commission' && _inRange(t.createdAt))
+        .fold<double>(0, (s, t) => s + t.amount);
+    final commissionRecovered = txns
+        .where((t) =>
+            t.type == 'cash_refund_recovered' && _inRange(t.createdAt))
+        .fold<double>(0, (s, t) => s + t.amount);
+    final netCommission =
+        (commissionOwed - commissionRecovered).clamp(0, double.infinity);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -294,6 +306,14 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           const SizedBox(height: 12),
           _stat('Cash collected (period)',
               'AED ${cashCollected.toStringAsFixed(2)}', Icons.payments_outlined),
+        ],
+        // What you owe CNC on that cash — the figure a partner most wants and
+        // previously had to add up by hand from the ledger rows.
+        if (netCommission > 0.005) ...[
+          const SizedBox(height: 12),
+          _stat('Commission owed to CNC (period)',
+              'AED ${netCommission.toStringAsFixed(2)}',
+              Icons.account_balance_outlined),
         ],
         if (tips > 0) ...[
           const SizedBox(height: 12),
