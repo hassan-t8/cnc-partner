@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_controller.dart';
 import '../network/api_client.dart';
+import '../realtime/booking_realtime.dart' show notificationEventsProvider;
 import '../providers.dart';
 import 'notification_service.dart';
 
@@ -114,6 +115,10 @@ class NotificationsController extends Notifier<NotifState> {
   @override
   NotifState build() {
     ref.onDispose(() => _timer?.cancel());
+    // Live: the backend pushes `notification:new` to this partner's user room
+    // (e.g. a customer tip). Refetch immediately instead of waiting out the
+    // poll below — the poll stays as a safety net for a dropped socket.
+    ref.listen(notificationEventsProvider, (_, __) => _fetch());
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 45), (_) => _fetch());
     // Kick off the first fetch after the current build completes.

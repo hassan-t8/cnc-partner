@@ -614,7 +614,9 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                     color: bg, borderRadius: BorderRadius.circular(999)),
-                child: Text(r.status.toUpperCase(),
+                // De-underscore so a snake_case status doesn't render as
+                // "IN_PROGRESS".
+                child: Text(r.status.replaceAll('_', ' ').toUpperCase(),
                     style: TextStyle(
                         color: fg, fontSize: 10, fontWeight: FontWeight.w800)),
               ),
@@ -1271,6 +1273,10 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     'commission': 'Commission',
     'commission_correction': 'Commission correction',
     'reversal': 'Reversal',
+    // 2026-07-17 refund work: the money kernel now writes these two on a
+    // booking refund. Without them they rendered as raw de-underscored text.
+    'cash_refund_recovered': 'Cash refund recovered',
+    'earning_refund_reversed': 'Earning reversed on refund',
   };
 
   String _settledTitle(WalletTransaction t) {
@@ -1292,6 +1298,10 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         return 'What you owe CNC on the cash you collected.';
       case 'tip':
         return 'A customer tip — 100% yours, no commission.';
+      case 'cash_refund_recovered':
+        return 'Commission returned to you after a cash refund.';
+      case 'earning_refund_reversed':
+        return 'Your earning reversed because the booking was refunded.';
       default:
         return '';
     }
@@ -1314,6 +1324,9 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         return 'cash in hand';
       case 'tip':
         return 'tip';
+      case 'cash_refund_recovered':
+      case 'earning_refund_reversed':
+        return 'refund';
       default:
         return t.type.isEmpty
             ? (t.isCredit ? 'credit' : 'debit')

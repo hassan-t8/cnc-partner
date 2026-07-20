@@ -43,8 +43,16 @@ class BookingRealtime extends Notifier<int> {
     'bookingDispatchStatusUpdated',
     'bookingAssignmentUpdated',
     'bookingAssignmentsBulkUpdated',
-    'newBookingPopup',
+    // NOTE: 'newBookingPopup' was listened for here but the backend only ever
+    // emits it to `admin_room`, which this app never joins — it could not fire.
+    // Removed rather than left as a misleading no-op.
   ];
+
+  /// Notification events — their own signal so the bell can refresh without
+  /// booking screens refetching. The backend emits `notification:new` to
+  /// `user_<adminUserId>`, a room we already join, so this was arriving at the
+  /// socket and being dropped while the bell polled every 45s.
+  static const _notifEvents = ['notification:new'];
 
   // Wallet events go to a SEPARATE signal so booking-list screens don't refetch
   // bookings on a deposit/withdraw change. The backend emits these to the
@@ -107,6 +115,13 @@ class BookingRealtime extends Notifier<int> {
         ref.read(walletEventsProvider.notifier).state++;
       });
     }
+    for (final e in _notifEvents) {
+      socket.off(e);
+      socket.on(e, (_) {
+        debugPrint('[partner-socket] notification event $e');
+        ref.read(notificationEventsProvider.notifier).state++;
+      });
+    }
     socket.connect();
   }
 
@@ -167,3 +182,8 @@ final bookingRealtimeProvider =
 /// Increments on every partner wallet event (deposit / cash-request updated).
 /// Screens showing wallet state `ref.listen` to it to refresh live.
 final walletEventsProvider = StateProvider<int>((_) => 0);
+
+/// Ticks when the backend pushes `notification:new` to this partner's user
+/// room (e.g. a customer tip). Screens `ref.listen` this to refresh the bell
+/// instead of waiting for the 45s poll.
+final notificationEventsProvider = StateProvider<int>((_) => 0);
