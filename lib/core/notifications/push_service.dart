@@ -129,8 +129,25 @@ class PushService {
   /// onTokenRefresh. Call AFTER login / when a session token exists.
   Future<void> registerToken() async {
     try {
-      // On iOS the APNs token must be available before getToken() resolves;
-      // firebase_messaging handles the wait internally once permission is set.
+      // On iOS, getToken() THROWS `apns-token-not-set` if the APNs token has
+      // not landed yet — it does not wait. The token arrives asynchronously a
+      // moment after the permission grant, so poll for it briefly first, then
+      // only ask for the FCM token once it is present. On the Simulator (and
+      // any device where push isn't provisioned) it never arrives — that is
+      // expected, so skip quietly instead of throwing.
+      if (Platform.isIOS) {
+        String? apns = await _fm.getAPNSToken();
+        for (var i = 0; apns == null && i < 3; i++) {
+          await Future.delayed(const Duration(seconds: 1));
+          apns = await _fm.getAPNSToken();
+        }
+        if (apns == null) {
+          debugPrint('[push] APNs token unavailable (Simulator or push not '
+              'provisioned) — skipping FCM token registration.');
+          return;
+        }
+      }
+
       final token = await _fm.getToken();
       if (token != null && token.isNotEmpty) {
         // Print prominently so it can be copied for Firebase console test sends.
