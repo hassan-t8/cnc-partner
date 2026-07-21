@@ -459,7 +459,9 @@ class _DriverRouteScreenState extends ConsumerState<DriverRouteScreen> {
                 child: ErrorRetry(
                     message: "Couldn't load the route.", onRetry: _loadPlan),
               )
-            : const LoadingList(height: 120),
+            // Nested inside the screen's outer ListView — must shrink-wrap and
+            // release the primary controller, or the two scrollables collide.
+            : const LoadingList(height: 120, count: 3, nested: true),
       ];
     }
     if (plan.stops.isEmpty) {

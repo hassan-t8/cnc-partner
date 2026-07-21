@@ -4,10 +4,23 @@ import 'package:shimmer/shimmer.dart';
 import '../core/theme/app_colors.dart';
 
 /// A shimmering placeholder list of cards for loading states.
+///
+/// Standalone (the default) it is the page's own scroll view — it scrolls and
+/// fills the space. Set [nested] when placing it INSIDE another scroll view
+/// (e.g. as one item of an outer `ListView`): it then shrink-wraps, gives up
+/// the [PrimaryScrollController], and stops scrolling on its own. Without that,
+/// two vertical scrollables fight over the primary controller and Flutter
+/// throws "A GlobalKey was used multiple times ... _ScrollSemantics".
 class LoadingList extends StatelessWidget {
   final int count;
   final double height;
-  const LoadingList({super.key, this.count = 6, this.height = 84});
+  final bool nested;
+  const LoadingList({
+    super.key,
+    this.count = 6,
+    this.height = 84,
+    this.nested = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -17,6 +30,9 @@ class LoadingList extends StatelessWidget {
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: count,
+        shrinkWrap: nested,
+        primary: nested ? false : null,
+        physics: nested ? const NeverScrollableScrollPhysics() : null,
         separatorBuilder: (_, __) => const SizedBox(height: 12),
         itemBuilder: (_, __) => Container(
           height: height,
