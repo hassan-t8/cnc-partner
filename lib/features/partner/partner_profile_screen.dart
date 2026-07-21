@@ -218,7 +218,8 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
           final zones = {for (final z in snap.data!.zones) z.id: z.label};
           return _editing
               ? _editView(p, snap.data!.zones)
-              : _readView(p, zones, snap.data!.rules, snap.data!.services);
+              : _readView(
+                  context, p, zones, snap.data!.rules, snap.data!.services);
         },
       ),
       bottomNavigationBar: _editing
@@ -259,10 +260,13 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
   }
 
   // ---------- READ ----------
-  Widget _readView(Partner p, Map<int, String> zones,
+  Widget _readView(BuildContext context, Partner p, Map<int, String> zones,
           List<AvailabilityRule> rules, List<MyService> services) =>
       ListView(
-        padding: const EdgeInsets.all(16),
+        // Clear the Android system nav bar so the last card isn't hidden
+        // behind it at the end of the scroll (edge-to-edge on Android 15).
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.viewPaddingOf(context).bottom),
         children: [
           _hero(p),
           const SizedBox(height: 16),

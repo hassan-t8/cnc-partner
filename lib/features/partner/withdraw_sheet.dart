@@ -356,8 +356,16 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
     );
   }
 
-  Widget _actions() => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+  Widget _actions() {
+    // The scroll body already clears the nav bar via `systemBottom`, but this
+    // footer sits BELOW it and had a fixed 20px bottom — so on Android 15
+    // (edge-to-edge) the Cancel / Request-withdraw buttons hid behind the
+    // system nav bar. Add the same inset here. Zero while the keyboard is up
+    // (the outer Padding has already lifted the sheet above it).
+    final mq = MediaQuery.of(context);
+    final systemBottom = mq.viewInsets.bottom > 0 ? 0.0 : mq.viewPadding.bottom;
+    return Padding(
+        padding: EdgeInsets.fromLTRB(20, 4, 20, 20 + systemBottom),
         child: Row(
           children: [
             Expanded(
@@ -384,6 +392,7 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
           ],
         ),
       );
+  }
 }
 
 class _UpperCaseFormatter extends TextInputFormatter {

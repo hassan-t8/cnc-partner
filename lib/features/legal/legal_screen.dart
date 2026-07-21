@@ -144,7 +144,10 @@ class LegalScreen extends StatelessWidget {
     return Scaffold(
       appBar: MainAppBar(title),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        // Clear the Android system nav bar (edge-to-edge on Android 15) so the
+        // last lines aren't hidden behind it when scrolled to the end.
+        padding: EdgeInsets.fromLTRB(
+            20, 16, 20, 32 + MediaQuery.viewPaddingOf(context).bottom),
         children: [
           Text(_effective,
               style: TextStyle(

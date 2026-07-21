@@ -202,12 +202,12 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                     ErrorRetry(
                         message: 'Couldn\'t load earnings.', onRetry: _load),
                   ])
-                : _content(),
+                : _content(context),
       ),
     );
   }
 
-  Widget _content() {
+  Widget _content(BuildContext context) {
     final e = _data!;
     final w = e.statement.wallet;
     final txns = e.statement.transactions;
@@ -276,7 +276,10 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         (commissionOwed - commissionRecovered).clamp(0, double.infinity);
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      // Clear the Android system nav bar so the last row isn't hidden behind
+      // it at the end of the scroll (edge-to-edge on Android 15).
+      padding: EdgeInsets.fromLTRB(
+          16, 16, 16, 16 + MediaQuery.viewPaddingOf(context).bottom),
       children: [
         WalletBalanceAlert(balance: w.balance),
         _walletCard(w),

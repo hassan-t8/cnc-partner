@@ -62,7 +62,10 @@ class _ReviewsScreenState extends ConsumerState<ReviewsScreen> {
                   subtitle: 'Your first review is on the way.');
             }
             return ListView(
-              padding: const EdgeInsets.all(16),
+              // Clear the Android system nav bar so the last review isn't
+              // hidden behind it at the end (edge-to-edge on Android 15).
+              padding: EdgeInsets.fromLTRB(
+                  16, 16, 16, 16 + MediaQuery.viewPaddingOf(context).bottom),
               children: [
                 _summary(s),
                 const SizedBox(height: 16),

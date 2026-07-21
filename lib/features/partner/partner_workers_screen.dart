@@ -308,7 +308,10 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                     );
                   }
                   return ListView.separated(
-                    padding: const EdgeInsets.all(16),
+                    // Clear the Android system nav bar so the last worker isn't
+                    // hidden behind it at the end (edge-to-edge on Android 15).
+                    padding: EdgeInsets.fromLTRB(
+                        16, 16, 16, 16 + MediaQuery.viewPaddingOf(context).bottom),
                     itemCount: rows.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (_, i) => _card(rows[i]),
