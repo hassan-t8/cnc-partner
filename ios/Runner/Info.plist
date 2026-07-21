@@ -24,16 +24,20 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>This app uses the camera to capture before/after job photos.</string>
+	<string>Take before-and-after photos of a job — for example, photographing a room before cleaning and again once the work is done, as proof for the customer.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Use Face ID to sign in to CNC Partner quickly and securely.</string>
+	<string>Unlock CNC Partner with Face ID instead of retyping your password — for example, when reopening the app between jobs.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>This app uses your location to show your driving route.</string>
+	<string>Your location is used to show your route to the job and to confirm you have arrived on site. CNC Partner only uses your location while the app is open.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>This app needs photo access to attach job photos.</string>
+	<string>Attach a photo from your library to a job — for example, a picture of completed work or a receipt for cash you collected.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -57,17 +61,10 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<!-- Push notifications (FCM): allow the app to process incoming remote
-	     notifications while backgrounded. Requires the "Push Notifications"
-	     capability + "Background Modes → Remote notifications" in Xcode. -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
 	</array>
-	<!-- Let FlutterFire's method-swizzling forward APNs callbacks to
-	     firebase_messaging automatically (no manual AppDelegate wiring). -->
-	<key>FirebaseAppDelegateProxyEnabled</key>
-	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
