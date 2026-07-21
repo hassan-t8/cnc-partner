@@ -584,7 +584,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           child: LayoutBuilder(
           builder: (context, constraints) => ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            // When there's no bottom action bar (e.g. a completed booking), the
+            // list runs to the screen edge, so it must clear the Android system
+            // nav bar itself (edge-to-edge on Android 15) — otherwise the last
+            // card, the customer review, hides behind it on scroll.
+            padding: EdgeInsets.fromLTRB(16, 16, 16,
+                actions.isEmpty ? 24 + MediaQuery.viewPaddingOf(context).bottom : 24),
             children: [
               _heroCard(),
               const SizedBox(height: 14),
