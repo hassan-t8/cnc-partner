@@ -206,10 +206,18 @@ class _WorkerBookingDetailScreenState
     final endTime = a.scheduledEnd != null
         ? DateFormat('h:mm a').format(a.scheduledEnd!)
         : '';
+    // Build the bottom action bar once. When there is none (completed /
+    // cancelled jobs), the list runs to the screen edge, so it must clear the
+    // Android system nav bar itself (edge-to-edge on Android 15) — otherwise
+    // the last card hides behind it. When a bar IS present it already clears
+    // the nav bar via SafeArea, and the Scaffold lifts the body above it.
+    final actionBar = _actionBar();
+    final listBottom =
+        actionBar == null ? 16 + MediaQuery.viewPaddingOf(context).bottom : 16.0;
     return Scaffold(
       appBar: const MainAppBar('Booking details'),
       body: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, listBottom),
           children: [
             // Hero
             Container(
@@ -279,13 +287,24 @@ class _WorkerBookingDetailScreenState
                     (a.customerPhone ?? '').isNotEmpty) ...[
                   if (a.fullAddress.isNotEmpty) const SizedBox(width: 10),
                   Expanded(
-                    child: _ghost(Icons.call_outlined, 'Call customer', () {
+                    child: _ghost(Icons.call_outlined, 'Call customer', () async {
                       // Crew on the job need the CUSTOMER, not the partner.
                       final phone = (a.customerPhone ?? '').isNotEmpty
                           ? a.customerPhone!
                           : a.partnerPhone!;
-                      launchUrl(
-                          Uri.parse('tel:${phone.replaceAll(' ', '')}'));
+                      // Strip spaces AND formatting the dialer rejects; keep a
+                      // leading + for international numbers. Use external mode
+                      // like the Directions button so it opens the dialer.
+                      final dial = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+                      final ok = await launchUrl(
+                        Uri(scheme: 'tel', path: dial),
+                        mode: LaunchMode.externalApplication,
+                      );
+                      if (!ok && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Could not open the dialer for $dial')),
+                        );
+                      }
                     }),
                   ),
                 ],
@@ -309,7 +328,7 @@ class _WorkerBookingDetailScreenState
             ],
           ],
         ),
-        bottomNavigationBar: _actionBar(),
+        bottomNavigationBar: actionBar,
     );
   }
 

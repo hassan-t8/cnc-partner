@@ -35,8 +35,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final storage = ref.read(authStorageProvider);
       final seen = await storage.seenOnboarding();
       if (!seen && mounted) {
-        Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const OnboardingScreen()));
+        // Mark it seen the moment we show it, so it appears EXACTLY once — on
+        // a fresh install. Previously it was only marked on Skip / finish, so
+        // dismissing with the Android back button left the flag unset and the
+        // slides reappeared on every return to the login screen (e.g. after
+        // logout). The flag lives in prefs and is NOT wiped by logout's
+        // clear(), so after this it never shows again.
+        await storage.setOnboarded();
+        if (mounted) {
+          Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const OnboardingScreen()));
+        }
       }
       // Set up biometric quick-login if there are saved accounts.
       final accounts = await storage.savedAccounts();

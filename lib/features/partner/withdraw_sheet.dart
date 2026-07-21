@@ -386,7 +386,7 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
                             strokeWidth: 2, color: Colors.white),
                       )
                     : const Icon(Icons.south_rounded, size: 16),
-                label: Text(_busy ? 'Submitting…' : 'Request withdraw'),
+                label: Text(_busy ? 'Submitting…' : 'Withdraw'),
               ),
             ),
           ],
