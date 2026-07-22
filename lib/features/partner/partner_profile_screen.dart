@@ -272,6 +272,11 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
           const SizedBox(height: 16),
           _statsRow(p),
           _section('Identity', [
+            // Account holder's full name from the auth token (firstName +
+            // lastName). Shown only when the token actually carries it.
+            if ((ref.read(authControllerProvider).user?.fullName ?? '').isNotEmpty)
+              _kv('Full name',
+                  ref.read(authControllerProvider).user?.fullName ?? ''),
             _kv('Partner name', p.name),
             _kv('Contact', p.contactPerson),
             _kv('Code', p.code),
