@@ -17,6 +17,39 @@ String _s(dynamic v) => v?.toString() ?? '';
 const Set<String> _kPaidStatuses = {
   'paid', 'full', 'success', 'complete', 'completed',
 };
+
+/// Payment statuses that mean the customer was refunded AFTER paying — they owe
+/// money again, so cash becomes collectable at the door regardless of the
+/// collected flag / payment method / paid status. Mirrors the web partner
+/// `cashDueFor` refund overlay (2026-07-22).
+const Set<String> _kRefundedStatuses = {
+  'partial_refunded', 'fully_refunded',
+  'partial refunded', 'fully refunded', 'refunded',
+};
+
+bool _isRefundedStatus(String s) => _kRefundedStatuses.contains(s.toLowerCase());
+
+/// Refund-aware cash owed at the door — mirrors the web partner `cashDueFor`
+/// (2026-07-22). A booking refunded after being paid owes the server's net
+/// `remainingAmount` again (any method), so prefer that; otherwise an explicit
+/// due, then the server net remaining, then (total − coins) with
+/// cncChargesInclVat covering a null totalPrice. [status] is the booking's
+/// resolved payment status.
+double _cashDueFrom(Map<String, dynamic> src, String status) {
+  final hasRemaining = src['remainingAmount'] != null;
+  final serverRemaining = _d(src['remainingAmount']);
+  // Refund overlay — trust the server net remaining even for a collected /
+  // wallet / paid booking, so the Collect button re-appears post-refund.
+  if (_isRefundedStatus(status) && hasRemaining) {
+    return serverRemaining > 0 ? serverRemaining : 0.0;
+  }
+  final explicit = _d(src['cashDue'] ?? src['cashOwed'] ?? src['amountDue']);
+  if (explicit > 0) return explicit;
+  if (hasRemaining && serverRemaining > 0) return serverRemaining;
+  final total = _d(src['totalPrice'] ?? src['cncChargesInclVat'] ?? src['price']);
+  final owed = total - _d(src['coinsApplied']);
+  return owed > 0 ? owed : 0.0;
+}
 DateTime? _dt(dynamic v) {
   if (v == null) return null;
   return DateTime.tryParse(v.toString());
@@ -98,11 +131,15 @@ class Assignment {
   /// never captured are collectable; only wallet-prepaid or already-paid
   /// bookings are excluded. The backend's ONLINE_PAYMENT_COVERS_CASH guard
   /// still blocks a genuine double-collection if the status flag lags.
-  bool get cashPending =>
-      !cashCollected &&
-      cashDue > 0 &&
-      payment.toLowerCase() != 'wallet' &&
-      !_kPaidStatuses.contains(paymentStatus.toLowerCase());
+  bool get cashPending {
+    if (cashDue <= 0) return false;
+    // Refund overlay — a booking refunded after being paid owes again,
+    // regardless of the collected flag / method / paid status.
+    if (_isRefundedStatus(paymentStatus)) return true;
+    return !cashCollected &&
+        payment.toLowerCase() != 'wallet' &&
+        !_kPaidStatuses.contains(paymentStatus.toLowerCase());
+  }
 
   Assignment copyWith({String? status, bool? cashCollected}) => Assignment(
         id: id,
@@ -131,6 +168,7 @@ class Assignment {
   factory Assignment.fromJson(Map<String, dynamic> j) {
     final b = j['booking'] is Map ? Map<String, dynamic>.from(j['booking']) : j;
     final cust = b['customer'] is Map ? Map<String, dynamic>.from(b['customer']) : const {};
+    final ps = _s(b['paymentStatus'] ?? b['bookingPaymentStatus'] ?? b['status']);
     return Assignment(
       id: _i(j['id']) ?? 0,
       bookingId: _i(j['bookingId'] ?? b['id']),
@@ -156,21 +194,10 @@ class Assignment {
       // Payment-receipt status. workers/me/bookings denormalizes the parent
       // Booking's `status` enum ('not received'|'pending'|'partial'|'complete');
       // prefer an explicit paymentStatus if a future endpoint sends one.
-      paymentStatus: _s(b['paymentStatus'] ?? b['bookingPaymentStatus'] ?? b['status']),
-      // The worker bookings response ships payment/cashCollected/totalPrice/
-      // coinsApplied; cash owed at the door = total − coins (clamped) unless an
-      // explicit due is provided.
-      cashDue: () {
-        final explicit = _d(b['cashDue'] ?? b['cashOwed'] ?? b['amountDue']);
-        if (explicit > 0) return explicit;
-        // Fall back to cncChargesInclVat when totalPrice is null (CNC-customer
-        // bookings persist only the charges column) — else the crew "Collect"
-        // button silently hides. Mirrors the web WorkerBookings cashDueFor fix.
-        final total =
-            _d(b['totalPrice'] ?? b['cncChargesInclVat'] ?? b['price']);
-        final owed = total - _d(b['coinsApplied']);
-        return owed > 0 ? owed : 0.0;
-      }(),
+      paymentStatus: ps,
+      // Cash owed at the door — refund-aware, prefers the server's net
+      // remaining, falls back to (total − coins). See _cashDueFrom.
+      cashDue: _cashDueFrom(b, ps),
       // Truthy parse: the backend sends cashCollected as an int (1/0), and
       // `1 == true` is false in Dart — using `== true` made a collected cash
       // booking reappear as "Collect". _b handles 1 / '1' / true.
@@ -318,11 +345,15 @@ class PartnerBooking {
   /// merged form: skip already-collected, wallet-prepaid, and fully-paid
   /// bookings; anything else is collectable). Covers unpaid/partial bookings
   /// AND online bookings the customer never captured (COD fallback).
-  bool get cashPending =>
-      !cashCollected &&
-      cashDue > 0 &&
-      payment.toLowerCase() != 'wallet' &&
-      !_kPaidStatuses.contains(paymentStatus.toLowerCase());
+  bool get cashPending {
+    if (cashDue <= 0) return false;
+    // Refund overlay — a booking refunded after being paid owes again,
+    // regardless of the collected flag / method / paid status.
+    if (_isRefundedStatus(paymentStatus)) return true;
+    return !cashCollected &&
+        payment.toLowerCase() != 'wallet' &&
+        !_kPaidStatuses.contains(paymentStatus.toLowerCase());
+  }
 
   PartnerBooking copyWith(
           {String? status, bool? cashCollected, bool? customerReviewed}) =>
@@ -356,6 +387,7 @@ class PartnerBooking {
 
   factory PartnerBooking.fromJson(Map<String, dynamic> j) {
     final cust = j['customer'] is Map ? Map<String, dynamic>.from(j['customer']) : const {};
+    final ps = _s(j['paymentStatus'] ?? j['bookingPaymentStatus']);
     return PartnerBooking(
       id: _i(j['id']) ?? 0,
       ref: _s(j['bookingId'] ?? j['ref'] ?? j['reference'] ?? j['bookingRef'] ??
@@ -372,18 +404,11 @@ class PartnerBooking {
       partnerFloor: _d(j['partnerFloor']),
       capApplied: _b(j['capApplied']),
       requiresStartOtp: j['requiresStartOtp'] == true,
-      paymentStatus: _s(j['paymentStatus']),
+      paymentStatus: ps,
       payment: _s(j['payment'] ?? j['paymentMethod']),
-      // getPartnerBookings returns total/coins (no explicit cashDue), so derive
-      // the cash owed at the door = total − coins, clamped.
-      cashDue: () {
-        final explicit = _d(j['cashDue'] ?? j['cashOwed'] ?? j['amountDue']);
-        if (explicit > 0) return explicit;
-        final owed =
-            _d(j['totalPrice'] ?? j['cncChargesInclVat'] ?? j['price']) -
-                _d(j['coinsApplied']);
-        return owed > 0 ? owed : 0.0;
-      }(),
+      // Cash owed at the door — refund-aware, prefers the server's net
+      // remaining, falls back to (total − coins). See _cashDueFrom.
+      cashDue: _cashDueFrom(j, ps),
       cashCollected: _b(j['cashCollected']),
       customerReviewed: _b(j['customerReviewed']),
       zoneId: _i(j['zoneId']),
