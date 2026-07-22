@@ -272,11 +272,6 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
           const SizedBox(height: 16),
           _statsRow(p),
           _section('Identity', [
-            // Account holder's full name from the auth token (firstName +
-            // lastName). Shown only when the token actually carries it.
-            if ((ref.read(authControllerProvider).user?.fullName ?? '').isNotEmpty)
-              _kv('Full name',
-                  ref.read(authControllerProvider).user?.fullName ?? ''),
             _kv('Partner name', p.name),
             _kv('Contact', p.contactPerson),
             _kv('Code', p.code),
@@ -388,7 +383,10 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
     );
   }
 
-  Widget _hero(Partner p) => Row(
+  Widget _hero(Partner p) {
+    // Account holder's full name from the auth token (firstName + lastName).
+    final fullName = ref.read(authControllerProvider).user?.fullName ?? '';
+    return Row(
         children: [
           _avatar(p.name),
           const SizedBox(width: 14),
@@ -399,6 +397,25 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
                 Text(p.name.isEmpty ? 'Partner' : p.name,
                     style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.w800)),
+                // Shown only when the token actually carries a name.
+                if (fullName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_outline,
+                            size: 13, color: AppColors.textMuted),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(fullName,
+                              style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -425,6 +442,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
           ),
         ],
       );
+  }
 
   Widget _statsRow(Partner p) => Row(
         children: [
