@@ -242,6 +242,14 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
     );
   }
 
+  /// Account header name: the full name from the token (firstName + lastName)
+  /// when present, else the first-name greeting, else "there".
+  String _displayName(dynamic user) {
+    final full = (user?.fullName ?? '').toString().trim();
+    if (full.isNotEmpty) return full;
+    return (user?.greetingName ?? 'there').toString();
+  }
+
   Widget _header(dynamic user, String? photo) => GestureDetector(
         onTap: _openMyProfile,
         child: Container(
@@ -309,7 +317,7 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(user?.greetingName ?? 'there',
+                  Text(_displayName(user),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
