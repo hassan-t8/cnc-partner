@@ -124,9 +124,16 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         final d = DateUtils.dateOnly(a.scheduledStart!);
         counts[d] = (counts[d] ?? 0) + 1;
       }
-      // Seed cash-collected state (this feed has it; My-Jobs doesn't).
+      // Seed "no cash to collect" from the rich /workers/me/bookings feed,
+      // which carries the payment fields (paymentStatus, coins, remaining,
+      // cashCollected) — so its cashPending is authoritative. Suppress the
+      // My-Jobs "Collect" button for EVERY settled booking it reports (paid
+      // online / wallet / already collected), not just cash-collected ones.
+      // The My-Jobs feed (/booking-assignments) omits those payment fields and
+      // would otherwise show a phantom "Collect AED …" on an already-paid
+      // booking; the web reads this same feed and correctly shows "Complete".
       ref.read(crewOverridesProvider.notifier).seedCollected(
-          all.where((a) => a.cashCollected).map((a) => a.bookingId));
+          all.where((a) => !a.cashPending).map((a) => a.bookingId));
       setState(() => _jobCounts = counts);
     } catch (_) {}
   }
