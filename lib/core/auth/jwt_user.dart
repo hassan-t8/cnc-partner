@@ -12,6 +12,7 @@ class JwtUser {
   final int? workerId;
   final List<String> workerRoles; // crew / driver (for role=worker)
   final String? firstName;
+  final String? lastName;
   final int? exp;
 
   const JwtUser({
@@ -22,6 +23,7 @@ class JwtUser {
     this.workerId,
     this.workerRoles = const [],
     this.firstName,
+    this.lastName,
     this.exp,
   });
 
@@ -37,6 +39,7 @@ class JwtUser {
       workerId: asInt(j['workerId']),
       workerRoles: wr is List ? wr.map((e) => '$e').toList() : const [],
       firstName: j['firstName']?.toString(),
+      lastName: j['lastName']?.toString(),
       exp: asInt(j['exp']),
     );
   }
@@ -76,6 +79,13 @@ class JwtUser {
   }
 
   bool canEnter(RoleArea area) => areas.contains(area);
+
+  /// The account holder's full name from the token (firstName + lastName).
+  /// Empty when the token carries neither — callers show it only when present.
+  String get fullName => [firstName, lastName]
+      .where((s) => s != null && s.trim().isNotEmpty)
+      .map((s) => s!.trim())
+      .join(' ');
 
   /// Greeting name (firstName → email local-part → "there").
   String get greetingName {
