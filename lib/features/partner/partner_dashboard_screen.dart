@@ -77,16 +77,22 @@ class _PartnerDashboardScreenState
 
   Future<_Dash> _fetch() async {
     final repo = ref.read(partnerRepositoryProvider);
+    final partnerId = ref.read(authControllerProvider).user?.partnerId ?? 0;
     // KPIs (today/week/pending/workers/vans/earnings) are computed server-side
     // via /partner/me/dashboard-stats — no more client-side counting over a
-    // capped booking list. Offers still come from the live offers inbox.
+    // capped booking list. Offers still come from the live offers inbox. The
+    // wallet gives the same balance the Earnings screen leads with, so the home
+    // card shows real money instead of the partnerCost-based weekly stat that
+    // read 0.00.
     final results = await Future.wait([
       repo.getDashboardStats().catchError((_) => const DashboardStats()),
       repo.offers().catchError((_) => <Offer>[]),
+      repo.wallet(partnerId).catchError((_) => const WalletStatement()),
     ]);
     return _Dash(
       stats: results[0] as DashboardStats,
       offers: results[1] as List<Offer>,
+      balance: (results[2] as WalletStatement).wallet.balance,
     );
   }
 
@@ -160,11 +166,9 @@ class _PartnerDashboardScreenState
                 : Builder(builder: (context) {
                     final d = _data!;
             // Server-computed KPIs (no client-side counting over a capped
-            // booking list). weekEarn is sum(partnerCost) for completed
-            // bookings in the current Monday-week, per the backend window.
+            // booking list).
             final today = d.stats.bookingsToday;
             final week = d.stats.bookingsWeek;
-            final weekEarn = d.stats.earningsWeek;
 
             // "New requests" must only list offers you can still ACT on. An
             // expired offer has already been passed to the next partner, so
@@ -218,7 +222,7 @@ class _PartnerDashboardScreenState
                   ],
                 ),
                 const SizedBox(height: 12),
-                _earningsCard(weekEarn),
+                _earningsCard(d.balance),
                 const SizedBox(height: 20),
                 Row(
                   children: [
@@ -364,7 +368,7 @@ class _PartnerDashboardScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Earnings (completed)',
+                      const Text('Wallet balance',
                           style: TextStyle(
                               color: Colors.white70, fontSize: 12.5)),
                       Text('AED ${amount.toStringAsFixed(2)}',
@@ -542,5 +546,6 @@ class _PartnerDashboardScreenState
 class _Dash {
   final DashboardStats stats;
   final List<Offer> offers;
-  _Dash({required this.stats, required this.offers});
+  final double balance;
+  _Dash({required this.stats, required this.offers, this.balance = 0});
 }
