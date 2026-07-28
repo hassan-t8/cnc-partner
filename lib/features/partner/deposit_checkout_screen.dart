@@ -175,15 +175,61 @@ class _DepositCheckoutScreenState extends State<DepositCheckoutScreen> {
     // shopperResultUrl is a server-issued backend URL; still HTML-escape the
     // quote just in case, so it can't break out of the JS string / attribute.
     final safeResult = i.shopperResultUrl.replaceAll("'", '%27');
+    final amountStr = i.amount.toStringAsFixed(2);
+    // Card design mirrors the cncapp customer payment screen (buildHyperPayHtml)
+    // — a dark gradient amount card, a CARD DETAILS row, the styled HyperPay
+    // form and a trust footer. The functional bits stay: shopperResultUrl +
+    // paymentTarget '_top' + the window.wpwl mirror + integrity, which the
+    // deposit flow relies on to intercept the 3-D Secure result.
     return '''
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes">
   <style>
-    body { margin: 0; padding: 16px; font-family: -apple-system, Roboto, sans-serif; background:#fff; }
-    .wpwl-form { max-width: 480px; margin: 0 auto; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; }
+    body { font-family: -apple-system, 'Poppins', Arial, sans-serif; background: #ffffff; color: #111827; padding: 16px 16px 28px; }
+
+    .amount-card {
+      background: linear-gradient(135deg, #23272E 0%, #3A4352 100%);
+      border-radius: 24px; padding: 20px; color: #fff; margin-bottom: 18px;
+      box-shadow: 0 8px 18px rgba(35,39,46,0.25);
+    }
+    .amount-top { display: flex; align-items: flex-start; justify-content: space-between; }
+    .amount-label { font-size: 10px; letter-spacing: 2px; font-weight: 800; color: rgba(255,255,255,0.6); }
+    .amount-value { font-size: 26px; font-weight: 900; margin-top: 6px; line-height: 1; }
+    .amount-value .cur { font-size: 15px; font-weight: 700; color: #36B864; margin-right: 4px; }
+
+    .brand-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .brand-row .lbl { font-size: 10.5px; letter-spacing: 1.4px; font-weight: 800; color: #6B7280; }
+    .brand-row .brands { font-size: 12px; font-weight: 900; color: #374151; letter-spacing: 0.5px; }
+    .brand-row .brands .amex { color: #9CA3AF; font-weight: 700; }
+
+    .wpwl-form { max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; }
+    .wpwl-group { margin: 0 0 16px 0 !important; width: 100% !important; float: none !important; clear: both !important; display: block !important; position: relative !important; overflow: visible !important; }
+    .wpwl-wrapper { width: 100% !important; float: none !important; display: block !important; position: relative !important; }
+    .wpwl-label { font-size: 13px !important; color: #4B5563 !important; font-weight: 600 !important; margin-bottom: 8px !important; display: block !important; }
+    .wpwl-control { height: 48px !important; width: 100% !important; border-radius: 12px !important; border: 1px solid #E5E7EB !important; font-size: 15px !important; padding: 0 14px !important; box-shadow: none !important; background: #F9FAFB !important; position: relative !important; z-index: 2 !important; }
+    .wpwl-control:focus, .wpwl-control-focus { border-color: #36B864 !important; background: #ffffff !important; outline: none !important; }
+    .wpwl-brand, .wpwl-brand-container, .wpwl-brand-custom { pointer-events: none !important; position: absolute !important; right: 12px !important; top: 50% !important; transform: translateY(-50%) !important; max-height: 24px !important; width: auto !important; margin: 0 !important; z-index: 3 !important; }
+    .wpwl-group-mobilePhoneCountryCode,
+    .wpwl-group-mobilePhoneNumber,
+    .wpwl-group-birthDate,
+    .wpwl-group-clickToPayConfirmation,
+    .wpwl-group-visaInstallmentConfirmation,
+    .wpwl-group-registration,
+    .wpwl-sib-registration,
+    .wpwl-group-total { display: none !important; }
+    .wpwl-button-pay { background: #36B864 !important; border: none !important; border-radius: 12px !important; height: 52px !important; font-weight: 700 !important; text-transform: none !important; font-size: 16px !important; box-shadow: 0 4px 14px rgba(54,184,100,0.35) !important; margin-top: 8px !important; width: 100% !important; }
+    .wpwl-button-pay:active { opacity: 0.9 !important; }
+    .wpwl-hint { font-size: 11px !important; color: #9CA3AF !important; }
+    .wpwl-message, .wpwl-error { border-radius: 10px !important; font-size: 12.5px !important; }
+
+    .trust { text-align: center; margin-top: 18px; }
+    .trust .line1 { font-size: 11px; font-weight: 600; color: #9CA3AF; }
+    .trust .line2 { font-size: 10.5px; color: #C4C9D0; margin-top: 4px; }
   </style>
   <script type="text/javascript">
     var wpwlOptions = {
@@ -191,7 +237,11 @@ class _DepositCheckoutScreenState extends State<DepositCheckoutScreen> {
       locale: 'en',
       brandDetection: true,
       paymentTarget: '_top',
-      shopperResultUrl: '$safeResult'
+      shopperResultUrl: '$safeResult',
+      iframeStyles: {
+        'card-number-placeholder': { 'color': '#9CA3AF', 'font-size': '15px' },
+        'cvv-placeholder': { 'color': '#9CA3AF', 'font-size': '15px' }
+      }
     };
     // The web sets wpwl.options as well as wpwlOptions — mirror it, so the
     // widget reads the same config however it looks it up.
@@ -201,11 +251,28 @@ class _DepositCheckoutScreenState extends State<DepositCheckoutScreen> {
   <script src="${i.widgetBase}/v1/paymentWidgets.js?checkoutId=${i.checkoutId}" $integrityAttrs></script>
 </head>
 <body>
+  <div class="amount-card">
+    <div class="amount-top">
+      <div>
+        <div class="amount-label">DEPOSIT AMOUNT</div>
+        <div class="amount-value"><span class="cur">AED</span>$amountStr</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="brand-row">
+    <span class="lbl">CARD DETAILS</span>
+    <span class="brands">VISA · Mastercard <span class="amex">· Amex</span></span>
+  </div>
+
   <!-- No action attribute: the result URL is supplied via
-       wpwlOptions.shopperResultUrl, exactly as the partner web portal does.
-       An action="" (which is what an empty/missing shopperResultUrl produced)
-       is itself one of the things HyperPay rejects. -->
+       wpwlOptions.shopperResultUrl, exactly as the partner web portal does. -->
   <form class="paymentWidgets" data-brands="${i.brands}"></form>
+
+  <div class="trust">
+    <div class="line1">🔒 Card details never leave your device · HyperPay encrypted</div>
+    <div class="line2">You may be redirected to your bank for 3-D Secure verification.</div>
+  </div>
 </body>
 </html>
 ''';
