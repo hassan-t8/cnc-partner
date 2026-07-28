@@ -736,19 +736,23 @@ class Offer {
           (b['customerPhone'] ?? cust['phone'] ?? j['customerPhone'])
               ?.toString(),
       address: _s(b['address'] ?? j['address']),
-      // Partner take-home: prefer the first POSITIVE figure — partnerEarnings
-      // can be 0 (cap edge / not yet computed), in which case we show the
-      // booking amount rather than a misleading "AED 0.00".
-      // Partner take-home, EXCL VAT — matching the partner web portal exactly
-      // (`admin/requests/page.tsx`): prefer the server-computed, cap-aware
-      // `partnerEarnings`, and fall back to `cncChargesExclVat` only for older
-      // deploys that predate it.
+      // Partner take-home — prefer the first POSITIVE figure (partnerEarnings
+      // can be 0 on a cap edge / before it's computed, in which case we show
+      // the booking amount rather than a misleading "AED 0.00").
       //
-      // Deliberately does NOT fall through to cncChargesInclVat / totalPrice.
-      // Those are the CUSTOMER price on a different VAT basis — showing them
-      // under "Your earnings" overstates what the partner is actually paid,
-      // and disagrees with the wallet ledger that eventually gets written.
+      // 2026-07-28 — INCL-VAT entitlement first, matching the partner web
+      // portal (`admin/requests/page.tsx`). The wallet credits partnerNet +
+      // partnerVat and the booking is stamped with that at accept, so showing
+      // the excl-VAT `partnerEarnings` made the amount look like it changed the
+      // instant the partner accepted. Prefer `partnerEarningsInclVat`, fall
+      // back through the old excl-VAT chain for older backends.
+      //
+      // Deliberately does NOT fall through to cncChargesInclVat / totalPrice —
+      // those are the CUSTOMER price on a different VAT basis and would
+      // overstate what the partner is actually paid.
       earnings: _firstPositive([
+        b['partnerEarningsInclVat'],
+        j['partnerEarningsInclVat'],
         b['partnerEarnings'],
         j['partnerEarnings'],
         b['partnerCost'],
