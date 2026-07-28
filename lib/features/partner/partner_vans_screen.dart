@@ -25,11 +25,36 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
   String _status = 'all';
   // Optimistic local edits (status / auto-assign) for instant UI feedback.
   final Map<int, Van> _overrides = {};
+  // driverWorkerId → name. The van LIST endpoint returns driverWorkerId but no
+  // driver object/name (no include), so a van with an assigned driver showed
+  // "No driver". We load the workers once and resolve the name from this map.
+  Map<int, String> _driverNames = {};
 
   @override
   void initState() {
     super.initState();
     _future = ref.read(partnerRepositoryProvider).vans();
+    _loadDriverNames();
+  }
+
+  Future<void> _loadDriverNames() async {
+    try {
+      final ws = await ref.read(partnerRepositoryProvider).workers();
+      if (!mounted) return;
+      setState(() => _driverNames = {for (final w in ws) w.id: w.name});
+    } catch (_) {
+      // Non-fatal: falls back to "Driver #<id>" when the name is unknown.
+    }
+  }
+
+  /// Driver label for a van: the row's own name, else the resolved worker
+  /// name, else `Driver #id` when only the id is known, else "No driver".
+  String _driverLabel(Van v) {
+    if (v.driverName.isNotEmpty) return v.driverName;
+    final id = v.driverWorkerId;
+    if (id == null) return 'No driver';
+    final name = _driverNames[id];
+    return (name != null && name.isNotEmpty) ? name : 'Driver #$id';
   }
 
   Van _apply(Van v) => _overrides[v.id] ?? v;
@@ -39,7 +64,7 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
     return all.map(_apply).where((v) {
       if (_status != 'all' && v.status != _status) return false;
       if (q.isEmpty) return true;
-      return [v.name, v.plate, v.code, v.driverName]
+      return [v.name, v.plate, v.code, _driverLabel(v)]
           .any((s) => s.toLowerCase().contains(q));
     }).toList();
   }
@@ -350,8 +375,7 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
                   ),
                   child: Column(
                     children: [
-                      _infoRow(Icons.person_outline,
-                          v.driverName.isEmpty ? 'No driver' : v.driverName),
+                      _infoRow(Icons.person_outline, _driverLabel(v)),
                       if (hasParking)
                         InkWell(
                           onTap: () => launchUrl(
