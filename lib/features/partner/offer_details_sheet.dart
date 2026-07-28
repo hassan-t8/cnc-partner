@@ -136,13 +136,13 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
                     if (o.extraServiceCount > 0)
                       _row(Icons.list_alt_outlined, 'Services',
                           o.serviceNames.join(', ')),
-                    // Labelled excl. VAT, matching the partner web portal —
-                    // the figure is the cap-aware take-home, not the customer
-                    // price.
+                    // Labelled incl. VAT, matching the partner web portal —
+                    // the cap-aware take-home the wallet credits at accept
+                    // (partnerNet + partnerVat), not the customer price.
                     _row(
                         Icons.payments_outlined,
                         'You earn',
-                        'AED ${o.earnings.toStringAsFixed(2)} (excl. VAT)'
+                        'AED ${o.earnings.toStringAsFixed(2)} (incl. VAT)'
                         '${o.commissionPct != null ? '  ·  comm ${o.commissionPct!.toStringAsFixed(0)}%' : ''}',
                         valueColor: AppColors.brand700,
                         bold: true),
