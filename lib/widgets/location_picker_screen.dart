@@ -38,6 +38,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
   static const _uaeCenter = LatLng(24.4539, 54.3773);
   late LatLng _pos;
   late final TextEditingController _addr;
+  GoogleMapController? _mapCtrl;
   bool _hasPin = false;
   bool _geocoding = false;
   bool _myLocation = false; // enabled once location permission is granted
@@ -74,6 +75,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       _pos = p;
       _hasPin = true;
     });
+    // Centre + zoom to the tap so the FIRST tap visibly drops the pin (at the
+    // country-wide start zoom a lone marker was easy to miss, so it felt like
+    // the tap didn't register until the marker was dragged).
+    _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(p, 16));
     _reverseGeocode(p);
   }
 
@@ -132,6 +137,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                   // Default to a UAE country-wide view until a pin is dropped.
                   initialCameraPosition: CameraPosition(
                       target: _pos, zoom: _hasPin ? 15 : 6.5),
+                  onMapCreated: (c) => _mapCtrl = c,
                   onTap: _move,
                   markers: _hasPin
                       ? {
