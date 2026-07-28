@@ -21,6 +21,12 @@ class VanForm extends ConsumerStatefulWidget {
 
 class _VanFormState extends ConsumerState<VanForm> {
   final _formKey = GlobalKey<FormState>();
+  final _scrollCtrl = ScrollController();
+  // Keys on the required fields so a failed Save scrolls to the first one in
+  // error (instead of the button appearing to do nothing).
+  final _nameKey = GlobalKey<FormFieldState>();
+  final _plateKey = GlobalKey<FormFieldState>();
+  final _seatsKey = GlobalKey<FormFieldState>();
   late final TextEditingController _name;
   late final TextEditingController _plate;
   late final TextEditingController _code;
@@ -90,11 +96,15 @@ class _VanFormState extends ConsumerState<VanForm> {
     _code.dispose();
     _seats.dispose();
     _parking.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      _scrollToFirstError();
+      return;
+    }
     if (_zoneId == null) {
       AppToast.error('Please choose a primary zone.');
       return;
@@ -140,15 +150,17 @@ class _VanFormState extends ConsumerState<VanForm> {
       appBar: MainAppBar(_isEdit ? 'Edit van' : 'Add van'),
       body: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: ListView(
+          controller: _scrollCtrl,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
-            _field('Name *', _name,
+            _field('Name *', _name, fieldKey: _nameKey,
                 validator: (v) => (v ?? '').trim().isEmpty ? 'Required' : null),
-            _field('Plate *', _plate,
+            _field('Plate *', _plate, fieldKey: _plateKey,
                 validator: (v) => (v ?? '').trim().isEmpty ? 'Required' : null),
             _field('Code', _code),
-            _field('Seats *', _seats,
+            _field('Seats *', _seats, fieldKey: _seatsKey,
                 keyboard: TextInputType.number,
                 formatters: [FilteringTextInputFormatter.digitsOnly],
                 validator: (v) {
@@ -430,12 +442,14 @@ class _VanFormState extends ConsumerState<VanForm> {
       );
 
   Widget _field(String label, TextEditingController ctrl,
-          {String? Function(String?)? validator,
+          {Key? fieldKey,
+          String? Function(String?)? validator,
           TextInputType? keyboard,
           List<TextInputFormatter>? formatters}) =>
       Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: TextFormField(
+          key: fieldKey,
           controller: ctrl,
           keyboardType: keyboard,
           inputFormatters: formatters,
@@ -443,4 +457,19 @@ class _VanFormState extends ConsumerState<VanForm> {
           decoration: InputDecoration(labelText: label),
         ),
       );
+
+  /// Scrolls to the first required field in error and flags it, so a failed
+  /// Save never looks like the button did nothing.
+  void _scrollToFirstError() {
+    for (final k in [_nameKey, _plateKey, _seatsKey]) {
+      if (k.currentState?.hasError == true && k.currentContext != null) {
+        Scrollable.ensureVisible(k.currentContext!,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            alignment: 0.1);
+        break;
+      }
+    }
+    AppToast.error('Please complete the highlighted fields');
+  }
 }
