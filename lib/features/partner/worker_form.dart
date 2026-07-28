@@ -23,6 +23,10 @@ class WorkerForm extends ConsumerStatefulWidget {
 
 class _WorkerFormState extends ConsumerState<WorkerForm> {
   final _formKey = GlobalKey<FormState>();
+  final _scrollCtrl = ScrollController();
+  // Keys on the required fields so a failed Save scrolls to the first error.
+  final _firstKey = GlobalKey<FormFieldState>();
+  final _emailKey = GlobalKey<FormFieldState>();
   late final TextEditingController _first;
   late final TextEditingController _last;
   late final TextEditingController _email;
@@ -115,6 +119,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     _last.dispose();
     _email.dispose();
     _address.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -133,7 +138,10 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      _scrollToFirstError();
+      return;
+    }
     if (_zoneId == null) {
       AppToast.error('Please choose a primary zone.');
       return;
@@ -230,10 +238,12 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       appBar: MainAppBar(_isEdit ? 'Edit worker' : 'Add worker'),
       body: Form(
         key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         child: ListView(
+          controller: _scrollCtrl,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
-            _field('First name *', _first,
+            _field('First name *', _first, fieldKey: _firstKey,
                 validator: (v) => (v ?? '').trim().isEmpty ? 'Required' : null),
             _field('Last name', _last),
             Padding(
@@ -247,7 +257,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                 },
               ),
             ),
-            _field('Email *', _email,
+            _field('Email *', _email, fieldKey: _emailKey,
                 keyboard: TextInputType.emailAddress, validator: (v) {
               final s = (v ?? '').trim();
               if (s.isEmpty) return 'Required';
@@ -726,14 +736,32 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       );
 
   Widget _field(String label, TextEditingController ctrl,
-          {String? Function(String?)? validator, TextInputType? keyboard}) =>
+          {Key? fieldKey,
+          String? Function(String?)? validator,
+          TextInputType? keyboard}) =>
       Padding(
         padding: const EdgeInsets.only(bottom: 14),
         child: TextFormField(
+          key: fieldKey,
           controller: ctrl,
           keyboardType: keyboard,
           validator: validator,
           decoration: InputDecoration(labelText: label),
         ),
       );
+
+  /// Scrolls to the first required field in error so a failed Save never looks
+  /// like the button did nothing.
+  void _scrollToFirstError() {
+    for (final k in [_firstKey, _emailKey]) {
+      if (k.currentState?.hasError == true && k.currentContext != null) {
+        Scrollable.ensureVisible(k.currentContext!,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            alignment: 0.1);
+        break;
+      }
+    }
+    AppToast.error('Please complete the highlighted fields');
+  }
 }
