@@ -223,8 +223,12 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
         },
       ),
       bottomNavigationBar: _editing
-          ? SafeArea(
-              minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          ? Padding(
+              // Explicit system nav-bar inset (edge-to-edge Android 15) so the
+              // Cancel / Save buttons clear the gesture bar instead of hugging
+              // the bottom — SafeArea's minimum alone didn't add it here.
+              padding: EdgeInsets.fromLTRB(
+                  16, 8, 16, 14 + MediaQuery.viewPaddingOf(context).bottom),
               child: Row(
                 children: [
                   Expanded(
