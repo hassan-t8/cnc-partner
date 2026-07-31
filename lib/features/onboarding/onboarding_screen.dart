@@ -45,6 +45,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final last = _page == _slides.length - 1;
+
+    // Landscape on a phone leaves roughly 360dp of height for the whole page.
+    // The fixed chrome (Skip, dots, CTA, logo) took ~200 of it, and the slide
+    // art alone was 255 — hence the bottom overflow. Everything below shrinks
+    // on a short viewport rather than being clipped.
+    final compact = MediaQuery.sizeOf(context).height < 560;
+    final circle = compact ? 84.0 : 120.0;
+
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -61,33 +69,47 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 onPageChanged: (i) => setState(() => _page = i),
                 itemBuilder: (_, i) {
                   final s = _slides[i];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 120,
-                          height: 120,
-                          alignment: Alignment.center,
-                          decoration: const BoxDecoration(
-                              color: AppColors.brand50, shape: BoxShape.circle),
-                          child: Icon(s.icon,
-                              size: 56, color: AppColors.brand600),
+                  // LayoutBuilder + scroll view: the slide still centres when
+                  // there's room, and scrolls instead of overflowing when a
+                  // large system font or a very short window leaves none.
+                  return LayoutBuilder(
+                    builder: (context, box) => SingleChildScrollView(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 32, vertical: compact ? 8 : 0),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                            minHeight:
+                                box.maxHeight - (compact ? 16 : 0)),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: circle,
+                              height: circle,
+                              alignment: Alignment.center,
+                              decoration: const BoxDecoration(
+                                  color: AppColors.brand50,
+                                  shape: BoxShape.circle),
+                              child: Icon(s.icon,
+                                  size: compact ? 40 : 56,
+                                  color: AppColors.brand600),
+                            ),
+                            SizedBox(height: compact ? 16 : 32),
+                            Text(s.title,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: compact ? 18 : 22,
+                                    fontWeight: FontWeight.w800)),
+                            SizedBox(height: compact ? 8 : 12),
+                            Text(s.body,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    color: AppColors.textMuted,
+                                    fontSize: compact ? 13 : 14,
+                                    height: 1.4)),
+                          ],
                         ),
-                        const SizedBox(height: 32),
-                        Text(s.title,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                                fontSize: 22, fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 12),
-                        Text(s.body,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 14,
-                                height: 1.5)),
-                      ],
+                      ),
                     ),
                   );
                 },
@@ -111,10 +133,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       )),
             ),
             Padding(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.symmetric(
+                  horizontal: 24, vertical: compact ? 10 : 24),
               child: SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: compact ? 44 : 50,
                 child: ElevatedButton(
                   onPressed: () {
                     if (last) {
@@ -129,8 +152,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 ),
               ),
             ),
-            const BrandLogo(size: 28),
-            const SizedBox(height: 16),
+            // The logo is the first thing worth losing when height is scarce —
+            // it's decoration, and the CTA below it is not.
+            if (!compact) ...[
+              const BrandLogo(size: 28),
+              const SizedBox(height: 16),
+            ],
           ],
         ),
       ),
