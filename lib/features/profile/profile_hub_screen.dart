@@ -21,7 +21,6 @@ import '../partner/partner_vans_screen.dart';
 import '../partner/partner_workers_screen.dart';
 import '../partner/service_requests_screen.dart';
 import '../reviews/reviews_screen.dart';
-import '../settings/notifications_screen.dart';
 import '../worker/worker_repository.dart';
 import 'worker_profile_screen.dart';
 
@@ -168,8 +167,9 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
     final account = <_Item>[
       _Item(Icons.lock_reset_rounded, 'Change password', AppColors.brand600,
           screen: const ChangePasswordScreen()),
-      _Item(Icons.notifications_rounded, 'Notifications', AppColors.sky,
-          screen: const NotificationsScreen()),
+      // Removed 2026-07-30: the Notifications entry opened a push-permission
+      // toggle plus a "send a test notification" button — a debug surface, not
+      // something a partner needs. The screen file is kept for reintroduction.
       _Item(Icons.description_rounded, 'Terms & Conditions',
           AppColors.textMuted,
           screen: LegalScreen.terms()),
