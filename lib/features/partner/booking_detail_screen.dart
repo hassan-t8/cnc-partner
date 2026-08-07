@@ -11,6 +11,7 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
+import '../bookings/cash_collect_flow.dart';
 import '../bookings/models.dart';
 import '../worker/otp_dialog.dart';
 import 'assign_team_sheet.dart';
@@ -210,61 +211,29 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   /// online-uncaptured) bookings, mirroring the web partner-admin condition.
   /// Confirms (like the web) with an optional notes field before recording.
   Future<void> _collectCash() async {
-    final confirmed = await _cashCollectDialog();
-    if (confirmed == null) return; // cancelled
+    // Cash-extras flow (2026-08-06): the partner confirms how much was
+    // actually taken — full, partial, or more than due — and any surplus is
+    // then allocated to a tip / the customer wallet / a split of the two.
     setState(() => _busyAction = 'collect');
-    try {
-      await _repo.cashCollect(b.id, notes: confirmed.isEmpty ? null : confirmed);
-      if (!mounted) return;
-      setState(() {
-        b = b.copyWith(cashCollected: true);
-        _busyAction = null;
-      });
-      _changed = true;
-      AppToast.success(b.status == 'in_progress'
-          ? 'Cash collected — you can complete the job now'
-          : 'Cash marked collected');
-    } on ApiException catch (e) {
-      AppToast.error(e.message);
-      if (mounted) setState(() => _busyAction = null);
-    }
-  }
-
-  /// Confirm-and-record dialog for collecting cash. Returns the entered notes
-  /// (may be empty) on confirm, or null on cancel. Mirrors the web confirm.
-  Future<String?> _cashCollectDialog() {
-    final notes = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Collect cash'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Confirm you received AED ${b.cashDue.toStringAsFixed(2)} in '
-                'cash from ${b.customerName.isEmpty ? 'the customer' : b.customerName} '
-                'for booking #${b.ref}.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notes,
-              maxLines: 2,
-              decoration: const InputDecoration(hintText: 'Notes (optional)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.amber),
-            onPressed: () => Navigator.pop(ctx, notes.text.trim()),
-            child: const Text('Mark collected'),
-          ),
-        ],
+    final ok = await runCashCollectFlow(
+      context,
+      api: CashCollectApi(
+        collect: _repo.cashCollect,
+        allocate: _repo.allocateCashExtra,
+        cancel: _repo.cancelCashExtra,
       ),
+      bookingId: b.id,
+      cashDue: b.cashDue,
+      hasAgent: b.agentId != null,
     );
+    if (!mounted) return;
+    setState(() => _busyAction = null);
+    if (!ok) return;
+    setState(() => b = b.copyWith(cashCollected: true));
+    _changed = true;
+    AppToast.success(b.status == 'in_progress'
+        ? 'Cash collected — you can complete the job now'
+        : 'Cash marked collected');
   }
 
   /// Review the booking's customer (optional, post-completion — mirrors the
