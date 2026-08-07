@@ -1054,6 +1054,8 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
               ? DateFormat('d MMM · h:mm a').format(b.scheduledStart!)
               : 'Scheduled',
           amount: b.partnerCost,
+          cashInHand: b.cashInHand,
+          expectedWalletCredit: b.expectedWalletCredit,
         ),
     ];
   }
@@ -1066,6 +1068,8 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     Widget? statusBadge,
     required String clearsIn,
     required double amount,
+    double? cashInHand,
+    double? expectedWalletCredit,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1085,11 +1089,36 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                     style: const TextStyle(
                         fontWeight: FontWeight.w800, fontSize: 13.5)),
               ),
-              Text('AED ${amount.toStringAsFixed(2)}',
-                  style: const TextStyle(
-                      color: AppColors.brand600,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14)),
+              // 2026-08-06 — when the backend projects a wallet credit AND
+              // the partner already holds cash, show how the take-home
+              // splits. Falls back to the plain total when either figure is
+              // missing (admin call / older booking / computation skipped).
+              Builder(builder: (_) {
+                final cash = cashInHand ?? 0;
+                final hasSplit = expectedWalletCredit != null && cash > 0.005;
+                final total = Text('AED ${amount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                        color: AppColors.brand600,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14));
+                if (!hasSplit) return total;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    total,
+                    const SizedBox(height: 1),
+                    Text(
+                      'Cash ${cash.toStringAsFixed(2)} · '
+                      'Wallet ${expectedWalletCredit.toStringAsFixed(2)}',
+                      style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary),
+                    ),
+                  ],
+                );
+              }),
             ],
           ),
           if (title.isNotEmpty) ...[
