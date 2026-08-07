@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../bookings/cash_collect_flow.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -375,12 +376,23 @@ class _PartnerBookingsScreenState
           _removeBooking(b.id);
           break;
         case 'cash':
-          final done = await _cashCollectDialog(b);
-          if (done != true) {
+          // Cash-extras flow: amount confirmation, then allocation of any
+          // surplus. Replaces the old yes/no confirm dialog.
+          final done = await runCashCollectFlow(
+            context,
+            api: CashCollectApi(
+              collect: repo.cashCollect,
+              allocate: repo.allocateCashExtra,
+              cancel: repo.cancelCashExtra,
+            ),
+            bookingId: b.id,
+            cashDue: b.cashDue,
+            hasAgent: b.agentId != null,
+          );
+          if (!done) {
             setState(() => _acting.remove(b.id));
             return;
           }
-          await repo.cashCollect(b.id);
           AppToast.success('Cash marked collected');
           _patchCash(b.id);
           break;
@@ -583,42 +595,6 @@ class _PartnerBookingsScreenState
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Future<bool?> _cashCollectDialog(PartnerBooking b) {
-    final notes = TextEditingController();
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Collect cash'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Confirm you collected the cash from '
-                '${b.customerName.isEmpty ? 'the customer' : b.customerName} '
-                'for booking #${b.ref}.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: notes,
-              maxLines: 2,
-              decoration: const InputDecoration(hintText: 'Notes (optional)'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          ElevatedButton(
-            style:
-                ElevatedButton.styleFrom(backgroundColor: AppColors.amber),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Mark collected'),
-          ),
-        ],
       ),
     );
   }
