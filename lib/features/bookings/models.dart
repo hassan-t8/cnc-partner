@@ -8,6 +8,18 @@ double? _dn(dynamic v) => v == null
     ? null
     : (v is num ? v.toDouble() : double.tryParse('$v'));
 bool _b(dynamic v) => v == true || v == 1 || v == '1' || v == 'true';
+/// Nullable money parse — preserves the difference between "absent" (null)
+/// and a real 0, which the wallet-credit projection depends on.
+double? _dOrNull(dynamic v) {
+  if (v == null) return null;
+  return v is num ? v.toDouble() : double.tryParse('$v');
+}
+
+/// Nullable id parse — 0 and empty are treated as "absent".
+int? _idOrNull(dynamic v) {
+  final n = v is int ? v : (v is num ? v.toInt() : int.tryParse('${v ?? ''}'));
+  return (n == null || n == 0) ? null : n;
+}
 String _s(dynamic v) => v?.toString() ?? '';
 
 /// Payment-status labels the backend treats as "fully paid" — mirrors
@@ -85,6 +97,10 @@ class Assignment {
   final String paymentStatus;
   final double cashDue;
   final bool cashCollected;
+  /// Agent the booking is assigned to. Tips on a cash extra are routed to
+  /// this agent server-side, so tip/split allocations are only offered when
+  /// it is set (backend throws TIP_REQUIRES_AGENT otherwise).
+  final int? agentId;
   // Who this assignment is for — a crew member (workerId) or the driver
   // (driverWorkerId), plus their name. Populated by GET /booking-assignments;
   // used by the partner day-roster to group jobs per worker.
@@ -114,6 +130,7 @@ class Assignment {
     this.paymentStatus = '',
     this.cashDue = 0,
     this.cashCollected = false,
+    this.agentId,
     this.workerId,
     this.driverWorkerId,
     this.workerName = '',
@@ -163,6 +180,7 @@ class Assignment {
         paymentStatus: paymentStatus,
         cashDue: cashDue,
         cashCollected: cashCollected ?? this.cashCollected,
+        agentId: agentId,
       );
 
   factory Assignment.fromJson(Map<String, dynamic> j) {
@@ -202,6 +220,7 @@ class Assignment {
       // `1 == true` is false in Dart — using `== true` made a collected cash
       // booking reappear as "Collect". _b handles 1 / '1' / true.
       cashCollected: _b(b['cashCollected'] ?? j['cashCollected']),
+      agentId: _idOrNull(b['agentId'] ?? j['agentId']),
       workerId: _i(j['workerId']),
       driverWorkerId: _i(j['driverWorkerId']),
       workerName: _s((j['worker'] is Map ? j['worker']['name'] : null) ??
@@ -268,6 +287,17 @@ class PartnerBooking {
   final String payment; // cash | card | ...
   final double cashDue;
   final bool cashCollected;
+  /// See Assignment.agentId — gates tip/split cash-extra allocation.
+  final int? agentId;
+  /// 2026-08-06 — wallet-credit projection from the backend.
+  ///   [expectedWalletCredit] — what WILL land in the wallet on completion
+  ///                            (partnerNet minus cash already held).
+  ///   [cashInHand]           — physical cash already collected at the door.
+  /// Both null when the backend skipped the computation (admin call,
+  /// completed booking, or a per-row error) — the UI then falls back to
+  /// showing [partnerCost] alone.
+  final double? expectedWalletCredit;
+  final double? cashInHand;
   // True once the partner has left a review for THIS booking's customer.
   // Mirrors the web's per-booking `customerReviewed` flag from
   // getPartnerBookings (batch-loaded Review rows with targetType 'customer').
@@ -289,6 +319,9 @@ class PartnerBooking {
   const PartnerBooking({
     required this.id,
     this.ref = '',
+    this.agentId,
+    this.expectedWalletCredit,
+    this.cashInHand,
     this.zoneId,
     this.customerName = '',
     this.serviceName = '',
@@ -374,6 +407,9 @@ class PartnerBooking {
         cashDue: cashDue,
         cashCollected: cashCollected ?? this.cashCollected,
         customerReviewed: customerReviewed ?? this.customerReviewed,
+        agentId: agentId,
+        expectedWalletCredit: expectedWalletCredit,
+        cashInHand: cashInHand,
         zoneId: zoneId,
         customerPhone: customerPhone,
         customerEmail: customerEmail,
@@ -410,6 +446,9 @@ class PartnerBooking {
       // remaining, falls back to (total − coins). See _cashDueFrom.
       cashDue: _cashDueFrom(j, ps),
       cashCollected: _b(j['cashCollected']),
+      agentId: _idOrNull(j['agentId']),
+      expectedWalletCredit: _dOrNull(j['expectedWalletCredit']),
+      cashInHand: _dOrNull(j['cashInHand']),
       customerReviewed: _b(j['customerReviewed']),
       zoneId: _i(j['zoneId']),
       customerPhone: _s(cust['phone'] ?? j['phone'] ?? j['customerPhone']),
@@ -422,4 +461,98 @@ class PartnerBooking {
       pinLocation: _s(j['pinLocation'] ?? j['location']),
     );
   }
+}
+
+// ─── Cash extras (2026-08-06) ───────────────────────────────────────────────
+//
+// `POST /booking/:id/cash-collect` now accepts an optional `collectedAmount`,
+// so the door collection can be LESS than due (partial) or MORE than due
+// (extra). When it is more, the backend parks the surplus as a pending
+// BookingCashExtra row that must then be allocated — tip, customer wallet, or
+// a split of the two — or cancelled.
+
+/// The surplus parked by the backend when more cash was taken than was due.
+class PendingCashExtra {
+  final String id;
+  final double amount;
+  final String status;
+
+  const PendingCashExtra({
+    required this.id,
+    required this.amount,
+    required this.status,
+  });
+
+  static PendingCashExtra? fromJson(dynamic v) {
+    if (v is! Map) return null;
+    final j = Map<String, dynamic>.from(v);
+    final id = _s(j['id']);
+    if (id.isEmpty) return null;
+    return PendingCashExtra(
+      id: id,
+      amount: _d(j['amount']),
+      status: _s(j['status']).isEmpty ? 'pending' : _s(j['status']),
+    );
+  }
+
+  bool get isPending => status.toLowerCase() == 'pending';
+}
+
+/// Result of a cash-collect call. Older backends return none of the extra
+/// fields, which degrades to "full collection, nothing pending".
+class CashCollectResult {
+  final bool cashCollected;
+  final double cashDue;
+  final bool isPartial;
+  final double? collectedAmount;
+  final double? remainingAmount;
+  final PendingCashExtra? pendingCashExtra;
+  final String message;
+
+  const CashCollectResult({
+    this.cashCollected = true,
+    this.cashDue = 0,
+    this.isPartial = false,
+    this.collectedAmount,
+    this.remainingAmount,
+    this.pendingCashExtra,
+    this.message = '',
+  });
+
+  factory CashCollectResult.fromJson(Map<String, dynamic> res) {
+    final d = res['data'] is Map
+        ? Map<String, dynamic>.from(res['data'] as Map)
+        : <String, dynamic>{};
+    return CashCollectResult(
+      cashCollected: _b(d['cashCollected']),
+      cashDue: _d(d['cashDue']),
+      isPartial: _b(d['isPartial']),
+      collectedAmount:
+          d['collectedAmount'] == null ? null : _d(d['collectedAmount']),
+      remainingAmount:
+          d['remainingAmount'] == null ? null : _d(d['remainingAmount']),
+      pendingCashExtra: PendingCashExtra.fromJson(d['pendingCashExtra']),
+      message: _s(res['message']),
+    );
+  }
+
+  /// True when the partner must still choose where the surplus goes.
+  bool get needsAllocation => pendingCashExtra?.isPending ?? false;
+}
+
+/// Where a pending cash extra goes. `tip` and `split` require the booking to
+/// have an assigned agent — the backend rejects them with TIP_REQUIRES_AGENT
+/// otherwise, so the UI hides them when `agentId` is absent.
+enum CashExtraDestination { tip, wallet, split }
+
+extension CashExtraDestinationApi on CashExtraDestination {
+  String get api => name;
+
+  String get label => switch (this) {
+        CashExtraDestination.tip => 'Tip for the agent',
+        CashExtraDestination.wallet => 'Customer wallet',
+        CashExtraDestination.split => 'Split — tip + wallet',
+      };
+
+  bool get requiresAgent => this != CashExtraDestination.wallet;
 }
