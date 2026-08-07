@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../bookings/cash_collect_flow.dart';
 
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
@@ -275,7 +276,22 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     }
     setState(() => _acting = a.id);
     try {
-      await ref.read(workerRepositoryProvider).cashCollect(bookingId);
+      final repo = ref.read(workerRepositoryProvider);
+      final ok = await runCashCollectFlow(
+        context,
+        api: CashCollectApi(
+          collect: repo.cashCollect,
+          allocate: repo.allocateCashExtra,
+          cancel: repo.cancelCashExtra,
+        ),
+        bookingId: bookingId,
+        cashDue: a.cashDue,
+        hasAgent: a.agentId != null,
+      );
+      if (!ok) {
+        if (mounted) setState(() => _acting = -1);
+        return;
+      }
       AppToast.success('Cash collected — you can complete the job now');
       ref
           .read(crewOverridesProvider.notifier)
