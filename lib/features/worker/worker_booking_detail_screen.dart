@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../bookings/cash_collect_flow.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
@@ -340,7 +341,22 @@ class _WorkerBookingDetailScreenState
     }
     setState(() => _busyAction = 'collect');
     try {
-      await ref.read(workerRepositoryProvider).cashCollect(bookingId);
+      final repo = ref.read(workerRepositoryProvider);
+      final ok = await runCashCollectFlow(
+        context,
+        api: CashCollectApi(
+          collect: repo.cashCollect,
+          allocate: repo.allocateCashExtra,
+          cancel: repo.cancelCashExtra,
+        ),
+        bookingId: bookingId,
+        cashDue: a.cashDue,
+        hasAgent: a.agentId != null,
+      );
+      if (!ok) {
+        if (mounted) setState(() => _busyAction = null);
+        return;
+      }
       _sync(cashCollected: true);
       if (!mounted) return;
       setState(() {
