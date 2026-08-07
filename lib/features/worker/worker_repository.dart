@@ -68,9 +68,41 @@ class WorkerRepository {
 
   /// Mark the door cash as collected. Required before completing a cash
   /// booking with money owed. Keyed by the BOOKING id (not the assignment id).
-  Future<void> cashCollect(int bookingId, {String? notes}) => _api.post(
-      '/booking/$bookingId/cash-collect',
-      body: {if (notes != null) 'notes': notes});
+  ///
+  /// See PartnerRepository.cashCollect for the [collectedAmount] semantics —
+  /// omit for the full due, less for a partial, more to park a cash extra.
+  Future<CashCollectResult> cashCollect(
+    int bookingId, {
+    String? notes,
+    double? collectedAmount,
+  }) async {
+    final res = await _api.post('/booking/$bookingId/cash-collect', body: {
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+      if (collectedAmount != null) 'collectedAmount': collectedAmount,
+    });
+    return CashCollectResult.fromJson(
+        res.data is Map ? Map<String, dynamic>.from(res.data) : {});
+  }
+
+  /// Resolve a pending cash extra — tip, customer wallet, or a split.
+  Future<void> allocateCashExtra(
+    int bookingId,
+    String pendingId,
+    CashExtraDestination destination, {
+    double? tipAmount,
+    double? walletAmount,
+  }) =>
+      _api.post('/booking/$bookingId/cash-extra/$pendingId/allocate', body: {
+        'destination': destination.api,
+        if (destination == CashExtraDestination.split) ...{
+          'tipAmount': tipAmount ?? 0,
+          'walletAmount': walletAmount ?? 0,
+        },
+      });
+
+  /// Drop a pending cash extra without allocating it.
+  Future<void> cancelCashExtra(int bookingId, String pendingId) =>
+      _api.post('/booking/$bookingId/cash-extra/$pendingId/cancel');
 
   /// GET /booking-assignments/{id}/attachments — list before/after photos.
   Future<List<Map<String, dynamic>>> attachments(int assignmentId) async {

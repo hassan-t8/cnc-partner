@@ -115,9 +115,48 @@ class PartnerRepository {
 
   /// Mark cash as collected at the door (required before completing a
   /// cash-payment booking).
-  Future<void> cashCollect(int id, {String? notes}) => _api.post(
-      '/booking/$id/cash-collect',
-      body: {if (notes != null && notes.isNotEmpty) 'notes': notes});
+  ///
+  /// [collectedAmount] is optional: omit it for the full amount due, pass a
+  /// smaller value to record a partial collection, or a larger one when the
+  /// customer handed over extra. An over-collection comes back as a
+  /// `pendingCashExtra` that must then be resolved via [allocateCashExtra]
+  /// or [cancelCashExtra].
+  Future<CashCollectResult> cashCollect(
+    int id, {
+    String? notes,
+    double? collectedAmount,
+  }) async {
+    final res = await _api.post('/booking/$id/cash-collect', body: {
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+      if (collectedAmount != null) 'collectedAmount': collectedAmount,
+    });
+    return CashCollectResult.fromJson(
+        res.data is Map ? Map<String, dynamic>.from(res.data) : {});
+  }
+
+  /// Send a pending cash extra to a tip, the customer's wallet, or both.
+  ///
+  /// For [CashExtraDestination.split] the two amounts must sum exactly to the
+  /// pending amount — the backend rejects anything else.
+  Future<void> allocateCashExtra(
+    int bookingId,
+    String pendingId,
+    CashExtraDestination destination, {
+    double? tipAmount,
+    double? walletAmount,
+  }) =>
+      _api.post('/booking/$bookingId/cash-extra/$pendingId/allocate', body: {
+        'destination': destination.api,
+        if (destination == CashExtraDestination.split) ...{
+          'tipAmount': tipAmount ?? 0,
+          'walletAmount': walletAmount ?? 0,
+        },
+      });
+
+  /// Drop a pending cash extra without allocating it — the money was handed
+  /// back, or it was a mis-entry. Only valid while the row is still pending.
+  Future<void> cancelCashExtra(int bookingId, String pendingId) =>
+      _api.post('/booking/$bookingId/cash-extra/$pendingId/cancel');
 
   // ----- booking assignments (team picker) -----
   Future<List<BookingAssignment>> bookingAssignments(int bookingId) async {
