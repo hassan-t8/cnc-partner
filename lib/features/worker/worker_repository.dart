@@ -69,16 +69,20 @@ class WorkerRepository {
   /// Mark the door cash as collected. Required before completing a cash
   /// booking with money owed. Keyed by the BOOKING id (not the assignment id).
   ///
-  /// See PartnerRepository.cashCollect for the [collectedAmount] semantics —
-  /// omit for the full due, less for a partial, more to park a cash extra.
+  /// See PartnerRepository.cashCollect for the [collectedAmount] and
+  /// [extraAllocation] semantics — omit the amount for the full due, less for a
+  /// partial, more to over-collect, and pass an allocation with an
+  /// over-collection so the payment and the surplus commit together.
   Future<CashCollectResult> cashCollect(
     int bookingId, {
     String? notes,
     double? collectedAmount,
+    CashExtraAllocation? extraAllocation,
   }) async {
     final res = await _api.post('/booking/$bookingId/cash-collect', body: {
       if (notes != null && notes.isNotEmpty) 'notes': notes,
       if (collectedAmount != null) 'collectedAmount': collectedAmount,
+      if (extraAllocation != null) 'extraAllocation': extraAllocation.toJson(),
     });
     return CashCollectResult.fromJson(
         res.data is Map ? Map<String, dynamic>.from(res.data) : {});
