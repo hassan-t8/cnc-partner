@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
+import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/searchable_picker.dart';
 import 'partner_models.dart';
@@ -288,7 +289,7 @@ class _AssignTeamSheetState extends ConsumerState<_AssignTeamSheet> {
               const Divider(height: 1),
               Expanded(
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const LoadingList(count: 4, height: 64, nested: true)
                     : ListView(
                         controller: controller,
                         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
