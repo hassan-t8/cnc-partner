@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/notifications/notification_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -46,7 +47,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const LoadingList(count: 3, height: 96)
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
