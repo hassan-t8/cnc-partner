@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,7 +24,6 @@ class PartnerWorkersScreen extends ConsumerStatefulWidget {
 }
 
 class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
-  late Future<List<Worker>> _future;
   String _query = '';
   String _role = 'all';
   String _status = 'all';
@@ -30,18 +31,112 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
   // before the server round-trip completes.
   final Map<int, Worker> _overrides = {};
 
+  // ----- infinite-scroll pagination -----
+  // The roster used to load in one unbounded request, which got slower with
+  // every worker added and eventually hit the server's list cap. Search and
+  // role now go to the server so results aren't limited to the pages already
+  // scrolled in.
+  static const _pageSize = 30;
+  final ScrollController _scroll = ScrollController();
+  final List<Worker> _items = [];
+  int _page = 1;
+  bool _hasMore = true;
+  bool _loading = true;
+  bool _loadingMore = false;
+  Object? _error;
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
-    _future = ref.read(partnerRepositoryProvider).workers();
+    _scroll.addListener(_onScroll);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients || _loadingMore || !_hasMore) return;
+    if (_scroll.position.pixels >=
+        _scroll.position.maxScrollExtent - 400) {
+      _loadMore();
+    }
   }
 
   Worker _apply(Worker w) => _overrides[w.id] ?? w;
 
-  void _reload() => setState(() {
-    _overrides.clear();
-    _future = ref.read(partnerRepositoryProvider).workers();
-  });
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _overrides.clear();
+    });
+    try {
+      final page = await ref.read(partnerRepositoryProvider).workersPage(
+            page: 1,
+            limit: _pageSize,
+            q: _query,
+            role: _role,
+          );
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(page.rows);
+        _page = 1;
+        _hasMore = page.hasMore;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final next = _page + 1;
+      final page = await ref.read(partnerRepositoryProvider).workersPage(
+            page: next,
+            limit: _pageSize,
+            q: _query,
+            role: _role,
+          );
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(page.rows);
+        _page = next;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      // Keep what's loaded; the footer offers a retry.
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  void _reload() => _load();
+
+  /// Typing shouldn't fire a request per keystroke.
+  void _onSearch(String v) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      setState(() => _query = v);
+      _load();
+    });
+  }
 
   Future<void> _openForm([Worker? w]) async {
     await Navigator.of(
@@ -205,6 +300,26 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
     }
   }
 
+  bool get _hasSearchOrFilter =>
+      _query.trim().isNotEmpty || _role != 'all' || _status != 'all';
+
+  /// Footer row at the tail of the list: spins while the next page is in
+  /// flight, otherwise offers a tap to retry a page that failed.
+  Widget _loadMoreFooter() => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: _loadingMore
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4))
+              : TextButton(
+                  onPressed: _loadMore,
+                  child: const Text('Load more'),
+                ),
+        ),
+      );
+
   List<Worker> _filter(List<Worker> all) {
     final q = _query.toLowerCase();
     return all.map(_apply).where((w) {
@@ -248,12 +363,17 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: SearchFilterBar(
               hint: 'Search name, code, phone…',
-              onSearch: (v) => setState(() => _query = v),
+              onSearch: _onSearch,
               values: {'role': _role, 'status': _status},
-              onApply: (m) => setState(() {
-                _role = m['role'] ?? 'all';
-                _status = m['status'] ?? 'all';
-              }),
+              onApply: (m) {
+                setState(() {
+                  _role = m['role'] ?? 'all';
+                  _status = m['status'] ?? 'all';
+                });
+                // Role is a server filter, so it needs a refetch; status is
+                // derived client-side and just re-filters what's loaded.
+                _load();
+              },
               groups: const [
                 FilterGroup(
                   key: 'role',
@@ -281,43 +401,48 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
           ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async => _reload(),
-              child: FutureBuilder<List<Worker>>(
-                future: _future,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const LoadingList();
-                  }
-                  if (snap.hasError) {
-                    return ErrorRetry(
-                      message: 'Couldn\'t load workers.',
-                      onRetry: _reload,
-                    );
-                  }
-                  final rows = _filter(snap.data ?? const []);
-                  if (rows.isEmpty) {
-                    return ListView(
-                      children: const [
-                        SizedBox(height: 80),
-                        EmptyState(
-                          icon: Icons.groups_outlined,
-                          title: 'No workers',
-                          subtitle: 'Add workers from the web portal.',
-                        ),
-                      ],
-                    );
-                  }
-                  return ListView.separated(
-                    // Clear the Android system nav bar so the last worker isn't
-                    // hidden behind it at the end (edge-to-edge on Android 15).
-                    padding: EdgeInsets.fromLTRB(
-                        16, 16, 16, 16 + MediaQuery.viewPaddingOf(context).bottom),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _card(rows[i]),
+              onRefresh: _load,
+              child: Builder(builder: (context) {
+                if (_loading) return const LoadingList();
+                if (_error != null && _items.isEmpty) {
+                  return ErrorRetry(
+                    message: 'Couldn\'t load workers.',
+                    onRetry: _reload,
                   );
-                },
-              ),
+                }
+                final rows = _filter(_items);
+                if (rows.isEmpty) {
+                  return ListView(
+                    children: [
+                      const SizedBox(height: 80),
+                      EmptyState(
+                        icon: Icons.groups_outlined,
+                        title: _hasSearchOrFilter
+                            ? 'No matching workers'
+                            : 'No workers yet',
+                        subtitle: _hasSearchOrFilter
+                            ? 'Try a different name, role or status.'
+                            : 'Add your crew and drivers to start assigning jobs.',
+                        actionLabel: _hasSearchOrFilter ? null : 'Add worker',
+                        onAction: _hasSearchOrFilter ? null : _openForm,
+                      ),
+                    ],
+                  );
+                }
+                return ListView.separated(
+                  controller: _scroll,
+                  // Clear the Android system nav bar so the last worker isn't
+                  // hidden behind it at the end (edge-to-edge on Android 15).
+                  padding: EdgeInsets.fromLTRB(
+                      16, 16, 16, 16 + MediaQuery.viewPaddingOf(context).bottom),
+                  itemCount: rows.length + (_hasMore ? 1 : 0),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    if (i >= rows.length) return _loadMoreFooter();
+                    return _card(rows[i]);
+                  },
+                );
+              }),
             ),
           ),
         ],
