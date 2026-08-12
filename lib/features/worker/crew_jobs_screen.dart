@@ -121,7 +121,9 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
       for (final a in all) {
         if (a.scheduledStart == null ||
             a.status == 'cancelled' ||
-            a.status == 'declined') continue;
+            a.status == 'declined') {
+          continue;
+        }
         final d = DateUtils.dateOnly(a.scheduledStart!);
         counts[d] = (counts[d] ?? 0) + 1;
       }
