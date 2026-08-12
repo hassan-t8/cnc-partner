@@ -18,6 +18,7 @@ import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/models.dart';
+import 'deposit_checkout_screen.dart';
 import 'deposit_sheet.dart';
 import 'wallet_balance_alert.dart';
 import 'partner_models.dart';
@@ -155,10 +156,12 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
   Future<void> _refresh() async {
     try {
       final d = await _fetch();
-      if (mounted) setState(() {
-        _data = d;
-        _error = false;
-      });
+      if (mounted) {
+        setState(() {
+          _data = d;
+          _error = false;
+        });
+      }
     } catch (_) {
       if (mounted && _data == null) setState(() => _error = true);
     }
@@ -945,7 +948,8 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border),
           ),
-          child: Row(
+          child: Column(children: [
+          Row(
             children: [
               CircleAvatar(
                 radius: 18,
@@ -995,14 +999,71 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
               ),
             ],
           ),
+          // A pending deposit means a checkout was opened and never finished —
+          // backgrounded app, killed WebView, abandoned card form. Nothing has
+          // been charged, so offer the way back in rather than leaving the row
+          // stuck with no action.
+          if (d.isPending) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 36,
+              child: OutlinedButton.icon(
+                onPressed: _resumingDeposit == d.id
+                    ? null
+                    : () => _resumeDeposit(d.id),
+                icon: _resumingDeposit == d.id
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.play_arrow_rounded, size: 18),
+                label: const Text('Resume payment',
+                    style: TextStyle(fontSize: 12.5)),
+              ),
+            ),
+          ],
+          ]),
         ),
     ];
+  }
+
+  /// Deposit id whose checkout is being re-fetched, so only that row spins.
+  int? _resumingDeposit;
+
+  Future<void> _resumeDeposit(int depositId) async {
+    setState(() => _resumingDeposit = depositId);
+    try {
+      final init =
+          await ref.read(partnerRepositoryProvider).depositCheckoutInfo(depositId);
+      if (!mounted) return;
+      final outcome = await Navigator.of(context).push<DepositOutcome>(
+        MaterialPageRoute(
+          builder: (_) => DepositCheckoutScreen(init: init),
+          fullscreenDialog: true,
+        ),
+      );
+      if (!mounted) return;
+      if (outcome?.isSuccess ?? false) {
+        AppToast.success('Deposit received. Your balance has been updated.');
+      }
+      _load();
+    } on ApiException catch (e) {
+      // ALREADY_APPROVED / NOT_RESUMABLE / NOT_YOUR_DEPOSIT all land here; the
+      // list is stale either way, so refresh behind the message.
+      if (mounted) {
+        AppToast.error(e.message);
+        _load();
+      }
+    } finally {
+      if (mounted) setState(() => _resumingDeposit = null);
+    }
   }
 
   // ---------------- Upcoming list ----------------
   // Columns (web): Booking · Service/Customer · Status · Clears in · Amount.
   /// The alphanumeric booking ref ("CNC-B-…") for a transaction, resolved via
-  /// its numeric bookingId; falls back to '#<number>'.
+  /// its numeric bookingId; falls back to `#<number>`.
   String _refFor(WalletTransaction t, Map<int, PartnerBooking> bMap) {
     final id = int.tryParse(t.bookingRef ?? '');
     final b = id == null ? null : bMap[id];
