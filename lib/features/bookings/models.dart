@@ -556,3 +556,33 @@ extension CashExtraDestinationApi on CashExtraDestination {
 
   bool get requiresAgent => this != CashExtraDestination.wallet;
 }
+
+/// A destination chosen for an over-collected surplus *before* the cash is
+/// recorded, sent inside the cash-collect body as `extraAllocation`.
+///
+/// Web parity (2026-08-07). With it the backend commits the payment and the
+/// allocation in one transaction — both or neither. Without it the surplus is
+/// parked as a pending row that a second call has to resolve, and a failure
+/// between the two (a dropped connection at the customer's door) leaves the
+/// payment committed and the money dangling until someone fixes it in the CRM.
+class CashExtraAllocation {
+  const CashExtraAllocation(
+    this.destination, {
+    this.tipAmount,
+    this.walletAmount,
+  });
+
+  final CashExtraDestination destination;
+
+  /// Split only — the two legs must sum to the surplus exactly.
+  final double? tipAmount;
+  final double? walletAmount;
+
+  Map<String, dynamic> toJson() => {
+        'destination': destination.api,
+        if (destination == CashExtraDestination.split) ...{
+          'tipAmount': tipAmount ?? 0,
+          'walletAmount': walletAmount ?? 0,
+        },
+      };
+}
