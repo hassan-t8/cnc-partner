@@ -62,10 +62,12 @@ class _DriverScheduleScreenState extends ConsumerState<DriverScheduleScreen> {
   Future<void> _refresh() async {
     try {
       final plan = await _fetch();
-      if (mounted) setState(() {
-        _plan = plan;
-        _error = false;
-      });
+      if (mounted) {
+        setState(() {
+          _plan = plan;
+          _error = false;
+        });
+      }
     } catch (_) {
       if (mounted && _plan == null) setState(() => _error = true);
     }
