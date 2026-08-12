@@ -118,17 +118,23 @@ class PartnerRepository {
   ///
   /// [collectedAmount] is optional: omit it for the full amount due, pass a
   /// smaller value to record a partial collection, or a larger one when the
-  /// customer handed over extra. An over-collection comes back as a
-  /// `pendingCashExtra` that must then be resolved via [allocateCashExtra]
-  /// or [cancelCashExtra].
+  /// customer handed over extra.
+  ///
+  /// Pass [extraAllocation] alongside an over-collection to have the server
+  /// commit the payment and the allocation atomically. Omitting it falls back
+  /// to the older two-step flow: the surplus comes back as a `pendingCashExtra`
+  /// that must then be resolved via [allocateCashExtra] or [cancelCashExtra],
+  /// which leaves money dangling if that second call never lands.
   Future<CashCollectResult> cashCollect(
     int id, {
     String? notes,
     double? collectedAmount,
+    CashExtraAllocation? extraAllocation,
   }) async {
     final res = await _api.post('/booking/$id/cash-collect', body: {
       if (notes != null && notes.isNotEmpty) 'notes': notes,
       if (collectedAmount != null) 'collectedAmount': collectedAmount,
+      if (extraAllocation != null) 'extraAllocation': extraAllocation.toJson(),
     });
     return CashCollectResult.fromJson(
         res.data is Map ? Map<String, dynamic>.from(res.data) : {});
@@ -212,9 +218,34 @@ class PartnerRepository {
       _api.post('/offers/$id/decline', body: {if (reason != null) 'reason': reason});
 
   // ----- workers -----
+
+  /// Unpaged list, for the pickers and forms that need every worker at once
+  /// (team assignment, van default driver). Screens that render a scrolling
+  /// list should use [workersPage] instead.
   Future<List<Worker>> workers() async {
     final res = await _api.get('/workers');
     return pickList(res.data).map(Worker.fromJson).toList();
+  }
+
+  /// `GET /workers?page&limit` — one page of the roster.
+  ///
+  /// Search and role go server-side so the counts match what the list shows;
+  /// status stays client-side because "pending" is derived, not a stored value
+  /// (same split the web portal uses).
+  Future<Paged<Worker>> workersPage({
+    int page = 1,
+    int limit = 30,
+    String? q,
+    String? role,
+  }) async {
+    final res = await _api.get('/workers', query: {
+      'page': page,
+      'limit': limit,
+      if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      if (role != null && role.isNotEmpty && role != 'all') 'role': role,
+    });
+    final rows = pickList(res.data).map(Worker.fromJson).toList();
+    return Paged<Worker>.fromBody(res.data, rows, limit);
   }
 
   Future<int?> createWorker(Map<String, dynamic> body) async {
@@ -365,9 +396,26 @@ class PartnerRepository {
       _api.delete('/availability/exceptions/$id');
 
   // ----- vans -----
+
+  /// Unpaged list for pickers (team assignment, worker form).
   Future<List<Van>> vans() async {
     final res = await _api.get('/vans');
     return pickList(res.data).map(Van.fromJson).toList();
+  }
+
+  /// `GET /vans?page&limit` — one page of the fleet.
+  Future<Paged<Van>> vansPage({
+    int page = 1,
+    int limit = 30,
+    String? q,
+  }) async {
+    final res = await _api.get('/vans', query: {
+      'page': page,
+      'limit': limit,
+      if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+    });
+    final rows = pickList(res.data).map(Van.fromJson).toList();
+    return Paged<Van>.fromBody(res.data, rows, limit);
   }
 
   Future<void> createVan(Map<String, dynamic> body) =>
@@ -538,6 +586,34 @@ class PartnerRepository {
       map['shopperResultUrl'] =
           '$base/partner-deposit/hyperpay-callback?depositId=${map['depositId']}';
     }
+
+    return DepositInit.fromJson(map);
+  }
+
+  /// `GET /partner-deposit/:id/checkout-info` — re-open the checkout for a
+  /// deposit that was already started.
+  ///
+  /// Without this a partner who backgrounds the app mid-payment, or whose phone
+  /// kills the WebView, has no way back to that checkout — the money is neither
+  /// taken nor released and the pending row just sits there. The response omits
+  /// `integrity` and `deduped`, which the widget treats as absent/false.
+  ///
+  /// Server rejects with `ALREADY_APPROVED`, `NOT_RESUMABLE`, or
+  /// `NOT_YOUR_DEPOSIT`; those come through as [ApiException] for the caller to
+  /// show.
+  Future<DepositInit> depositCheckoutInfo(int depositId) async {
+    final res = await _api.get('/partner-deposit/$depositId/checkout-info');
+    final map = Map<String, dynamic>.from(pickMap(res.data));
+
+    // Same defence as initiateDeposit: an empty shopperResultUrl renders
+    // `<form action="">` and HyperPay rejects the card on submit.
+    final resultUrl = (map['shopperResultUrl'] ?? '').toString().trim();
+    if (resultUrl.isEmpty) {
+      final base = Env.apiUrl.replaceAll(RegExp(r'/+$'), '');
+      map['shopperResultUrl'] =
+          '$base/partner-deposit/hyperpay-callback?depositId=$depositId';
+    }
+    map['depositId'] ??= depositId;
 
     return DepositInit.fromJson(map);
   }
