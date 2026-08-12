@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,7 +22,6 @@ class PartnerVansScreen extends ConsumerStatefulWidget {
 }
 
 class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
-  late Future<List<Van>> _future;
   String _query = '';
   String _status = 'all';
   // Optimistic local edits (status / auto-assign) for instant UI feedback.
@@ -30,12 +31,113 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
   // "No driver". We load the workers once and resolve the name from this map.
   Map<int, String> _driverNames = {};
 
+  // ----- infinite-scroll pagination -----
+  // Was an unbounded fetch of the whole fleet on every open; search now runs
+  // server-side so matches aren't limited to the pages already loaded.
+  static const _pageSize = 30;
+  final ScrollController _scroll = ScrollController();
+  final List<Van> _items = [];
+  int _page = 1;
+  bool _hasMore = true;
+  bool _loading = true;
+  bool _loadingMore = false;
+  Object? _error;
+  Timer? _searchDebounce;
+
   @override
   void initState() {
     super.initState();
-    _future = ref.read(partnerRepositoryProvider).vans();
+    _scroll.addListener(_onScroll);
+    _load();
     _loadDriverNames();
   }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients || _loadingMore || !_hasMore) return;
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 400) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _overrides.clear();
+    });
+    try {
+      final page = await ref
+          .read(partnerRepositoryProvider)
+          .vansPage(page: 1, limit: _pageSize, q: _query);
+      if (!mounted) return;
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(page.rows);
+        _page = 1;
+        _hasMore = page.hasMore;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    setState(() => _loadingMore = true);
+    try {
+      final next = _page + 1;
+      final page = await ref
+          .read(partnerRepositoryProvider)
+          .vansPage(page: next, limit: _pageSize, q: _query);
+      if (!mounted) return;
+      setState(() {
+        _items.addAll(page.rows);
+        _page = next;
+        _hasMore = page.hasMore;
+        _loadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  void _onSearch(String v) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      setState(() => _query = v);
+      _load();
+    });
+  }
+
+  bool get _hasSearchOrFilter =>
+      _query.trim().isNotEmpty || _status != 'all';
+
+  Widget _loadMoreFooter() => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Center(
+          child: _loadingMore
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4))
+              : TextButton(onPressed: _loadMore, child: const Text('Load more')),
+        ),
+      );
 
   Future<void> _loadDriverNames() async {
     try {
@@ -69,10 +171,7 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
     }).toList();
   }
 
-  void _reload() => setState(() {
-        _overrides.clear();
-        _future = ref.read(partnerRepositoryProvider).vans();
-      });
+  void _reload() => _load();
 
   Future<void> _openForm([Van? van]) async {
     await Navigator.of(context).push<bool>(
@@ -201,10 +300,11 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: SearchFilterBar(
               hint: 'Search name, plate, driver…',
-              onSearch: (v) => setState(() => _query = v),
+              onSearch: _onSearch,
               values: {'status': _status},
-              onApply: (m) =>
-                  setState(() => _status = m['status'] ?? 'all'),
+              // Status is filtered client-side over the loaded pages, so this
+              // only needs a rebuild, not a refetch.
+              onApply: (m) => setState(() => _status = m['status'] ?? 'all'),
               groups: const [
                 FilterGroup(key: 'status', label: 'Status', options: [
                   FilterOption('all', 'All statuses'),
@@ -217,38 +317,42 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
           ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async => _reload(),
-              child: FutureBuilder<List<Van>>(
-                future: _future,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const LoadingList();
-                  }
-                  if (snap.hasError) {
-                    return ErrorRetry(
-                        message: 'Couldn\'t load vans.', onRetry: _reload);
-                  }
-                  final rows = _filter(snap.data ?? const []);
-                  if (rows.isEmpty) {
-                    return ListView(children: const [
-                      SizedBox(height: 80),
-                      EmptyState(
-                          icon: Icons.local_shipping_outlined,
-                          title: 'No vans',
-                          subtitle: 'Add vans from the web portal.'),
-                    ]);
-                  }
-                  return ListView.separated(
-                    // Clear the Android system nav bar so the last van isn't
-                    // hidden behind it at the end (edge-to-edge on Android 15).
-                    padding: EdgeInsets.fromLTRB(
-                        16, 16, 16, 16 + MediaQuery.viewPaddingOf(context).bottom),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _card(rows[i]),
-                  );
-                },
-              ),
+              onRefresh: _load,
+              child: Builder(builder: (context) {
+                if (_loading) return const LoadingList();
+                if (_error != null && _items.isEmpty) {
+                  return ErrorRetry(
+                      message: 'Couldn\'t load vans.', onRetry: _reload);
+                }
+                final rows = _filter(_items);
+                if (rows.isEmpty) {
+                  return ListView(children: [
+                    const SizedBox(height: 80),
+                    EmptyState(
+                      icon: Icons.local_shipping_outlined,
+                      title: _hasSearchOrFilter
+                          ? 'No matching vans'
+                          : 'No vans yet',
+                      subtitle: _hasSearchOrFilter
+                          ? 'Try a different name, plate or status.'
+                          : 'Add your first van to plan daily routes.',
+                      actionLabel: _hasSearchOrFilter ? null : 'Add van',
+                      onAction: _hasSearchOrFilter ? null : _openForm,
+                    ),
+                  ]);
+                }
+                return ListView.separated(
+                  controller: _scroll,
+                  // Clear the Android system nav bar so the last van isn't
+                  // hidden behind it at the end (edge-to-edge on Android 15).
+                  padding: EdgeInsets.fromLTRB(
+                      16, 16, 16, 16 + MediaQuery.viewPaddingOf(context).bottom),
+                  itemCount: rows.length + (_hasMore ? 1 : 0),
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) =>
+                      i >= rows.length ? _loadMoreFooter() : _card(rows[i]),
+                );
+              }),
             ),
           ),
         ],
