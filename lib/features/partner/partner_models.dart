@@ -412,6 +412,52 @@ class PartnerBookingsPage {
   bool get hasMore => currentPage < totalPages;
 }
 
+/// One page of any list endpoint using the shared `{ data, pagination }`
+/// envelope — workers, vans, and anything else that grows past one screen.
+///
+/// The backend emits the current `total`/`page`/`totalPages` keys alongside the
+/// legacy `totalRecords`/`currentPage` aliases, so both spellings are read.
+class Paged<T> {
+  final List<T> rows;
+  final int totalRecords;
+  final int totalPages;
+  final int currentPage;
+
+  const Paged({
+    this.rows = const [],
+    this.totalRecords = 0,
+    this.totalPages = 1,
+    this.currentPage = 1,
+  });
+
+  bool get hasMore => currentPage < totalPages;
+
+  /// Builds a page from a raw response body. [rows] is parsed by the caller so
+  /// this stays independent of any one model.
+  factory Paged.fromBody(dynamic body, List<T> rows, int limit) {
+    final pag = (body is Map && body['pagination'] is Map)
+        ? Map<String, dynamic>.from(body['pagination'] as Map)
+        : const <String, dynamic>{};
+    int asInt(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+
+    final total =
+        asInt(pag['totalRecords'] ?? pag['total'] ?? rows.length);
+    final pages = asInt(pag['totalPages']) > 0
+        ? asInt(pag['totalPages'])
+        : (limit > 0 ? ((total + limit - 1) ~/ limit) : 1);
+    final current = asInt(pag['currentPage'] ?? pag['page']) > 0
+        ? asInt(pag['currentPage'] ?? pag['page'])
+        : 1;
+
+    return Paged<T>(
+      rows: rows,
+      totalRecords: total,
+      totalPages: pages < 1 ? 1 : pages,
+      currentPage: current,
+    );
+  }
+}
+
 /// Aggregated dashboard KPIs from `GET /partner/me/dashboard-stats`.
 /// Server-side counting replaces the old "fetch 500 bookings + count on the
 /// client" pattern (which truncated at the list cap). Response shape:
