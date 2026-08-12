@@ -827,9 +827,9 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppColors.amber.withOpacity(0.08),
+              color: AppColors.amber.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.amber.withOpacity(0.4)),
+              border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
             ),
             child: Row(
               children: [
