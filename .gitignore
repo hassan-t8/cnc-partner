@@ -54,3 +54,6 @@ app.*.map.json
 # screenshots resized per store. Regenerable, and the screenshots alone are
 # ~12 MB of binaries that would bloat every future clone.
 /store_assets/
+
+# Kotlin incremental-compile cache written by the Android Gradle plugin.
+/android/.kotlin/
