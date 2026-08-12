@@ -43,3 +43,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Release signing — NEVER commit these. Losing them means you can no longer
+# ship updates to the published app, so keep an off-machine backup.
+/android/key.properties
+*.jks
+*.keystore
+
+# Play Store listing assets: generated icon/feature graphic plus device
+# screenshots resized per store. Regenerable, and the screenshots alone are
+# ~12 MB of binaries that would bloat every future clone.
+/store_assets/
