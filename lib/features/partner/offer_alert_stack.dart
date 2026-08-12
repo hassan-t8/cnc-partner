@@ -187,14 +187,18 @@ class _OfferAlertCard extends ConsumerStatefulWidget {
   final Offer offer;
   final int depth; // 0 = front/top
   final void Function(String action) onResolved;
-  final Duration window;
+
+  /// How long the alert counts down before it stops nagging. Fixed rather than
+  /// injected — every caller used the default, and an unused knob reads as if
+  /// something is meant to be configuring it.
+  static const window = Duration(seconds: 30);
+
   const _OfferAlertCard({
     super.key,
     required this.ref,
     required this.offer,
     required this.depth,
     required this.onResolved,
-    this.window = const Duration(seconds: 30),
   });
 
   @override
@@ -215,7 +219,7 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
       vsync: this,
       duration: const Duration(milliseconds: 260),
     )..forward();
-    _bar = AnimationController(vsync: this, duration: widget.window)
+    _bar = AnimationController(vsync: this, duration: _OfferAlertCard.window)
       ..addStatusListener((s) {
         if (s == AnimationStatus.completed && mounted && !_busy) {
           _dismiss('later');
@@ -328,7 +332,7 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
 
   Widget _card() {
     final o = widget.offer;
-    final secs = widget.window.inSeconds;
+    final secs = _OfferAlertCard.window.inSeconds;
     return Container(
       constraints: const BoxConstraints(maxWidth: 460),
       decoration: BoxDecoration(
