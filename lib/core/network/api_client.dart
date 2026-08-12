@@ -58,8 +58,10 @@ class ApiClient {
   }
 
   Future<Response<dynamic>> get(String path,
-          {Map<String, dynamic>? query}) =>
-      _wrap(() => _dio.get(path, queryParameters: query));
+          {Map<String, dynamic>? query, bool skipAuthRedirect = false}) =>
+      _wrap(() => _dio.get(path,
+          queryParameters: query,
+          options: Options(extra: {'skipAuthRedirect': skipAuthRedirect})));
 
   /// GET an endpoint that returns raw text (e.g. a `text/csv` export) rather
   /// than JSON. Returns the body verbatim; auth + error normalization still
@@ -74,9 +76,12 @@ class ApiClient {
   }
 
   Future<Response<dynamic>> post(String path,
-          {dynamic body, bool skipAuthRedirect = false}) =>
+          {dynamic body,
+          Map<String, dynamic>? query,
+          bool skipAuthRedirect = false}) =>
       _wrap(() => _dio.post(path,
           data: body,
+          queryParameters: query,
           options: Options(extra: {'skipAuthRedirect': skipAuthRedirect})));
 
   Future<Response<dynamic>> put(String path,
@@ -131,6 +136,9 @@ class ApiClient {
     if (e.type == DioExceptionType.connectionError ||
         e.type == DioExceptionType.connectionTimeout) {
       msg = "Can't reach the server. Please check your internet.";
+    } else if (e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.sendTimeout) {
+      msg = 'The server took too long to respond. Please try again.';
     } else if (status == 401) {
       msg = 'Your session has expired. Please sign in again.';
     } else if (status == 403) {
@@ -138,9 +146,43 @@ class ApiClient {
     } else if (status != null && status >= 500) {
       msg = 'Server is temporarily unavailable. Please try again.';
     } else {
-      msg = serverMsg ?? 'Something went wrong. Please try again.';
+      msg = _friendly(code) ??
+          (_isPresentable(serverMsg) ? serverMsg! : null) ??
+          'Something went wrong. Please try again.';
     }
     return ApiException(msg, status: status, code: code, data: data);
+  }
+
+  /// Plain-language copy for the error codes a partner can actually hit.
+  /// Anything not listed falls through to the server's own message.
+  static String? _friendly(String? code) => switch (code) {
+        'TIP_REQUIRES_AGENT' =>
+          'Tips need an agent assigned to this booking. Send the extra to the '
+              'customer wallet instead.',
+        'WALLET_FROZEN' =>
+          'Your wallet is on hold. Contact CNC support to release it.',
+        'ALREADY_APPROVED' => 'This deposit has already been paid.',
+        'NOT_RESUMABLE' =>
+          'This payment can no longer be resumed. Start a new deposit.',
+        'NOT_YOUR_DEPOSIT' => 'That deposit belongs to another account.',
+        'NOT_PENDING' => 'This request has already been decided.',
+        'ACCOUNT_NOT_ACTIVATED' =>
+          "Your account isn't activated yet. Check your email for the invite.",
+        _ => null,
+      };
+
+  /// Server messages are shown verbatim, but some are machine strings
+  /// ("TIP_REQUIRES_AGENT", "SequelizeValidationError: …") or a wall of stack
+  /// trace. Those read as a crash to a partner standing at a customer's door,
+  /// so fall back to the generic sentence instead.
+  static bool _isPresentable(String? m) {
+    final s = m?.trim();
+    if (s == null || s.isEmpty || s.length > 160) return false;
+    if (s.contains('\n')) return false;
+    // SCREAMING_SNAKE_CASE codes and Error/Exception class names.
+    if (RegExp(r'^[A-Z0-9_]+$').hasMatch(s)) return false;
+    if (RegExp(r'(Error|Exception):').hasMatch(s)) return false;
+    return true;
   }
 }
 
