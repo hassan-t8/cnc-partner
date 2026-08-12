@@ -4,14 +4,23 @@ import 'package:flutter/services.dart';
 import 'models.dart';
 
 /// Door-cash collection with extras — parity with the web portal's
-/// CashCollectionPanel / CashExtrasPanel (2026-08-06).
+/// CashCollectionPanel / CashExtrasPanel (2026-08-07).
 ///
-/// The flow is two steps:
+/// The flow asks for everything up front, then makes ONE call:
 ///   1. Confirm the amount actually taken. Default is the full amount due;
 ///      the partner can record less (partial) or more (extra).
-///   2. If more was taken, the backend parks the surplus as a pending cash
-///      extra and we immediately ask where it should go — tip, customer
-///      wallet, or a split — with cancel as the escape hatch.
+///   2. If more was taken, ask where the surplus goes — tip, customer wallet,
+///      or a split — *before* anything is sent, and pass that choice into the
+///      collect call so the server commits both legs in one transaction.
+///
+/// Choosing first matters: the old order recorded the payment and then made a
+/// second call to place the surplus, so a dropped connection between them —
+/// the normal case at a customer's door — committed the money and left the
+/// extra dangling for someone to clean up in the CRM.
+///
+/// [_resolveExtra] survives as a fallback for pending rows that already exist:
+/// created by an older build, by the CRM, or by a server that ignored
+/// `extraAllocation`.
 ///
 /// Both repositories expose the same three calls, so they are passed in as
 /// [CashCollectApi] rather than coupling this widget to either one.
@@ -26,6 +35,7 @@ class CashCollectApi {
     int bookingId, {
     String? notes,
     double? collectedAmount,
+    CashExtraAllocation? extraAllocation,
   }) collect;
 
   final Future<void> Function(
@@ -52,6 +62,21 @@ Future<bool> runCashCollectFlow(
   if (amount == null) return false;
   if (!context.mounted) return false;
 
+  // Over-collection: settle the destination before any money moves, so the
+  // server can commit the payment and the surplus together. Backing out here
+  // costs nothing — nothing has been sent yet.
+  final surplus = double.parse((amount - cashDue).toStringAsFixed(2));
+  CashExtraAllocation? allocation;
+  if (surplus > 0.004) {
+    allocation = await _askAllocation(
+      context,
+      amount: surplus,
+      hasAgent: hasAgent,
+    );
+    if (allocation == null) return false;
+    if (!context.mounted) return false;
+  }
+
   final messenger = ScaffoldMessenger.of(context);
   CashCollectResult result;
   try {
@@ -60,6 +85,7 @@ Future<bool> runCashCollectFlow(
       // Only send the amount when it differs from the due, so an untouched
       // confirmation keeps the pre-cash-extras behaviour on the server.
       collectedAmount: _sameMoney(amount, cashDue) ? null : amount,
+      extraAllocation: allocation,
     );
   } catch (e) {
     messenger.showSnackBar(SnackBar(
@@ -253,6 +279,30 @@ class _Banner extends StatelessWidget {
 
 // ─── Step 2: where does the surplus go ──────────────────────────────────────
 
+/// Choose-only: pick a destination for a surplus that has not been sent yet.
+/// Returns null if the partner backs out, which aborts the whole collection.
+Future<CashExtraAllocation?> _askAllocation(
+  BuildContext context, {
+  required double amount,
+  required bool hasAgent,
+}) {
+  return showModalBottomSheet<CashExtraAllocation>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+    ),
+    builder: (ctx) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+      child: _AllocateSheet(amount: amount, hasAgent: hasAgent),
+    ),
+  );
+}
+
+/// Fallback for a surplus that is already parked server-side — an older build,
+/// the CRM, or a server that ignored `extraAllocation`. Here the money has
+/// moved, so the sheet cannot be dismissed without resolving it.
 Future<void> _resolveExtra(
   BuildContext context, {
   required CashCollectApi api,
@@ -275,24 +325,34 @@ Future<void> _resolveExtra(
         api: api,
         bookingId: bookingId,
         extra: extra,
+        amount: extra.amount,
         hasAgent: hasAgent,
       ),
     ),
   );
 }
 
+/// One sheet, two modes.
+///
+/// Choose-only ([api] and [extra] null) returns the picked
+/// [CashExtraAllocation] to the caller and touches no API. Resolve mode calls
+/// `allocate`/`cancel` on an extra that already exists.
 class _AllocateSheet extends StatefulWidget {
   const _AllocateSheet({
-    required this.api,
-    required this.bookingId,
-    required this.extra,
+    this.api,
+    this.bookingId,
+    this.extra,
+    required this.amount,
     required this.hasAgent,
   });
 
-  final CashCollectApi api;
-  final int bookingId;
-  final PendingCashExtra extra;
+  final CashCollectApi? api;
+  final int? bookingId;
+  final PendingCashExtra? extra;
+  final double amount;
   final bool hasAgent;
+
+  bool get chooseOnly => extra == null;
 
   @override
   State<_AllocateSheet> createState() => _AllocateSheetState();
@@ -305,7 +365,7 @@ class _AllocateSheetState extends State<_AllocateSheet> {
   bool _busy = false;
   String? _error;
 
-  double get _amount => widget.extra.amount;
+  double get _amount => widget.amount;
   double get _tipValue => double.tryParse(_tip.text.trim()) ?? 0;
   double get _walletValue =>
       double.parse((_amount - _tipValue).toStringAsFixed(2));
@@ -330,18 +390,33 @@ class _AllocateSheetState extends State<_AllocateSheet> {
         return;
       }
     }
+    final split = _dest == CashExtraDestination.split;
+
+    // Choose-only: hand the selection back, no network call. The caller sends
+    // it with the collection so both legs commit together.
+    if (widget.chooseOnly) {
+      Navigator.pop(
+        context,
+        CashExtraAllocation(
+          _dest,
+          tipAmount: split ? _tipValue : null,
+          walletAmount: split ? _walletValue : null,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await widget.api.allocate(
-        widget.bookingId,
-        widget.extra.id,
+      await widget.api!.allocate(
+        widget.bookingId!,
+        widget.extra!.id,
         _dest,
-        tipAmount: _dest == CashExtraDestination.split ? _tipValue : null,
-        walletAmount:
-            _dest == CashExtraDestination.split ? _walletValue : null,
+        tipAmount: split ? _tipValue : null,
+        walletAmount: split ? _walletValue : null,
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -360,7 +435,7 @@ class _AllocateSheetState extends State<_AllocateSheet> {
       _error = null;
     });
     try {
-      await widget.api.cancel(widget.bookingId, widget.extra.id);
+      await widget.api!.cancel(widget.bookingId!, widget.extra!.id);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -467,16 +542,25 @@ class _AllocateSheetState extends State<_AllocateSheet> {
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2.2))
-                    : const Text('Allocate',
-                        style: TextStyle(
+                    : Text(widget.chooseOnly ? 'Collect cash' : 'Allocate',
+                        style: const TextStyle(
                             fontWeight: FontWeight.w700, fontSize: 15)),
               ),
             ),
-            TextButton(
-              onPressed: _busy ? null : _cancelExtra,
-              child: Text('Money handed back — cancel extra',
-                  style: TextStyle(color: Colors.red.shade600, fontSize: 12.5)),
-            ),
+            if (widget.chooseOnly)
+              // Nothing has been sent yet, so backing out is free.
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Back',
+                    style: TextStyle(color: Colors.grey[700], fontSize: 12.5)),
+              )
+            else
+              TextButton(
+                onPressed: _busy ? null : _cancelExtra,
+                child: Text('Money handed back — cancel extra',
+                    style:
+                        TextStyle(color: Colors.red.shade600, fontSize: 12.5)),
+              ),
           ],
         ),
       ),
