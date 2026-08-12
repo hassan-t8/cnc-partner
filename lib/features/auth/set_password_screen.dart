@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/auth/auth_repository.dart';
 import '../../core/auth/password_rules.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
@@ -30,10 +31,29 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
   bool _busy = false;
   bool _done = false;
 
+  /// Null while the link is still being checked. Web parity: the form only
+  /// appears once the server confirms the link is usable, so nobody types a
+  /// password twice just to be told the link was already spent.
+  LinkCheck? _link;
+
   @override
   void initState() {
     super.initState();
     _pw.addListener(() => setState(() {}));
+    _checkLink();
+  }
+
+  Future<void> _checkLink() async {
+    if (widget.token.isEmpty || widget.email.isEmpty) {
+      setState(() => _link = const LinkCheck(LinkState.invalid,
+          'This link is incomplete. Open the link from your email again.'));
+      return;
+    }
+    final repo = ref.read(authRepositoryProvider);
+    final res = widget.setup
+        ? await repo.verifySetupLink(widget.token, widget.email)
+        : await repo.verifyResetLink(widget.token, widget.email);
+    if (mounted) setState(() => _link = res);
   }
 
   @override
@@ -65,17 +85,88 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final link = _link;
+    // Exactly one branch: checking → done → link rejected → form.
+    final Widget body = switch (true) {
+      _ when link == null => _checking(),
+      _ when _done => _success(),
+      _ when !link.isValid => _rejected(link),
+      _ => _form(),
+    };
+
     return Scaffold(
       appBar: AppBar(
           title: Text(widget.setup ? 'Set your password' : 'Reset password')),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: _done ? _success() : _form(),
-        ),
+        child: Padding(padding: const EdgeInsets.all(24), child: body),
       ),
     );
   }
+
+  Widget _checking() => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+                width: 26,
+                height: 26,
+                child: CircularProgressIndicator(strokeWidth: 2.4)),
+            const SizedBox(height: 14),
+            Text('Checking your link…',
+                style: TextStyle(color: AppColors.textMuted)),
+          ],
+        ),
+      );
+
+  Widget _rejected(LinkCheck link) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                  color: link.state == LinkState.consumed
+                      ? AppColors.brand50
+                      : AppColors.rose.withValues(alpha: 0.10),
+                  shape: BoxShape.circle),
+              child: Icon(
+                link.state == LinkState.consumed
+                    ? Icons.check_circle_outline
+                    : Icons.link_off,
+                color: link.state == LinkState.consumed
+                    ? AppColors.brand600
+                    : AppColors.rose,
+                size: 34,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              switch (link.state) {
+                LinkState.consumed => 'Already activated',
+                LinkState.expired => 'Link expired',
+                _ => "Link doesn't work",
+              },
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text(link.describe,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textMuted)),
+            const SizedBox(height: 20),
+            ElevatedButton(
+                onPressed: () => context.go('/login'),
+                child: const Text('Go to sign in')),
+            if (link.state != LinkState.consumed)
+              TextButton(
+                onPressed: () => context.go('/forgot-password'),
+                child: const Text('Send me a new link'),
+              ),
+          ],
+        ),
+      );
 
   Widget _form() => ListView(
         children: [
