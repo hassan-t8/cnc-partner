@@ -105,8 +105,20 @@ class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
-  const EmptyState(
-      {super.key, required this.icon, required this.title, this.subtitle});
+
+  /// Optional next step. An empty screen that names the action which would
+  /// fill it beats one that only states it is empty — supply both or neither.
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const EmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -135,6 +147,10 @@ class EmptyState extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style:
                       TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            ],
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ],
         ),
