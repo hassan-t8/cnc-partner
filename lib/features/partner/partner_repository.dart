@@ -222,8 +222,16 @@ class PartnerRepository {
   /// Unpaged list, for the pickers and forms that need every worker at once
   /// (team assignment, van default driver). Screens that render a scrolling
   /// list should use [workersPage] instead.
-  Future<List<Worker>> workers() async {
-    final res = await _api.get('/workers');
+  ///
+  /// Pass [role] to narrow it — the van form's driver dropdown only wants
+  /// drivers, and fetching everyone there both over-fetches and offers crew who
+  /// can't be assigned. [limit] is sent explicitly so a future server-side
+  /// default page size can't silently truncate a picker.
+  Future<List<Worker>> workers({String? role, int limit = 500}) async {
+    final res = await _api.get('/workers', query: {
+      'limit': limit,
+      if (role != null && role.isNotEmpty && role != 'all') 'role': role,
+    });
     return pickList(res.data).map(Worker.fromJson).toList();
   }
 
@@ -404,15 +412,22 @@ class PartnerRepository {
   }
 
   /// `GET /vans?page&limit` — one page of the fleet.
+  ///
+  /// Search AND status go server-side, matching the web. Filtering status on the
+  /// client would only ever see the pages already scrolled in, so a partner with
+  /// more than one page of vans would miss matches sitting further down.
   Future<Paged<Van>> vansPage({
     int page = 1,
     int limit = 30,
     String? q,
+    String? status,
   }) async {
     final res = await _api.get('/vans', query: {
       'page': page,
       'limit': limit,
       if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      if (status != null && status.isNotEmpty && status != 'all')
+        'status': status,
     });
     final rows = pickList(res.data).map(Van.fromJson).toList();
     return Paged<Van>.fromBody(res.data, rows, limit);
