@@ -75,7 +75,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
       } else {
         await repo.applyPasswordReset(widget.token, widget.email, _pw.text);
       }
-      setState(() => _done = true);
+      if (mounted) setState(() => _done = true);
     } on ApiException catch (e) {
       AppToast.error(e.message);
     } finally {
