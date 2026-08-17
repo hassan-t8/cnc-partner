@@ -75,7 +75,7 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
     try {
       final page = await ref
           .read(partnerRepositoryProvider)
-          .vansPage(page: 1, limit: _pageSize, q: _query);
+          .vansPage(page: 1, limit: _pageSize, q: _query, status: _status);
       if (!mounted) return;
       setState(() {
         _items
@@ -102,7 +102,7 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
       final next = _page + 1;
       final page = await ref
           .read(partnerRepositoryProvider)
-          .vansPage(page: next, limit: _pageSize, q: _query);
+          .vansPage(page: next, limit: _pageSize, q: _query, status: _status);
       if (!mounted) return;
       setState(() {
         _items.addAll(page.rows);
@@ -141,7 +141,10 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
 
   Future<void> _loadDriverNames() async {
     try {
-      final ws = await ref.read(partnerRepositoryProvider).workers();
+      // Drivers only — the label this feeds resolves a van's driverWorkerId, and
+      // the web's equivalent fetch is scoped the same way.
+      final ws =
+          await ref.read(partnerRepositoryProvider).workers(role: 'driver');
       if (!mounted) return;
       setState(() => _driverNames = {for (final w in ws) w.id: w.name});
     } catch (_) {
@@ -302,9 +305,12 @@ class _PartnerVansScreenState extends ConsumerState<PartnerVansScreen> {
               hint: 'Search name, plate, driver…',
               onSearch: _onSearch,
               values: {'status': _status},
-              // Status is filtered client-side over the loaded pages, so this
-              // only needs a rebuild, not a refetch.
-              onApply: (m) => setState(() => _status = m['status'] ?? 'all'),
+              onApply: (m) {
+                setState(() => _status = m['status'] ?? 'all');
+                // Status is a server filter, so the list has to be refetched —
+                // filtering locally would only search the pages loaded so far.
+                _load();
+              },
               groups: const [
                 FilterGroup(key: 'status', label: 'Status', options: [
                   FilterOption('all', 'All statuses'),
