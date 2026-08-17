@@ -72,9 +72,12 @@ class _VanFormState extends ConsumerState<VanForm> {
       c.addListener(_markDirty);
     }
     _zones = ref.read(partnerRepositoryProvider).zones();
+    // Ask the server for drivers rather than fetching everyone and filtering —
+    // the client-side pass stays as a safety net for a server that ignores the
+    // role param.
     _drivers = ref
         .read(partnerRepositoryProvider)
-        .workers()
+        .workers(role: 'driver')
         .then((all) => all.where((w) => w.roles.contains('driver')).toList())
         .catchError((_) => <Worker>[]);
     // Driver ids already attached to ANOTHER van → shown disabled in the picker.
