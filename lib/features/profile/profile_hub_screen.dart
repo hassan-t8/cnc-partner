@@ -55,8 +55,13 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
             ? Map<String, dynamic>.from(p['worker'])
             : null;
         setState(() => _worker = w);
-        // Seed the shared avatar from the worker's photo if present.
-        final img = p['profileImage'] ?? w?['profileImage'] ?? w?['uploadFile'];
+        // Seed the shared avatar from the worker's photo if present. `photoUrl`
+        // is the key the web reads (Shell.tsx), so accept it too — without it a
+        // worker whose record only carries that field falls back to an initial.
+        final img = p['profileImage'] ??
+            w?['profileImage'] ??
+            w?['uploadFile'] ??
+            w?['photoUrl'];
         if (img != null) {
           ref.read(profileImageProvider.notifier).setFromFilename('$img');
         }
