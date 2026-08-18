@@ -32,6 +32,9 @@ class WorkerBookingsScreen extends ConsumerStatefulWidget {
 
 class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     with SingleTickerProviderStateMixin {
+  /// Tab order, mirrored by _belongsInTab and the TabBar below.
+  static const _tabUpcoming = 0;
+
   late final TabController _tabs;
   static const _statuses = ['upcoming', 'completed', 'all'];
   // Cached rows per tab (null = first load). Keeping data across refreshes
@@ -484,6 +487,25 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
             for (final a in base.map(ov.apply))
               if (_belongsInTab(i, a.status) && _matchesFilters(a)) a
           ];
+    // The backend returns rows in no particular order, and the Load More below
+    // only shows the first _visible of them — so without an explicit sort the
+    // page is an arbitrary ten bookings rather than the ten that matter.
+    //
+    // Upcoming reads forwards (the next job first); Completed and All read
+    // backwards (most recent first), which is how you look for something that
+    // already happened. Rows with no scheduled date sink to the bottom either
+    // way rather than sorting as the epoch.
+    if (filtered != null) {
+      final newestFirst = i != _tabUpcoming;
+      filtered.sort((a, b) {
+        final da = a.scheduledStart;
+        final db = b.scheduledStart;
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return newestFirst ? db.compareTo(da) : da.compareTo(db);
+      });
+    }
     // Client-side pagination: show the first _visible, with a Load More below.
     final hasMore = (filtered?.length ?? 0) > _visible;
     final rows = filtered?.take(_visible).toList();
