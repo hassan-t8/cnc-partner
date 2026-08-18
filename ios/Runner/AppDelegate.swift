@@ -9,7 +9,7 @@ import GoogleMaps
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     // Google Maps (shared key with the CNC apps).
-    GMSServices.provideAPIKey("AIzaSyC5lq8_Fw7udxAKLOdVsCL7-jdb5rkraps")
+    GMSServices.provideAPIKey("AIzaSyDBUAiCAGzjDCSH1MG4JwAAfGuSw38kcZw")
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
