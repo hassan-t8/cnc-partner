@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'device_registry.dart';
 import 'dart:convert';
 import 'dart:io' show Platform;
 
@@ -169,12 +170,45 @@ class PushService {
     });
   }
 
+  /// The current FCM token, or null when there isn't one (an iOS simulator
+  /// never gets an APNs token, so never gets an FCM one either).
+  Future<String?> currentToken() async {
+    try {
+      return await _fm.getToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Announce the install before anyone signs in, so a broadcast can reach a
+  /// device that has only opened the app.
+  Future<void> registerDeviceAnonymously() async {
+    try {
+      if (Platform.isIOS && (await _fm.getAPNSToken()) == null) return;
+      final token = await _fm.getToken();
+      await DeviceRegistry.register(fcmToken: token);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[device] anonymous register skipped: $e');
+    }
+  }
+
   Future<void> _postToken(String token) async {
     final container = _container;
     if (container == null) return;
-    // Only register while authenticated (endpoint is auth-scoped).
     final auth = container.read(authControllerProvider);
-    if (auth.status != AuthStatus.authenticated) return;
+    final authed = auth.status == AuthStatus.authenticated;
+
+    // The device registry runs whether or not anyone is signed in — a fresh
+    // install that has never logged in is exactly the device a broadcast
+    // wants to reach. When there IS a session it is passed along, which is
+    // what attaches the account to the row.
+    await DeviceRegistry.register(
+      fcmToken: token,
+      sessionToken: authed ? await container.read(authStorageProvider).readToken() : null,
+    );
+
+    // The older per-user endpoint is auth-scoped and stays that way.
+    if (!authed) return;
     final platform = Platform.isIOS ? 'ios' : 'android';
     try {
       await container.read(apiClientProvider).post(

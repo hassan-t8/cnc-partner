@@ -26,6 +26,10 @@ Future<void> main() async {
     // before runApp so FCM can wake a background isolate.
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     await PushService.instance.init();
+    // Announce the install before anyone signs in, so a broadcast can reach a
+    // device that has only opened the app. Unawaited: nothing on screen
+    // depends on it and a slow network must not delay first paint.
+    PushService.instance.registerDeviceAnonymously();
   } catch (e) {
     if (kDebugMode) debugPrint('[push] Firebase init skipped: $e');
   }

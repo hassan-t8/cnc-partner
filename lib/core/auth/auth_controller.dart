@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../notifications/device_registry.dart';
+import '../notifications/push_service.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -97,6 +99,15 @@ class AuthController extends Notifier<AuthState> {
 
   Future<void> signOut() async {
     _expiryTimer?.cancel();
+    // Detach this device from the account FIRST. The row survives, so the
+    // phone keeps receiving broadcasts, but stops receiving anything
+    // addressed to the person signing out — which is what matters on a shared
+    // or handed-on handset. Before the token is dropped, because the call is
+    // addressed by the FCM token and this is the last certain moment to get
+    // one. Never throws.
+    await DeviceRegistry.unregister(
+      fcmToken: await PushService.instance.currentToken(),
+    );
     _token = null;
     await ref.read(authStorageProvider).clear();
     state = AuthState.signedOut;
