@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,11 +25,13 @@ class DeleteAccountScreen extends ConsumerStatefulWidget {
       _DeleteAccountScreenState();
 }
 
-class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen> {
+class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen>
+    with WidgetsBindingObserver {
   final _reason = TextEditingController();
   bool _busy = false;
   bool _loading = true;
   String? _error;
+  Timer? _poll;
 
   /// The current request, if one exists. Drives the whole screen: pending
   /// shows the waiting state, rejected shows the outcome and lets them ask
@@ -37,16 +41,31 @@ class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    // An admin can decide at any moment, and the answer arriving only when
+    // the screen is reopened is how someone sits looking at "pending" long
+    // after it was refused. Quiet, so the screen does not flash.
+    _poll = Timer.periodic(const Duration(seconds: 20), (_) => _load(quiet: true));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back from the notification that says it was decided should show
+    // the decision, not the state the screen held when it was backgrounded.
+    if (state == AppLifecycleState.resumed) _load(quiet: true);
   }
 
   @override
   void dispose() {
+    _poll?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _reason.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool quiet = false}) async {
+    if (!quiet && mounted) setState(() => _loading = true);
     try {
       // ApiClient wraps the body in Response, so the payload is res.data.
       final body = (await ref
