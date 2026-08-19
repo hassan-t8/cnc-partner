@@ -51,9 +51,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     // Declining is a normal answer and must not hold anyone at this screen,
     // so nothing here is allowed to throw.
     try {
+      // Awaited: navigating out from under the system prompt would leave the
+      // dialog floating over the next screen.
       await PushService.instance.requestPermission();
-      await PushService.instance.registerDeviceAnonymously();
     } catch (_) {}
+    // NOT awaited — a token fetch plus a network round trip, which held the
+    // user on the last slide for as long as it took and has no bearing on
+    // what happens next.
+    PushService.instance.registerDeviceAnonymously();
 
     if (mounted) Navigator.of(context).pop();
   }
