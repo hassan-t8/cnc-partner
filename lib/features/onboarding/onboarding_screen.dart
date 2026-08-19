@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/notifications/push_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
@@ -39,6 +40,21 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   Future<void> _finish() async {
     await ref.read(authStorageProvider).setOnboarded();
+
+    // Ask for notifications here, as onboarding ends, rather than after the
+    // login wall. On iOS no permission means no APNs token, no APNs token
+    // means no FCM token, and without one the device never registers at all
+    // — so an install that has not signed in cannot be reached by a
+    // broadcast. Registration follows the prompt because the token only
+    // becomes obtainable once permission is granted.
+    //
+    // Declining is a normal answer and must not hold anyone at this screen,
+    // so nothing here is allowed to throw.
+    try {
+      await PushService.instance.requestPermission();
+      await PushService.instance.registerDeviceAnonymously();
+    } catch (_) {}
+
     if (mounted) Navigator.of(context).pop();
   }
 
