@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Debug-only, merged into debug builds and never into release, so the
+         shipped app keeps its strict no-cleartext posture. Lets a debug build
+         reach a backend running on a developer's machine over plain http,
+         which Android has blocked by default since API 28. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>
