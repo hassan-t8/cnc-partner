@@ -54,6 +54,14 @@ dependencies:
   # initialized from the native config via Firebase.initializeApp().
   firebase_core: ^3.8.0
   firebase_messaging: ^15.1.5
+  # Device registry: the backend stores model/OS/app version per install
+  # so a broadcast can be targeted and adoption can be measured.
+  # Used directly by DeviceRegistry, which must not go through ApiClient:
+  # that client redirects to login on 401 and expects a session, and the
+  # two moments this matters most have none.
+  http: ^1.2.2
+  device_info_plus: ^10.1.2
+  package_info_plus: ^8.0.2
 
   # Realtime booking/offer updates over Socket.IO (web parity)
   socket_io_client: ^2.0.3+1
