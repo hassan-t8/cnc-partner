@@ -185,7 +185,17 @@ class PushService {
   Future<void> registerDeviceAnonymously() async {
     try {
       if (Platform.isIOS && (await _fm.getAPNSToken()) == null) return;
-      final token = await _fm.getToken();
+      // Bounded: on a real handset getToken() can hang rather than returning
+      // or throwing, and an unbounded await here means the device silently
+      // never registers with nothing logged to say so.
+      final token = await _fm
+          .getToken()
+          .timeout(const Duration(seconds: 15), onTimeout: () => null);
+      if (token == null || token.isEmpty) {
+        if (kDebugMode) debugPrint('[device] no FCM token available yet');
+        return;
+      }
+      if (kDebugMode) debugPrint('[device] registering partner');
       await DeviceRegistry.register(fcmToken: token);
     } catch (e) {
       if (kDebugMode) debugPrint('[device] anonymous register skipped: $e');
