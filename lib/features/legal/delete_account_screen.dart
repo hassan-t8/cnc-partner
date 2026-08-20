@@ -189,35 +189,221 @@ class _DeleteAccountScreenState extends ConsumerState<DeleteAccountScreen>
 
   Widget _pending() {
     final requestedAt = _request?['createdAt']?.toString();
+    final reason = _request?['reason']?.toString();
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Icon(Icons.hourglass_top_rounded,
-            color: AppColors.amber, size: 44),
-        const SizedBox(height: 14),
-        const Text('Your request is pending',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 10),
-        Text(
-          'An administrator is reviewing your request to delete this account.'
-          '${requestedAt != null ? '\n\nSent ${_shortDate(requestedAt)}.' : ''}'
-          '\n\nYour account stays active in the meantime — keep working as '
-          'normal until you hear back.',
-          style: TextStyle(
-              color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+        // The status is the whole point of this screen, so it gets a card of
+        // its own rather than sitting as a heading above body text.
+        Container(
+          padding: const EdgeInsets.fromLTRB(18, 22, 18, 20),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.hourglass_top_rounded,
+                    color: AppColors.amber, size: 26),
+              ),
+              const SizedBox(height: 14),
+              const Text('Waiting for review',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              Text(
+                'An administrator will decide on your request. You will be '
+                'notified either way.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 13.5,
+                    height: 1.45,
+                    color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 18),
+              // Three steps, so "pending" reads as a stage in something with
+              // an end rather than an open-ended wait.
+              _progress(),
+            ],
+          ),
         ),
-        const SizedBox(height: 24),
-        OutlinedButton(
-          onPressed: _busy ? null : _withdraw,
-          child: _busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Withdraw request'),
+        const SizedBox(height: 14),
+
+        // Reassurance placed where it is read, not buried in the paragraph
+        // above: the fear at this moment is that the account is already gone.
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.brand50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.brand100),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.check_circle_outline,
+                  size: 18, color: AppColors.brand700),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Your account is still active. Keep accepting jobs as '
+                  'normal until you hear back.',
+                  style: TextStyle(
+                      fontSize: 12.5, height: 1.4, color: AppColors.brand700),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _detail('Submitted',
+                  requestedAt != null ? _shortDate(requestedAt) : '—'),
+              if (reason != null && reason.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _detail('Your reason', reason),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 22),
+
+        SizedBox(
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: _busy ? null : _confirmWithdraw,
+            icon: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.undo_rounded, size: 18),
+            label: Text(_busy ? 'Withdrawing…' : 'Withdraw request'),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppColors.border),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              textStyle:
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Changed your mind? Withdrawing cancels the request and nothing '
+          'happens to your account.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 11.5, height: 1.4, color: AppColors.textSecondary),
         ),
       ],
     );
+  }
+
+  /// Submitted → Under review → Decision, with the current stage filled.
+  Widget _progress() => Row(
+        children: [
+          _step('Sent', done: true),
+          _bar(active: true),
+          _step('Reviewing', done: true, current: true),
+          _bar(active: false),
+          _step('Decision', done: false),
+        ],
+      );
+
+  Widget _step(String label, {required bool done, bool current = false}) {
+    final color = done ? AppColors.amber : AppColors.border;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: done ? color : Colors.transparent,
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2),
+          ),
+          child: current
+              ? const Icon(Icons.more_horiz, size: 10, color: Colors.white)
+              : done
+                  ? const Icon(Icons.check, size: 10, color: Colors.white)
+                  : null,
+        ),
+        const SizedBox(height: 5),
+        Text(label,
+            style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: done ? FontWeight.w700 : FontWeight.w500,
+                color: done ? AppColors.amber : AppColors.textSecondary)),
+      ],
+    );
+  }
+
+  Widget _bar({required bool active}) => Expanded(
+        child: Container(
+          height: 2,
+          margin: const EdgeInsets.only(bottom: 18),
+          color: active ? AppColors.amber : AppColors.border,
+        ),
+      );
+
+  Widget _detail(String label, String value) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(),
+              style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: AppColors.textSecondary)),
+          const SizedBox(height: 3),
+          Text(value, style: const TextStyle(fontSize: 13.5, height: 1.4)),
+        ],
+      );
+
+  /// Withdrawing is easy to tap by accident on a screen whose other button
+  /// is destructive, so it asks first.
+  Future<void> _confirmWithdraw() async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Withdraw your request?'),
+        content: const Text(
+          'The request is cancelled and your account carries on unchanged. '
+          'You can ask again at any time.',
+          style: TextStyle(fontSize: 13.5, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep waiting')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Withdraw')),
+        ],
+      ),
+    );
+    if (go == true) await _withdraw();
   }
 
   Widget _rejected() {
