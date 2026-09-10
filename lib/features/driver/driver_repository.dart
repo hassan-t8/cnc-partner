@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
+import '../../core/util/service_name.dart';
 
 class RouteStop {
   final String label;
@@ -31,6 +32,12 @@ class RouteStop {
 
 /// One step in the driver's day timeline (depart, pickup, job, travel,
 /// dropoff, return) — the data behind the Schedule screen.
+/// Resolved catalogue name, falling back to whatever the row denormalised.
+String _serviceOf(Map<String, dynamic> j, Object? fallback) {
+  final resolved = resolveServiceName(j);
+  return resolved.isNotEmpty ? resolved : (fallback ?? '').toString();
+}
+
 class RouteLeg {
   final String type; // depart | pickup | job | travel | dropoff | return
   final String atLabel; // start time, e.g. "08:30"
@@ -60,7 +67,9 @@ class RouteLeg {
         type: (j['type'] ?? j['kind'] ?? '').toString(),
         atLabel: (j['atLabel'] ?? j['at'] ?? '').toString(),
         endAtLabel: (j['endAtLabel'] ?? j['endAt'] ?? '').toString(),
-        service: (j['service'] ?? j['serviceName'] ?? '').toString(),
+        // Real catalogue name from the booking lines when the projection
+        // carries them; the denormalised vertical bucket otherwise.
+        service: _serviceOf(j, (j['service'] ?? j['serviceName'] ?? '')),
         address: (j['address'] ?? '').toString(),
         bookingRef: (j['bookingRef'] ?? j['bookingId'] ?? '').toString(),
         customerName: (j['customerName'] ?? '').toString(),
@@ -179,7 +188,7 @@ class UpcomingBooking {
     return UpcomingBooking(
       id: asInt(j['id']),
       code: (j['bookingId'] ?? '').toString(),
-      service: (j['serviceName'] ?? j['service'] ?? '').toString(),
+      service: _serviceOf(j, (j['serviceName'] ?? j['service'] ?? '')),
       address: (j['address'] ?? '').toString(),
       area: (j['area'] ?? '').toString(),
       scheduledStart: dt(j['scheduledStart']),
