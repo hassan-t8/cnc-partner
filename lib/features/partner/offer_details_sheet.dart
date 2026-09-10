@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/network/api_client.dart';
 import '../../widgets/reason_dialog.dart';
@@ -10,6 +9,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/service_title.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import '../../core/util/crew_hours.dart';
 
 /// Full request details (bottom sheet) for a dispatch offer — service, customer,
 /// schedule, your earnings, and the AUTO-ASSIGNED team (workers / driver / van,
@@ -119,20 +119,18 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _row(Icons.person_outline, 'Customer',
-                        o.customerName.isEmpty ? '—' : o.customerName),
-                    if ((o.customerPhone ?? '').isNotEmpty)
-                      _row(Icons.call_outlined, 'Phone', o.customerPhone!,
-                          onTap: () => launchUrl(
-                              Uri.parse('tel:${o.customerPhone}')),
-                          valueColor: AppColors.brand700),
-                    if (o.address.isNotEmpty)
-                      _row(Icons.place_outlined, 'Location', o.address),
+                    // The customer's name, number and exact address are
+                    // withheld until the offer is accepted — this is a job to
+                    // be judged on what it is, where it broadly is and what it
+                    // pays, not on who is asking.
+                    if (o.area.isNotEmpty)
+                      _row(Icons.place_outlined, 'Area', o.area),
                     if (schedule != null)
                       _row(Icons.schedule_outlined, 'Schedule', schedule),
-                    if (o.crewRequired > 0)
-                      _row(Icons.groups_outlined, 'Crew',
-                          '${o.crewRequired} required'),
+                    _row(Icons.timelapse_outlined, 'Number of hours',
+                        formatHours(o.hours)),
+                    _row(Icons.groups_outlined, 'Number of workers',
+                        '${o.workers}'),
                     if (o.extraServiceCount > 0)
                       _row(Icons.list_alt_outlined, 'Services',
                           o.serviceNames.join(', ')),
