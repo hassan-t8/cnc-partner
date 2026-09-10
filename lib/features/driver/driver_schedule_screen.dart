@@ -294,7 +294,7 @@ class _DriverScheduleScreenState extends ConsumerState<DriverScheduleScreen> {
                   if (isJob && leg.service.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(ServiceTitle.specific(leg.service),
+                      child: Text(ServiceTitle.primary(leg.service),
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w600)),
                     ),
