@@ -1,3 +1,8 @@
+import 'dart:convert';
+
+import '../../core/util/crew_hours.dart';
+import '../../core/util/service_name.dart';
+
 /// Shared helpers
 int? _i(dynamic v) => v == null ? null : (v is num ? v.toInt() : int.tryParse('$v'));
 double _d(dynamic v) =>
@@ -65,6 +70,44 @@ double _cashDueFrom(Map<String, dynamic> src, String status) {
 DateTime? _dt(dynamic v) {
   if (v == null) return null;
   return DateTime.tryParse(v.toString());
+}
+
+/// One service line on a booking — the name shown, and the catalogue slug that
+/// lets us look up what it covers.
+class BookingServiceLine {
+  const BookingServiceLine({required this.name, required this.slug});
+
+  final String name;
+  final String slug;
+
+  static List<BookingServiceLine> listFrom(dynamic raw) {
+    dynamic arr = raw;
+    if (arr is String) {
+      try {
+        arr = jsonDecode(arr);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (arr is! List) return const [];
+    final out = <BookingServiceLine>[];
+    for (final line in arr) {
+      if (line is! Map) continue;
+      final m = Map<String, dynamic>.from(line);
+      final v2 = m['v2'] is Map
+          ? Map<String, dynamic>.from(m['v2'] as Map)
+          : const <String, dynamic>{};
+      final name = _s(m['serviceName'] ?? m['subService'] ?? m['service']);
+      final tier = _s(m['subSubService'] ?? m['subService']);
+      final slug = _s(m['serviceSlug'] ?? v2['serviceSlug'] ?? m['slug']);
+      if (name.isEmpty) continue;
+      out.add(BookingServiceLine(
+        name: (tier.isNotEmpty && tier != name) ? '$name - $tier' : name,
+        slug: slug,
+      ));
+    }
+    return out;
+  }
 }
 
 /// A worker's job assignment (crew/driver).
@@ -192,7 +235,15 @@ class Assignment {
       bookingId: _i(j['bookingId'] ?? b['id']),
       bookingCode: _s(b['bookingId'] ?? j['bookingCode'] ?? j['bookingRef']),
       status: _s(j['status']),
-      serviceName: _s(b['serviceName'] ?? b['service'] ?? j['serviceName']),
+      // The REAL catalogue name from the booking lines, with the tier
+      // appended — not the denormalised vertical bucket. See
+      // resolveServiceName: this projection carries bookingServices.
+      serviceName: () {
+        final resolved = resolveServiceName(b);
+        return resolved.isNotEmpty
+            ? resolved
+            : _s(b['serviceName'] ?? b['service'] ?? j['serviceName']);
+      }(),
       customerName: _s(cust['name'] ?? b['customerName'] ?? j['customerName']),
       customerPhone: (cust['phone'] ?? b['customerPhone'])?.toString(),
       partnerPhone: (b['partnerPhone'] ?? j['partnerPhone'])?.toString(),
@@ -316,6 +367,28 @@ class PartnerBooking {
   final double? lng;
   final String pinLocation;
 
+  /// The CNC service fee the customer paid ON TOP of the job, incl. VAT.
+  ///
+  /// Stored separately from `cncChargesInclVat` by the backend precisely so
+  /// partner commission is untouched by it: settlement treats it as 100%
+  /// CNC-owed. It is surfaced here only so the partner can be TOLD why the
+  /// customer's total is bigger than their payout. 0 → nothing is shown.
+  final double serviceFeeAmount;
+
+  /// Crew size and duration, resolved across every source the booking carries.
+  /// See [resolveCrewHours] — a non-matrix service keeps its crew size in the
+  /// catalogue, not on the booking row.
+  final int workers;
+  final double hours;
+
+  /// End of the scheduled window. With [scheduledStart] this IS the catalogue
+  /// duration, which is how [hours] is derived when no line carries one.
+  final DateTime? scheduledEnd;
+
+  /// The service lines this booking is made of. A booking can hold several,
+  /// and each one has its own scope worth reading before attending.
+  final List<BookingServiceLine> services;
+
   const PartnerBooking({
     required this.id,
     this.ref = '',
@@ -345,6 +418,11 @@ class PartnerBooking {
     this.lat,
     this.lng,
     this.pinLocation = '',
+    this.serviceFeeAmount = 0,
+    this.workers = 1,
+    this.hours = 1,
+    this.scheduledEnd,
+    this.services = const [],
   });
 
   /// Address + area for display, deduped/joined.
@@ -419,17 +497,28 @@ class PartnerBooking {
         lat: lat,
         lng: lng,
         pinLocation: pinLocation,
+        serviceFeeAmount: serviceFeeAmount,
+        workers: workers,
+        hours: hours,
+        scheduledEnd: scheduledEnd,
+        services: services,
       );
 
   factory PartnerBooking.fromJson(Map<String, dynamic> j) {
     final cust = j['customer'] is Map ? Map<String, dynamic>.from(j['customer']) : const {};
     final ps = _s(j['paymentStatus'] ?? j['bookingPaymentStatus']);
+    final crew = resolveCrewHours(j);
     return PartnerBooking(
       id: _i(j['id']) ?? 0,
       ref: _s(j['bookingId'] ?? j['ref'] ?? j['reference'] ?? j['bookingRef'] ??
           j['id']),
       customerName: _s(cust['name'] ?? j['customerName']),
-      serviceName: _s(j['serviceName'] ?? j['service']),
+      serviceName: () {
+        final resolved = resolveServiceName(j);
+        return resolved.isNotEmpty
+            ? resolved
+            : _s(j['serviceName'] ?? j['service']);
+      }(),
       area: _s(j['area'] ?? j['city']),
       status: _s(j['dispatchStatus'] ?? j['status']),
       scheduledStart: _dt(j['scheduledStart'] ?? j['date']),
@@ -459,6 +548,12 @@ class PartnerBooking {
       lat: _dn(j['latitude'] ?? j['lat']),
       lng: _dn(j['longitude'] ?? j['lng']),
       pinLocation: _s(j['pinLocation'] ?? j['location']),
+      // Customer paid this on top, to CNC. Never part of the payout.
+      serviceFeeAmount: _d(j['serviceFeeAmount']),
+      workers: crew.workers,
+      hours: crew.hours,
+      scheduledEnd: _dt(j['scheduledEnd']),
+      services: BookingServiceLine.listFrom(j['bookingServices']),
     );
   }
 }
