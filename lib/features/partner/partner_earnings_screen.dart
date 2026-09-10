@@ -1093,7 +1093,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
             final b = bMap[int.tryParse(t.bookingRef ?? '')];
             final svcName = (b?.serviceName ?? '').trim();
             final parts = [
-              if (svcName.isNotEmpty) ServiceTitle.specific(svcName),
+              if (svcName.isNotEmpty) ServiceTitle.primary(svcName),
               if ((b?.customerName ?? '').isNotEmpty) b!.customerName,
             ];
             return parts.isNotEmpty ? parts.join(' · ') : _settledTitle(t);
@@ -1107,7 +1107,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
       for (final b in bookings)
         _upcomingRow(
           ref: b.ref.isNotEmpty ? b.ref : '#${b.id}',
-          title: [ServiceTitle.specific(b.serviceName), b.customerName]
+          title: [ServiceTitle.primary(b.serviceName), b.customerName]
               .where((s) => s.isNotEmpty)
               .join(' · '),
           statusBadge: StatusBadge(b.status),
