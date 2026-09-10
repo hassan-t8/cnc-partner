@@ -15,6 +15,7 @@ import 'offer_details_sheet.dart';
 import 'offer_errors.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import '../../core/util/crew_hours.dart';
 
 class PartnerRequestsScreen extends ConsumerStatefulWidget {
   const PartnerRequestsScreen({super.key});
@@ -204,16 +205,22 @@ class _PartnerRequestsScreenState
                     color: AppColors.amber,
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700)),
-          _row(Icons.person_outline, o.customerName),
-          if (o.address.isNotEmpty) _row(Icons.place_outlined, o.address),
+          // No customer name or street address before the offer is accepted —
+          // the area is what a partner needs to decide, and it is what the
+          // partner web now shows here too.
+          if (o.area.isNotEmpty) _row(Icons.place_outlined, o.area),
           if (o.extraServiceCount > 0)
             _row(Icons.list_alt_outlined,
                 '+${o.extraServiceCount} more service${o.extraServiceCount == 1 ? '' : 's'}'),
           _row(Icons.payments_outlined,
               'Your earnings: AED ${o.earnings.toStringAsFixed(2)} (incl. VAT)'),
           if (o.capApplied) _capBadge(),
-          if (o.crewRequired > 0)
-            _row(Icons.groups_outlined, '${o.crewRequired} crew required'),
+          // Hours and crew from resolveCrewHours, not crewRequired alone —
+          // that field is 0 for any non-matrix service, whose crew size lives
+          // in the catalogue rather than on the booking row.
+          _row(Icons.timelapse_outlined, formatHours(o.hours)),
+          _row(Icons.groups_outlined,
+              '${o.workers} worker${o.workers == 1 ? '' : 's'}'),
           const SizedBox(height: 12),
           Row(
             children: [
