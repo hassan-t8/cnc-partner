@@ -8,12 +8,32 @@ import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
 import '../bookings/models.dart';
 import 'partner_models.dart';
+import 'service_scope.dart';
 
 /// Partner-scoped API. Mirrors partnerApi.* in the portal's api.ts.
 /// NOTE: endpoints verified against api.ts; adjust if the backend differs.
 class PartnerRepository {
   final ApiClient _api;
   PartnerRepository(this._api);
+
+  /// One catalogue service by slug — what the job actually covers.
+  ///
+  /// `GET /catalog/services/{slug}` is the public catalogue endpoint the
+  /// customer site uses; the partner portal reads the same one so both sides
+  /// quote the same scope.
+  Future<ServiceScope?> serviceScope(String slug) async {
+    if (slug.trim().isEmpty) return null;
+    try {
+      final res = await _api.get('/catalog/services/$slug');
+      final data = res.data is Map ? (res.data as Map)['data'] : null;
+      if (data is! Map) return null;
+      return ServiceScope.fromService(Map<String, dynamic>.from(data));
+    } catch (_) {
+      // Scope is supporting detail — a failure shows "not available", it does
+      // not break the booking screen around it.
+      return null;
+    }
+  }
 
   // ----- bookings -----
   Future<List<PartnerBooking>> bookings({int limit = 500}) async {
