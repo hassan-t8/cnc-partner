@@ -17,6 +17,8 @@ import '../worker/otp_dialog.dart';
 import 'assign_team_sheet.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
+import '../../core/util/crew_hours.dart';
+import 'service_scope_sheet.dart';
 
 /// Full booking detail with the team-assignment flow (assign / unassign) and
 /// the accept / start / complete lifecycle. Pops `true` if anything changed.
@@ -561,6 +563,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 actions.isEmpty ? 24 + MediaQuery.viewPaddingOf(context).bottom : 24),
             children: [
               _heroCard(),
+              if (b.services.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                _servicesCard(),
+              ],
               const SizedBox(height: 14),
               _customerCard(),
               const SizedBox(height: 14),
@@ -774,81 +780,100 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         ),
       );
 
-  /// Customer & location.
+  /// The service lines, each opening its own scope.
+  ///
+  /// A booking can hold several services, and each has its own "what's included
+  /// / not included / equipment we bring". The app had no per-line list at all,
+  /// so there was nowhere to ask the question from.
+  Widget _servicesCard() => _card(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionHeader(Icons.list_alt_outlined, 'Services'),
+            ...b.services.map((line) {
+              // Without a slug there is nothing to look up, so the row stays
+              // but does not pretend to be tappable.
+              final tappable = line.slug.isNotEmpty;
+              return InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: tappable
+                    ? () => ServiceScopeSheet.show(
+                          context,
+                          repo: _repo,
+                          slug: line.slug,
+                          name: line.name,
+                        )
+                    : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          line.name,
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      if (tappable) ...[
+                        const Text(
+                          "What's included",
+                          style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.brand600),
+                        ),
+                        const Icon(Icons.chevron_right,
+                            size: 17, color: AppColors.brand600),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      );
+
+  /// Job location and instructions — deliberately WITHOUT the customer.
+  ///
+  /// Name, phone, email and the exact address were here, with Call and
+  /// Directions buttons built on them. The partner web removed all of it from
+  /// this screen (2026-09): a partner-admin is not the person attending the
+  /// job, and the customer's details are revealed to the crew who are. What
+  /// stays is what a partner-admin actually needs to price and staff the work
+  /// — the area, and anything the customer said about access.
+  ///
+  /// The crew, driver and worker screens are untouched: they DO attend, and
+  /// they keep the full address and the call button.
   Widget _customerCard() {
-    final phone = (b.customerPhone ?? '').trim();
-    final email = (b.customerEmail ?? '').trim();
-    final addr = b.fullAddress;
-    final maps = b.mapUrl;
+    final area = b.area.trim();
+    final instructions = b.specialInstructions.trim();
+    final access = b.accessInstructions.trim();
+    if (area.isEmpty && instructions.isEmpty && access.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return _card(
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader(Icons.person_outline, 'Customer'),
-          _infoRow(Icons.badge_outlined, 'Name',
-              b.customerName.isEmpty ? '—' : b.customerName),
-          if (phone.isNotEmpty)
-            _infoRow(Icons.call_outlined, 'Phone', phone),
-          if (email.isNotEmpty)
-            _infoRow(Icons.email_outlined, 'Email', email),
-          _infoRow(Icons.place_outlined, 'Address',
-              addr.isEmpty ? (b.area.isEmpty ? '—' : b.area) : addr),
-          if (b.specialInstructions.trim().isNotEmpty)
-            _infoRow(Icons.info_outline, 'Instructions',
-                b.specialInstructions.trim()),
-          if (b.accessInstructions.trim().isNotEmpty)
-            _infoRow(Icons.vpn_key_outlined, 'Access',
-                b.accessInstructions.trim()),
-          if (phone.isNotEmpty || maps != null) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                if (phone.isNotEmpty)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _dial(phone),
-                      icon: const Icon(Icons.call, size: 17),
-                      label: const Text('Call customer'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.brand600,
-                        side: const BorderSide(color: AppColors.brand600),
-                        padding: const EdgeInsets.symmetric(vertical: 11),
-                      ),
-                    ),
-                  ),
-                if (phone.isNotEmpty && maps != null)
-                  const SizedBox(width: 10),
-                if (maps != null)
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _openUrl(maps),
-                      icon: const Icon(Icons.directions_outlined, size: 17),
-                      label: const Text('Directions'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.sky,
-                        side: const BorderSide(color: AppColors.sky),
-                        padding: const EdgeInsets.symmetric(vertical: 11),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
+          _sectionHeader(Icons.place_outlined, 'Job details'),
+          if (area.isNotEmpty)
+            _infoRow(Icons.map_outlined, 'Area', area),
+          if (instructions.isNotEmpty)
+            _infoRow(Icons.info_outline, 'Instructions', instructions),
+          if (access.isNotEmpty)
+            _infoRow(Icons.vpn_key_outlined, 'Access', access),
+          const SizedBox(height: 10),
+          _noticeBox(
+            Icons.lock_outline,
+            'Customer contact details are shared with the crew assigned to '
+            'this job.',
+            AppColors.textMuted,
+          ),
         ],
       ),
     );
-  }
-
-  Future<void> _dial(String phone) async {
-    final uri = Uri(scheme: 'tel', path: phone.replaceAll(' ', ''));
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
-  }
-
-  Future<void> _openUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   /// Schedule.
@@ -864,6 +889,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                     ? DateFormat('EEE d MMM y · h:mm a')
                         .format(b.scheduledStart!)
                     : 'Not scheduled'),
+            // How long, and with how many people. A non-matrix service keeps
+            // its crew size in the CATALOGUE rather than on the booking row, so
+            // a job dispatch staffed to four used to read as a lone worker —
+            // resolveCrewHours takes the max of every source that knows.
+            _infoRow(Icons.timelapse_outlined, 'Number of hours',
+                formatHours(b.hours)),
+            _infoRow(Icons.groups_outlined, 'Number of workers',
+                '${b.workers}'),
           ],
         ),
       );
@@ -887,6 +920,21 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             _infoRow(Icons.account_balance_wallet_outlined, 'Your payout',
                 'AED ${b.partnerCost.toStringAsFixed(2)}',
                 valueColor: AppColors.brand600),
+            // The gap between what the customer paid and what you take home is
+            // partly this: a CNC charge added on top of the job. Named here so
+            // the difference does not read as a silent deduction from the
+            // payout — settlement treats it as 100% CNC-owed and it never
+            // touches partnerCost.
+            if (b.serviceFeeAmount > 0) ...[
+              const SizedBox(height: 12),
+              _noticeBox(
+                Icons.info_outline,
+                'CNC service fee of AED '
+                '${b.serviceFeeAmount.toStringAsFixed(2)} — the customer paid '
+                'this extra to CNC. It is not part of your commission.',
+                AppColors.amber,
+              ),
+            ],
             if (b.capApplied) ...[
               const SizedBox(height: 12),
               _noticeBox(
