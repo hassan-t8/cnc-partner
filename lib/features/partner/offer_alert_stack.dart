@@ -440,7 +440,7 @@ class _OfferAlertCardState extends ConsumerState<_OfferAlertCard>
                 const SizedBox(height: 10),
                 ServiceTitle(o.serviceName, titleSize: 17),
                 const SizedBox(height: 6),
-                if (o.address.isNotEmpty) _row(Icons.place_outlined, o.address),
+                if (o.area.isNotEmpty) _row(Icons.place_outlined, o.area),
                 if (o.crewRequired > 0)
                   _row(
                     Icons.group_outlined,
