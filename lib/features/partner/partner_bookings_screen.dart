@@ -1099,7 +1099,7 @@ class _PartnerBookingsScreenState
                         Divider(height: 1, color: AppColors.border),
                         const SizedBox(height: 8),
                         _metaRow(Icons.cleaning_services_outlined,
-                            ServiceTitle.specific(b.serviceName)),
+                            ServiceTitle.primary(b.serviceName)),
                         _metaRow(Icons.schedule_outlined, time),
                         if (b.area.isNotEmpty)
                           _metaRow(Icons.place_outlined, b.area),
