@@ -1,6 +1,8 @@
 import 'dart:convert' show jsonDecode;
 
 import '../bookings/models.dart' show PartnerBooking;
+import '../../core/util/crew_hours.dart';
+import '../../core/util/service_name.dart';
 
 int? _i(dynamic v) =>
     v == null ? null : (v is num ? v.toInt() : int.tryParse('$v'));
@@ -705,15 +707,23 @@ class Offer {
   final int? bookingId;
   final String ref; // human booking code e.g. CNC-B-2275
   final String serviceName;
-  final String customerName;
-  final String? customerPhone;
-  final String address;
   final double earnings;
   final double? commissionPct;
   final int rank;
   final DateTime? expiresAt;
   final DateTime? scheduledStart;
   final int crewRequired;
+
+  /// The zone/area the job is in — enough to judge and price an offer without
+  /// naming the household. Replaces the exact address, which is revealed to
+  /// the crew after the offer is accepted.
+  final String area;
+
+  /// Crew size and duration for the job on offer, resolved across the booking
+  /// lines, the row and the catalogue. `crewRequired` alone reads 0 for any
+  /// non-matrix service, because those keep their crew size in the catalogue.
+  final int workers;
+  final double hours;
   final String vanName;
   // Auto-assigned team from the dispatch snapshot (web parity — shown, not
   // editable, on accept).
@@ -735,15 +745,15 @@ class Offer {
     this.bookingId,
     this.ref = '',
     this.serviceName = '',
-    this.customerName = '',
-    this.customerPhone,
-    this.address = '',
     this.earnings = 0,
     this.commissionPct,
     this.rank = 1,
     this.expiresAt,
     this.scheduledStart,
     this.crewRequired = 0,
+    this.area = '',
+    this.workers = 1,
+    this.hours = 1,
     this.vanName = '',
     this.workerNames = const [],
     this.driverName = '',
@@ -759,7 +769,6 @@ class Offer {
 
   factory Offer.fromJson(Map<String, dynamic> j) {
     final b = j['booking'] is Map ? Map<String, dynamic>.from(j['booking']) : const {};
-    final cust = b['customer'] is Map ? Map<String, dynamic>.from(b['customer']) : const {};
     final snap = j['snapshotHydrated'] is Map
         ? Map<String, dynamic>.from(j['snapshotHydrated'])
         : const {};
@@ -770,18 +779,34 @@ class Offer {
       return n.isNotEmpty ? n : _s(w['name']);
     }
 
+    // The offer's own staffing hint, when dispatch sent one — the web reads
+    // candidateSnapshot.staffRequired, else the size of the candidate crew.
+    final candSnap = j['candidateSnapshot'] is Map
+        ? Map<String, dynamic>.from(j['candidateSnapshot'] as Map)
+        : const <String, dynamic>{};
+    final snapStaff = _i(candSnap['staffRequired']) ??
+        (candSnap['workerIds'] is List
+            ? (candSnap['workerIds'] as List).length
+            : null);
+    final bookingMap = Map<String, dynamic>.from(b);
+    final crew = resolveCrewHours(bookingMap, staffRequiredHint: snapStaff);
+
     return Offer(
       id: _i(j['id']) ?? 0,
       bookingId: _i(j['bookingId'] ?? b['id']),
       ref: _s(b['bookingId'] ?? j['bookingRef']),
-      serviceName: _s(b['serviceName'] ?? j['serviceName']),
-      // Customer name/phone are on the booking row directly (booking.customerName),
-      // not nested under booking.customer.
-      customerName: _s(b['customerName'] ?? cust['name'] ?? j['customerName']),
-      customerPhone:
-          (b['customerPhone'] ?? cust['phone'] ?? j['customerPhone'])
-              ?.toString(),
-      address: _s(b['address'] ?? j['address']),
+      // The REAL catalogue name with its tier, from the booking lines — the
+      // denormalised field is the vertical bucket ("Cleaning").
+      serviceName: () {
+        final resolved = resolveServiceName(bookingMap);
+        return resolved.isNotEmpty
+            ? resolved
+            : _s(b['serviceName'] ?? j['serviceName']);
+      }(),
+      // The customer's name, phone and street address are deliberately NOT
+      // parsed. An offer is pre-acceptance: the crew who attend get those
+      // details, a partner deciding whether to take the job does not. Keeping
+      // the fields on the model would only invite a future screen to show them.
       // Partner take-home — prefer the first POSITIVE figure (partnerEarnings
       // can be 0 on a cap edge / before it's computed, in which case we show
       // the booking amount rather than a misleading "AED 0.00").
@@ -810,6 +835,9 @@ class Offer {
       expiresAt: _dt(j['expiresAt'] ?? j['expiry']),
       scheduledStart: _dt(b['scheduledStart'] ?? j['scheduledStart']),
       crewRequired: _i(j['crewRequired'] ?? b['crewRequired']) ?? 0,
+      area: _s(b['area'] ?? b['city'] ?? j['area']),
+      workers: crew.workers,
+      hours: crew.hours,
       vanName: _s((snap['van'] is Map
               ? (snap['van']['name'] ?? snap['van']['label'])
               : null) ??
