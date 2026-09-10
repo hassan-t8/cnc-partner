@@ -492,9 +492,9 @@ class _PartnerDashboardScreenState
                 ),
                 const SizedBox(height: 8),
                 ServiceTitle(o.serviceName, titleSize: 14.5),
-                if (o.address.isNotEmpty) ...[
+                if (o.area.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(o.address,
+                  Text(o.area,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style:
