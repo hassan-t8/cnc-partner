@@ -63,11 +63,24 @@ class JwtUser {
   bool get isCrew => role == 'worker' && workerRoles.contains('crew');
 
   /// Areas this user may enter.
+  ///
+  /// A `worker` whose `workerRoles` came back empty still gets CREW. The
+  /// portal's canEnter() is stricter than this, but its landingForUser() sends
+  /// exactly that user to /crew "so they at least land somewhere useful
+  /// instead of /unauthorized" — and [landingArea] below mirrors that. Without
+  /// the same fallback here, the two disagreed: the app would route a worker
+  /// with unknown roles to an area this getter then said they could not enter.
+  ///
+  /// The bottom-nav shell already behaves this way (it falls back to the crew
+  /// tabs for any non-driver), so this brings the three into line rather than
+  /// changing what anyone sees today.
   List<RoleArea> get areas {
     final out = <RoleArea>[];
     if (isPartner) out.add(RoleArea.partner);
     if (isDriver) out.add(RoleArea.driver);
-    if (isCrew) out.add(RoleArea.crew);
+    if (isCrew || (role == 'worker' && workerRoles.isEmpty)) {
+      out.add(RoleArea.crew);
+    }
     return out;
   }
 
