@@ -43,6 +43,12 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
   Map<String, dynamic>? _worker;
   bool _uploadingPhoto = false;
 
+  /// The partner's BUSINESS name, once the record has loaded.
+  ///
+  /// Null until then, and null for a worker — both fall back to the account
+  /// holder's own name, which is the only name those cases have.
+  String? _partnerName;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +84,11 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
       final p = await ref.read(partnerRepositoryProvider).getPartner(u.partnerId!);
       if (mounted) {
         ref.read(profileImageProvider.notifier).setFromFilename(p.uploadFile);
+        // The same call already ran for the avatar; the name rides along
+        // rather than costing a second request.
+        if (p.name.trim().isNotEmpty) {
+          setState(() => _partnerName = p.name.trim());
+        }
       }
     } catch (_) {}
   }
@@ -95,6 +106,9 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
           imagePath: picked.path);
       final fresh = await repo.getPartner(u.partnerId!);
       ref.read(profileImageProvider.notifier).setFromFilename(fresh.uploadFile);
+      if (mounted && fresh.name.trim().isNotEmpty) {
+        setState(() => _partnerName = fresh.name.trim());
+      }
       AppToast.success('Photo updated');
     } catch (_) {
       AppToast.error('Couldn\'t update photo. Try again.');
@@ -247,12 +261,33 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
     );
   }
 
-  /// Account header name: the full name from the token (firstName + lastName)
-  /// when present, else the first-name greeting, else "there".
+  /// The headline name: the PARTNER BUSINESS, matching the web's profile
+  /// page (`partner.partnerName`).
+  ///
+  /// It used to be the account holder's personal name from the token, so the
+  /// same person saw "Ahmed Khan" here and "Gulf Shine Services" on the web
+  /// with nothing to say which was which. The business name is what customers
+  /// are billed by and what bookings carry, so it is the one that belongs at
+  /// the top; the person is named underneath by [_accountHolder].
+  ///
+  /// A worker has no business name — for them the account holder IS the
+  /// answer, which is what the fallback gives.
   String _displayName(dynamic user) {
+    final partner = (_partnerName ?? '').trim();
+    if (partner.isNotEmpty) return partner;
     final full = (user?.fullName ?? '').toString().trim();
     if (full.isNotEmpty) return full;
     return (user?.greetingName ?? 'there').toString();
+  }
+
+  /// Who is signed in, when that differs from the headline.
+  ///
+  /// Empty when the two would say the same thing — printing a name twice,
+  /// once under itself, reads as a bug.
+  String _accountHolder(dynamic user) {
+    final full = (user?.fullName ?? '').toString().trim();
+    if (full.isEmpty) return '';
+    return full == _displayName(user) ? '' : full;
   }
 
   Widget _header(dynamic user, String? photo) => GestureDetector(
@@ -329,6 +364,25 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
                           color: Colors.white,
                           fontSize: 22,
                           fontWeight: FontWeight.w800)),
+                  // Who is actually signed in, when the headline is the
+                  // business rather than them.
+                  if (_accountHolder(user).isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(Icons.person_outline,
+                            size: 13, color: Colors.white70),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(_accountHolder(user),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 12.5)),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 2),
                   Text(user?.email ?? '',
                       maxLines: 1,
