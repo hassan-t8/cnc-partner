@@ -15,10 +15,16 @@ class AuthStorage {
   Future<void> writeToken(String token) =>
       _secure.write(key: _kToken, value: token);
 
+  /// Wipe the session.
+  ///
+  /// The onboarding flag is deliberately KEPT: it records that this person has
+  /// seen the slides on this device, which is still true after signing out.
+  /// Clearing it made the intro replay on every logout.
   Future<void> clear() async {
     await _secure.delete(key: _kToken);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kName);
+    await prefs.reload();
   }
 
   Future<void> writePartnerName(String name) async {

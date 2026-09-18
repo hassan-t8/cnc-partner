@@ -157,7 +157,58 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
         ],
       ),
     );
-    if (ok == true) ref.read(authControllerProvider.notifier).signOut();
+    if (ok != true || !mounted) return;
+
+    // A BLOCKING loader, because signing out is not instant: it detaches this
+    // device from push first (a network round-trip), then clears storage and
+    // tears down the socket. Without it the sheet just sat there after the
+    // confirm — long enough to look broken and to invite a second tap.
+    //
+    // Not dismissible: there is nothing useful to do with a half-finished
+    // sign-out, and letting it be cancelled would leave the device still
+    // registered for the old account's notifications.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2.6, color: AppColors.brand600),
+                ),
+                const SizedBox(height: 14),
+                Text('Signing out…',
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await ref.read(authControllerProvider.notifier).signOut();
+    } finally {
+      // Close the loader whatever happened. signOut is written not to throw,
+      // but a dialog that outlives its work would strand the user on a
+      // spinner with no way back.
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
   }
 
   @override

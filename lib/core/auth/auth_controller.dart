@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../notifications/device_registry.dart';
 import '../notifications/push_service.dart';
+import '../profile/profile_image_provider.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -90,6 +91,11 @@ class AuthController extends Notifier<AuthState> {
     // provider — otherwise it lingers in the old user's rooms, holding the old
     // JWT, for as long as the login screen is up.
     ref.invalidate(bookingRealtimeProvider);
+    // The avatar lives in memory, not in storage, so clearing prefs left the
+    // PREVIOUS user's photo on the app bar and the profile header until
+    // something happened to overwrite it. On a shared or handed-on handset
+    // that is someone else's face on the next person's screen.
+    ref.read(profileImageProvider.notifier).setFromFilename(null);
   }
 
   /// Re-validate the current token (called on resume); signs out if expired.
