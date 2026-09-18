@@ -49,6 +49,10 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
   /// holder's own name, which is the only name those cases have.
   String? _partnerName;
 
+  /// The partner's own contact email — shown under the business name rather
+  /// than the signed-in account's address.
+  String? _partnerEmail;
+
   @override
   void initState() {
     super.initState();
@@ -86,9 +90,10 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
         ref.read(profileImageProvider.notifier).setFromFilename(p.uploadFile);
         // The same call already ran for the avatar; the name rides along
         // rather than costing a second request.
-        if (p.name.trim().isNotEmpty) {
-          setState(() => _partnerName = p.name.trim());
-        }
+        setState(() {
+          if (p.name.trim().isNotEmpty) _partnerName = p.name.trim();
+          if (p.email.trim().isNotEmpty) _partnerEmail = p.email.trim();
+        });
       }
     } catch (_) {}
   }
@@ -106,8 +111,13 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
           imagePath: picked.path);
       final fresh = await repo.getPartner(u.partnerId!);
       ref.read(profileImageProvider.notifier).setFromFilename(fresh.uploadFile);
-      if (mounted && fresh.name.trim().isNotEmpty) {
-        setState(() => _partnerName = fresh.name.trim());
+      if (mounted) {
+        setState(() {
+          if (fresh.name.trim().isNotEmpty) _partnerName = fresh.name.trim();
+          if (fresh.email.trim().isNotEmpty) {
+            _partnerEmail = fresh.email.trim();
+          }
+        });
       }
       AppToast.success('Photo updated');
     } catch (_) {
@@ -268,7 +278,7 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
   /// same person saw "Ahmed Khan" here and "Gulf Shine Services" on the web
   /// with nothing to say which was which. The business name is what customers
   /// are billed by and what bookings carry, so it is the one that belongs at
-  /// the top; the person is named underneath by [_accountHolder].
+  /// the top.
   ///
   /// A worker has no business name — for them the account holder IS the
   /// answer, which is what the fallback gives.
@@ -280,14 +290,16 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
     return (user?.greetingName ?? 'there').toString();
   }
 
-  /// Who is signed in, when that differs from the headline.
+  /// The PARTNER's email, to sit under the partner's name.
   ///
-  /// Empty when the two would say the same thing — printing a name twice,
-  /// once under itself, reads as a bug.
-  String _accountHolder(dynamic user) {
-    final full = (user?.fullName ?? '').toString().trim();
-    if (full.isEmpty) return '';
-    return full == _displayName(user) ? '' : full;
+  /// The header used to print the signed-in user's email under a business
+  /// name, which pairs two different things. Falls back to the account's own
+  /// address for a worker, who has no partner record — and while the partner
+  /// record is still loading, so the line is never briefly blank.
+  String _headerEmail(dynamic user) {
+    final partner = (_partnerEmail ?? '').trim();
+    if (partner.isNotEmpty) return partner;
+    return (user?.email ?? '').toString();
   }
 
   Widget _header(dynamic user, String? photo) => GestureDetector(
@@ -364,27 +376,8 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
                           color: Colors.white,
                           fontSize: 22,
                           fontWeight: FontWeight.w800)),
-                  // Who is actually signed in, when the headline is the
-                  // business rather than them.
-                  if (_accountHolder(user).isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        const Icon(Icons.person_outline,
-                            size: 13, color: Colors.white70),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(_accountHolder(user),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12.5)),
-                        ),
-                      ],
-                    ),
-                  ],
                   const SizedBox(height: 2),
-                  Text(user?.email ?? '',
+                  Text(_headerEmail(user),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
