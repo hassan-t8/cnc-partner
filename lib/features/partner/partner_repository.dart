@@ -11,6 +11,25 @@ import 'partner_models.dart';
 import 'service_scope.dart';
 
 /// Partner-scoped API. Mirrors partnerApi.* in the portal's api.ts.
+/// A date-range query parameter: `YYYY-MM-DD`.
+///
+/// `/booking/getPartnerBookings` builds the end of its range by appending to
+/// the string it was given —
+///
+///     new Date(`${to}T23:59:59.999Z`)
+///
+/// — so a full ISO timestamp yields '...T00:00:00.000T23:59:59.999Z', an
+/// Invalid Date, and the whole request fails. `from` alone survived that,
+/// because it is parsed with a plain `new Date(from)`, which is exactly why
+/// choosing a start date worked and adding an end date did not.
+///
+/// LOCAL time, deliberately — not `toUtc()` first. Someone picked a calendar
+/// day in their own timezone, and converting to UTC moves it a day earlier
+/// for anyone east of Greenwich, which is everyone here.
+String ymdParam(DateTime d) => '${d.year.toString().padLeft(4, '0')}'
+    '-${d.month.toString().padLeft(2, '0')}'
+    '-${d.day.toString().padLeft(2, '0')}';
+
 /// NOTE: endpoints verified against api.ts; adjust if the backend differs.
 class PartnerRepository {
   final ApiClient _api;
@@ -62,8 +81,18 @@ class PartnerRepository {
       if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
       if (status != null && status.isNotEmpty && status != 'all')
         'status': status,
-      if (from != null) 'from': from.toIso8601String(),
-      if (to != null) 'to': to.toIso8601String(),
+      // DATE ONLY — 'YYYY-MM-DD', which is what the web sends and what the
+      // backend is written for. It builds the end of the range by appending
+      // to the string:
+      //
+      //     new Date(`${to}T23:59:59.999Z`)
+      //
+      // so a full ISO timestamp produced '…T00:00:00.000T23:59:59.999Z', an
+      // Invalid Date, and the whole query failed. `from` alone survived
+      // because it is parsed with a plain `new Date(from)` — which is exactly
+      // why picking a start date worked and adding an end date did not.
+      if (from != null) 'from': ymdParam(from),
+      if (to != null) 'to': ymdParam(to),
     });
     final rows = pickList(res.data).map(PartnerBooking.fromJson).toList();
     final body = res.data;
