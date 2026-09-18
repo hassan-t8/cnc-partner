@@ -32,8 +32,6 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Take before-and-after photos of a job — for example, photographing a room before cleaning and again once the work is done, as proof for the customer.</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string>Unlock CNC Partner with Face ID instead of retyping your password — for example, when reopening the app between jobs.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is used to show your route to the job and to confirm you have arrived on site. CNC Partner only uses your location while the app is open.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -137,22 +137,94 @@ class _DepositCheckoutScreenState extends State<DepositCheckoutScreen> {
     Navigator.of(context).pop(outcome);
   }
 
+  /// Leaving a payment part-way is worth one question, asked properly.
+  ///
+  /// Two bare TextButtons reading "Keep paying" and "Cancel" put equal weight
+  /// on both answers and sat one word apart — on a screen about money, with
+  /// the card details already typed. Staying is the safe answer and is given
+  /// the solid button; leaving is the destructive one and is coloured as
+  /// such.
   Future<bool> _confirmCancel() async {
     final leave = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cancel payment?'),
-        content: const Text(
-            'Your deposit has not been completed. You can try again from '
-            'the earnings screen.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Keep paying')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Cancel')),
-        ],
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.surface,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 24, 22, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.pause_circle_outline,
+                    size: 27, color: AppColors.amber),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Leave without paying?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                'Your funds have not been added yet. Nothing has been '
+                'charged, and you can start again from Earnings whenever '
+                'you like.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 13.5,
+                    height: 1.45,
+                    color: AppColors.textMuted),
+              ),
+              const SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.brand600,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13)),
+                  ),
+                  child: const Text('Keep paying',
+                      style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w800)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.rose,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13)),
+                  ),
+                  child: const Text('Leave payment',
+                      style: TextStyle(
+                          fontSize: 14.5, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
     return leave ?? false;

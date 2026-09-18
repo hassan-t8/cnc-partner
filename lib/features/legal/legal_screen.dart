@@ -112,9 +112,7 @@ class LegalScreen extends StatelessWidget {
           LegalSection('3. Permissions',
               'Location is used to plan driver routes and confirm job locations. '
                   'Camera access is used to capture before/after job photos. '
-                  'Notifications are used for job offers and updates. Biometrics '
-                  '(fingerprint/Face ID) are processed only on your device to '
-                  'unlock saved sign-in — we never receive your biometric data.'),
+                  'Notifications are used for job offers and updates.'),
           LegalSection('4. Sharing',
               'We do not sell your data. We share it only as needed to run the '
                   'service — for example with the customer for a booking you '

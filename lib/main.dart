@@ -65,7 +65,7 @@ class _CncPartnerAppState extends ConsumerState<CncPartnerApp>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await PushService.instance.processInitialMessage();
     });
-    // On login (or biometric restore / restored session): ask for notification
+    // On login (or a restored session): ask for notification
     // permission, then generate the FCM token, print it, and register it with
     // the backend. Runs on every transition into the authenticated state.
     ref.listenManual(authControllerProvider, (prev, next) {
