@@ -333,9 +333,22 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
   ///
   /// A worker has no business name — for them the account holder IS the
   /// answer, which is what the fallback gives.
-  String _displayName(dynamic user) {
+  /// NO TOKEN FALLBACK for a partner.
+  ///
+  /// The JWT carries the account holder's own name, and using it while the
+  /// partner record loaded meant the header opened on "Ahmed" and then
+  /// visibly rewrote itself to "Gulf Shine Services" a moment later. A name
+  /// that changes under the reader is worse than one that arrives a beat
+  /// late, so a partner waits for the API and nothing else.
+  ///
+  /// A WORKER has no partner record and never will, so there is nothing to
+  /// wait for — the token is the only answer they have, and it is the right
+  /// one. Returns null while a partner's name is still in flight; the header
+  /// draws a placeholder rather than a wrong name.
+  String? _displayName(dynamic user) {
     final partner = (_partnerName ?? '').trim();
     if (partner.isNotEmpty) return partner;
+    if (user?.isPartner == true) return null;
     final full = (user?.fullName ?? '').toString().trim();
     if (full.isNotEmpty) return full;
     return (user?.greetingName ?? 'there').toString();
@@ -347,11 +360,30 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
   /// name, which pairs two different things. Falls back to the account's own
   /// address for a worker, who has no partner record — and while the partner
   /// record is still loading, so the line is never briefly blank.
-  String _headerEmail(dynamic user) {
+  /// Same rule as the name: a partner's email comes from the API, so that the
+  /// two lines never disagree for a moment about who this is.
+  String? _headerEmail(dynamic user) {
     final partner = (_partnerEmail ?? '').trim();
     if (partner.isNotEmpty) return partner;
-    return (user?.email ?? '').toString();
+    if (user?.isPartner == true) return null;
+    final email = (user?.email ?? '').toString().trim();
+    return email.isEmpty ? null : email;
   }
+
+  /// A muted bar standing in for a line that has not arrived.
+  ///
+  /// Sized to the text it replaces so nothing shifts when the real value
+  /// lands — a header that jumps is the thing this change exists to stop.
+  Widget _placeholderBar({required double width, required double height}) =>
+      Container(
+        width: width,
+        height: height * 0.72,
+        margin: EdgeInsets.symmetric(vertical: height * 0.14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(5),
+        ),
+      );
 
   Widget _header(dynamic user, String? photo) => GestureDetector(
         onTap: _openMyProfile,
@@ -420,19 +452,27 @@ class _ProfileHubScreenState extends ConsumerState<ProfileHubScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_displayName(user),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800)),
+                  // A bar of the same height, not an empty gap: the header
+                  // must not resize when the name lands.
+                  if (_displayName(user) == null)
+                    _placeholderBar(width: 160, height: 22)
+                  else
+                    Text(_displayName(user)!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800)),
                   const SizedBox(height: 2),
-                  Text(_headerEmail(user),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 13)),
+                  if (_headerEmail(user) == null)
+                    _placeholderBar(width: 120, height: 13)
+                  else
+                    Text(_headerEmail(user)!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 13)),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
