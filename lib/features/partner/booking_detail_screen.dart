@@ -924,22 +924,42 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             // the difference does not read as a silent deduction from the
             // payout — settlement treats it as 100% CNC-owed and it never
             // touches partnerCost.
-            if (b.serviceFeeAmount > 0) ...[
+            // INCL VAT. The sentence states the figure to the partner as
+            // what the customer paid, so the ex-VAT slice is the wrong number
+            // — serviceFeeAmount stopped meaning incl-VAT on 2026-09-11.
+            if (b.serviceFeeInclVat > 0) ...[
               const SizedBox(height: 12),
               _noticeBox(
                 Icons.info_outline,
                 'CNC service fee of AED '
-                '${b.serviceFeeAmount.toStringAsFixed(2)} — the customer paid '
+                '${b.serviceFeeInclVat.toStringAsFixed(2)} — the customer paid '
                 'this extra to CNC. It is not part of your commission.',
                 AppColors.amber,
               ),
             ],
-            if (b.capApplied) ...[
+            // Only while it is still TRUE of the payout above. An admin can
+            // fix a partner cost by hand, and settlement then leaves
+            // capApplied and partnerFloor at their commission-derived values
+            // while replacing the payout — so this promised protection at a
+            // floor the number beside it could be below.
+            if (b.capProtectionHolds) ...[
               const SizedBox(height: 12),
               _noticeBox(
                 Icons.verified_user_outlined,
                 'Discount cap applied — your payout is protected at your '
                 'guaranteed floor even though the customer used a discount.',
+                AppColors.brand600,
+              ),
+            ],
+            // Said plainly instead. A payout that is not the commission
+            // calculation should say so, rather than leaving the partner to
+            // work out why the arithmetic does not come out.
+            if (b.partnerCostIsAdminOverride) ...[
+              const SizedBox(height: 12),
+              _noticeBox(
+                Icons.edit_note,
+                'This payout was set by CNC for this booking, so it does not '
+                'follow your usual commission rate.',
                 AppColors.brand600,
               ),
             ],

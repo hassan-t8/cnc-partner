@@ -332,7 +332,23 @@ class PartnerBooking {
   final double partnerFloor;
   // True when the discount cap floor kicked in (customer-paid dropped below
   // the cap threshold), so partnerCost was raised to partnerFloor.
+  //
+  // MEANINGLESS on an admin-override booking: the helper leaves this and
+  // partnerFloor at their commission-derived values while replacing the
+  // payout itself, so the two stop describing the same number. Read
+  // [capProtectionHolds] before telling a partner their payout is protected.
   final bool capApplied;
+  /// Whether the cap-protection notice is still true of this payout.
+  ///
+  /// The cap was applied AND the payout still sits at or above the floor it
+  /// supposedly protects. An admin override can put the payout below it, and
+  /// promising protection over the top of a smaller number is worse than
+  /// saying nothing.
+  bool get capProtectionHolds =>
+      capApplied &&
+      !partnerCostIsAdminOverride &&
+      (partnerFloor <= 0 || partnerCost + 0.005 >= partnerFloor);
+
   final bool requiresStartOtp;
   final String paymentStatus;
   final String payment; // cash | card | ...
@@ -367,13 +383,50 @@ class PartnerBooking {
   final double? lng;
   final String pinLocation;
 
-  /// The CNC service fee the customer paid ON TOP of the job, incl. VAT.
+  /// The CNC service fee the customer paid ON TOP of the job.
+  ///
+  /// 2026-09-11 — the backend SPLIT this. It used to hold the fee incl-VAT;
+  /// it now holds the EX-VAT slice, with the VAT in `serviceFeeVat`. Rows
+  /// written before that keep the old meaning and have `serviceFeeVat` NULL,
+  /// so both shapes are live in the same table.
+  ///
+  /// Read [serviceFeeInclVat]. This screen states the figure to the partner in
+  /// a sentence — "the customer paid this extra to CNC" — so reading the raw
+  /// column tells them an amount the customer did not pay.
   ///
   /// Stored separately from `cncChargesInclVat` by the backend precisely so
   /// partner commission is untouched by it: settlement treats it as 100%
   /// CNC-owed. It is surfaced here only so the partner can be TOLD why the
   /// customer's total is bigger than their payout. 0 → nothing is shown.
   final double serviceFeeAmount;
+
+  /// VAT on the fee. NEGATIVE means the column was null — a legacy row, where
+  /// the VAT is already inside [serviceFeeAmount].
+  final double serviceFeeVatRaw;
+
+  /// Whether the matched fee rule charged VAT at all. Only consulted for
+  /// legacy rows: a fee with `vatApplied` off has no VAT to back out.
+  final bool serviceFeeVatApplied;
+
+  /// The VAT fraction on this booking, e.g. 0.05.
+  final double vatRateFraction;
+
+  /// Whether this row stores the fee in the new split shape.
+  bool get hasSplitFee => serviceFeeVatRaw >= 0;
+
+  /// What the fee actually cost the customer, whatever shape the row is in.
+  double get serviceFeeInclVat {
+    if (hasSplitFee) return serviceFeeAmount + serviceFeeVatRaw;
+    return serviceFeeAmount;
+  }
+
+  /// Whether an admin fixed this partner cost by hand.
+  ///
+  /// When true the payout is the admin's figure, NOT the commission
+  /// calculation — so [capApplied] and [partnerFloor], which are still
+  /// derived from commission, no longer describe it. See the cap notice on
+  /// the detail screen.
+  final bool partnerCostIsAdminOverride;
 
   /// Crew size and duration, resolved across every source the booking carries.
   /// See [resolveCrewHours] — a non-matrix service keeps its crew size in the
@@ -419,6 +472,10 @@ class PartnerBooking {
     this.lng,
     this.pinLocation = '',
     this.serviceFeeAmount = 0,
+    this.serviceFeeVatRaw = -1,
+    this.serviceFeeVatApplied = false,
+    this.vatRateFraction = 0.05,
+    this.partnerCostIsAdminOverride = false,
     this.workers = 1,
     this.hours = 1,
     this.scheduledEnd,
@@ -498,6 +555,10 @@ class PartnerBooking {
         lng: lng,
         pinLocation: pinLocation,
         serviceFeeAmount: serviceFeeAmount,
+        serviceFeeVatRaw: serviceFeeVatRaw,
+        serviceFeeVatApplied: serviceFeeVatApplied,
+        vatRateFraction: vatRateFraction,
+        partnerCostIsAdminOverride: partnerCostIsAdminOverride,
         workers: workers,
         hours: hours,
         scheduledEnd: scheduledEnd,
@@ -550,6 +611,21 @@ class PartnerBooking {
       pinLocation: _s(j['pinLocation'] ?? j['location']),
       // Customer paid this on top, to CNC. Never part of the payout.
       serviceFeeAmount: _d(j['serviceFeeAmount']),
+      // NULL, not zero, is what marks a legacy row — a fee genuinely worth
+      // 0.00 VAT is a different thing from a row written before the split.
+      serviceFeeVatRaw:
+          j['serviceFeeVat'] == null ? -1.0 : _d(j['serviceFeeVat']),
+      serviceFeeVatApplied: j['serviceFeeConfig'] is Map &&
+          (j['serviceFeeConfig']['vatApplied'] == true),
+      // vatRatePct is a PERCENT (5.0); the fraction is what the maths wants.
+      vatRateFraction: () {
+        final pct = _d(j['vatRatePct']);
+        return pct > 0 ? pct / 100 : 0.05;
+      }(),
+      partnerCostIsAdminOverride: _b(j['partnerCostIsAdminOverride']) ||
+          // The settlement helper says the same thing a second way, and the
+          // two endpoints do not both carry the column.
+          '${j['source'] ?? ''}' == 'admin_override',
       workers: crew.workers,
       hours: crew.hours,
       scheduledEnd: _dt(j['scheduledEnd']),
