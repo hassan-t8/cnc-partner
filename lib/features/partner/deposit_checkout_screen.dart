@@ -33,6 +33,38 @@ class DepositOutcome {
 /// the wallet and 302-redirects to `${PORTAL}/admin/deposit/result?status=…`.
 /// We intercept that final navigation, read the outcome, and pop — the app
 /// never needs to know the portal's URL, only the `/admin/deposit/result`
+/// How the HyperPay card form is laid out on the deposit screen.
+///
+/// Lifted out of the page template so a test can pin it. The rules are
+/// the same ones the customer app applies (see cncapp's
+/// buildHyperPayHtml): expiry and CVV are both short fields and belong
+/// on one row, and without this every group is display:block at full
+/// width, so the form runs past the fold on a phone.
+const String kDepositFormLayoutCss = '''
+/* EXPIRY AND CVV SHARE A ROW — the same layout the customer app uses.
+   Every group above is display:block/width:100%, so each field took a
+   full row and the form ran well past the fold on a phone; expiry and
+   CVV are both short and belong together anyway.
+
+   Ordered rather than floated. HyperPay does not emit the groups in a
+   fixed order across configurations, and a float pair only sits together
+   if nothing is rendered between them — giving every group an explicit
+   order puts these two side by side wherever the widget chose to put
+   them. Anything not listed here keeps a full row of its own. */
+.wpwl-form { display: flex !important; flex-wrap: wrap !important; align-items: flex-start !important; }
+.wpwl-form > * { width: 100%; }
+.wpwl-group-brand { order: 1 !important; }
+.wpwl-group-cardNumber { order: 2 !important; }
+.wpwl-group-expiry,
+.wpwl-group-expiryMonth { order: 3 !important; width: 48% !important; margin-right: 4% !important; }
+.wpwl-group-cvv,
+.wpwl-group-expiryYear { order: 4 !important; width: 48% !important; }
+.wpwl-group-cardHolder { order: 5 !important; }
+.wpwl-group-submit, .wpwl-button-pay { order: 9 !important; }
+/* These own their row whatever else the widget renders. */
+.wpwl-group-cardNumber, .wpwl-group-brand, .wpwl-group-cardHolder { width: 100% !important; }
+''';
+
 /// path.
 class DepositCheckoutScreen extends StatefulWidget {
   const DepositCheckoutScreen({super.key, required this.init});
@@ -210,6 +242,8 @@ class _DepositCheckoutScreenState extends State<DepositCheckoutScreen> {
     .wpwl-form { max-width: 100% !important; background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; }
     .wpwl-group { margin: 0 0 16px 0 !important; width: 100% !important; float: none !important; clear: both !important; display: block !important; position: relative !important; overflow: visible !important; }
     .wpwl-wrapper { width: 100% !important; float: none !important; display: block !important; position: relative !important; }
+
+    $kDepositFormLayoutCss
     .wpwl-label { font-size: 13px !important; color: #4B5563 !important; font-weight: 600 !important; margin-bottom: 8px !important; display: block !important; }
     .wpwl-control { height: 48px !important; width: 100% !important; border-radius: 12px !important; border: 1px solid #E5E7EB !important; font-size: 15px !important; padding: 0 14px !important; box-shadow: none !important; background: #F9FAFB !important; position: relative !important; z-index: 2 !important; }
     .wpwl-control:focus, .wpwl-control-focus { border-color: #36B864 !important; background: #ffffff !important; outline: none !important; }
