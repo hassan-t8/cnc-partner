@@ -149,13 +149,16 @@ class _OfferDetailsSheetState extends ConsumerState<_OfferDetailsSheet> {
                         padding: const EdgeInsets.only(top: 2, bottom: 4),
                         child: Row(
                           children: [
-                            const Icon(Icons.verified_user_outlined,
+                            const Icon(Icons.local_offer_outlined,
                                 size: 14, color: AppColors.emerald),
                             const SizedBox(width: 6),
                             Expanded(
+                              // Stated, not promised — see _capBadge on the
+                              // requests screen for why the floor cannot be
+                              // guaranteed from this payload.
                               child: Text(
-                                'Your payout is protected at your floor for '
-                                'this booking.',
+                                'The customer used a discount. The payout '
+                                'above already accounts for it.',
                                 style: TextStyle(
                                     fontSize: 11.5,
                                     color: AppColors.emerald,

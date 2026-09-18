@@ -503,20 +503,63 @@ class PartnerRepository {
   /// pending-clearance list and the period cash/tips totals were all computed
   /// off a partial ledger — showing different money than the web, which asks for
   /// the full 200.
+  /// PAGES until the ledger is exhausted.
+  ///
+  /// 200 is the server's hard ceiling per request, and the earnings screen
+  /// sums "all time" figures — total earned, cash collected, commission owed,
+  /// tips — straight off this list. A partner past their 200th wallet
+  /// transaction was being shown an all-time total that silently stopped
+  /// counting, with nothing on screen to say it had.
+  ///
+  /// Capped at 20 pages. A ledger longer than 4,000 rows is not something to
+  /// pull down a phone connection on a screen open, and stopping at a known
+  /// point beats an unbounded loop on a partner's data plan.
   Future<WalletStatement> wallet(int partnerId) async {
-    final res = await _api.get('/settlement/wallet/$partnerId/statement',
-        query: {'limit': 200});
-    final data = pickMap(res.data);
-    final w = data['wallet'] is Map
-        ? Map<String, dynamic>.from(data['wallet'])
-        : data;
-    final txns = (data['transactions'] is List)
-        ? (data['transactions'] as List)
-            .whereType<Map>()
-            .map((e) => WalletTransaction.fromJson(Map<String, dynamic>.from(e)))
-            .toList()
-        : <WalletTransaction>[];
-    return WalletStatement(wallet: WalletInfo.fromJson(w), transactions: txns);
+    const perPage = 200;
+    const maxPages = 20;
+
+    Map<String, dynamic>? walletMap;
+    final txns = <WalletTransaction>[];
+
+    for (var page = 1; page <= maxPages; page++) {
+      final res = await _api.get('/settlement/wallet/$partnerId/statement',
+          query: {'limit': perPage, 'page': page});
+      // pickMap unwraps the `data` envelope, so the pagination block — which
+      // sits BESIDE it at the top level — has to be read off the raw body.
+      final raw = res.data;
+      final envelope = raw is Map ? Map<String, dynamic>.from(raw) : const {};
+      final data = pickMap(raw);
+
+      walletMap ??= data['wallet'] is Map
+          ? Map<String, dynamic>.from(data['wallet'])
+          : data;
+
+      final rows = data['transactions'];
+      final batch = rows is List
+          ? rows
+              .whereType<Map>()
+              .map((e) => WalletTransaction.fromJson(
+                  Map<String, dynamic>.from(e)))
+              .toList()
+          : const <WalletTransaction>[];
+      txns.addAll(batch);
+
+      // A short page is the last page. Checked before the pagination block
+      // because that block is a newer addition and an older deployment may
+      // not send it.
+      if (batch.length < perPage) break;
+
+      final pg = envelope['pagination'];
+      if (pg is Map) {
+        final totalPages = (pg['totalPages'] as num?)?.toInt() ?? page;
+        if (page >= totalPages) break;
+      }
+    }
+
+    return WalletStatement(
+      wallet: WalletInfo.fromJson(walletMap ?? const {}),
+      transactions: txns,
+    );
   }
 
   // ----- cash requests (withdraw) -----

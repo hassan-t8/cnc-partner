@@ -70,11 +70,19 @@ class NotifState {
   /// A "load older" fetch is in flight.
   final bool loadingMore;
 
+  /// Why the last fetch failed, when it did and there is nothing to show.
+  ///
+  /// An empty inbox and an inbox that could not be loaded look identical
+  /// otherwise, and the screen's empty state says "You're all caught up" —
+  /// which on a failed request tells a partner there are no offers waiting.
+  final String? error;
+
   const NotifState({
     this.items = const [],
     this.loading = false,
     this.hasMore = false,
     this.loadingMore = false,
+    this.error,
   });
 
   int get unread => items.where((n) => !n.isRead).length;
@@ -84,8 +92,13 @@ class NotifState {
     bool? loading,
     bool? hasMore,
     bool? loadingMore,
+    String? error,
+    // copyWith cannot otherwise express "clear it", and every success path
+    // needs to.
+    bool clearError = false,
   }) =>
       NotifState(
+        error: clearError ? null : (error ?? this.error),
         items: items ?? this.items,
         loading: loading ?? this.loading,
         hasMore: hasMore ?? this.hasMore,
@@ -185,9 +198,15 @@ class NotificationsController extends Notifier<NotifState> {
       if (items.isNotEmpty) _lastMaxId = items.first.id;
       _first = false;
       state = NotifState(items: items, hasMore: hasMore);
-    } catch (_) {
-      // Keep what we have; just drop any in-flight "loading older" flag.
-      state = state.copyWith(loadingMore: false);
+    } catch (e) {
+      // Keep whatever is already on screen — a failed refresh should not
+      // empty a list the partner is reading — but RECORD the failure, so an
+      // inbox that has never loaded can say so instead of claiming to be
+      // empty.
+      state = state.copyWith(
+        loadingMore: false,
+        error: '$e'.replaceFirst(RegExp(r'^Exception:\s*'), '').trim(),
+      );
     }
   }
 

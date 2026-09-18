@@ -272,17 +272,31 @@ class _PartnerRequestsScreenState
         ),
       );
 
-  // Shown when the backend clamped this offer's payout to the partner's agreed
-  // floor — reassures them the low headline earnings are protected.
+  // A DISCOUNT NOTE, not a guarantee.
+  //
+  // It used to read "Payout protected at your floor". That is only true while
+  // the payout came from the commission calculation: when an admin sets a
+  // partner cost by hand, settlement replaces the figure but leaves
+  // `capApplied` and `partnerFloor` at their commission-derived values, so
+  // the badge can sit above a payout below the floor it names.
+  //
+  // The booking detail screen checks for exactly that before making the
+  // promise (see PartnerBooking.capProtectionHolds), but `/offers/mine`
+  // returns neither partnerCost nor partnerCostIsAdminOverride, so here there
+  // is nothing to check against. Rather than promise something unverifiable
+  // about someone's money, this now states only what the flag reliably means:
+  // the customer used a discount and the payout beside it already accounts
+  // for it.
   Widget _capBadge() => Padding(
         padding: const EdgeInsets.only(top: 5),
         child: Row(
           children: [
-            const Icon(Icons.verified_user_outlined,
+            const Icon(Icons.local_offer_outlined,
                 size: 14, color: AppColors.emerald),
             const SizedBox(width: 6),
             Expanded(
-              child: Text('Payout protected at your floor',
+              child: Text('Customer used a discount — the payout shown '
+                  'already accounts for it',
                   style: TextStyle(
                       fontSize: 11.5,
                       color: AppColors.emerald,

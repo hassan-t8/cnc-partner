@@ -145,6 +145,22 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   ref.read(notificationsProvider.notifier).refresh(),
               child: state.loading && state.items.isEmpty
                   ? const LoadingList()
+                  // A FAILED fetch is not an empty inbox. Saying "you're all
+                  // caught up" to a partner whose request timed out tells
+                  // them there is no work waiting, which is how they miss an
+                  // offer.
+                  : (state.error != null && state.items.isEmpty)
+                      ? ListView(children: [
+                          const SizedBox(height: 100),
+                          ErrorRetry(
+                            message: state.error!.isEmpty
+                                ? "We couldn't load your notifications."
+                                : state.error!,
+                            onRetry: () => ref
+                                .read(notificationsProvider.notifier)
+                                .refresh(),
+                          ),
+                        ])
                   : items.isEmpty
                       ? ListView(children: const [
                           SizedBox(height: 100),
