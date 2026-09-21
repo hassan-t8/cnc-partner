@@ -135,8 +135,16 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
       // The My-Jobs feed (/booking-assignments) omits those payment fields and
       // would otherwise show a phantom "Collect AED …" on an already-paid
       // booking; the web reads this same feed and correctly shows "Complete".
-      ref.read(crewOverridesProvider.notifier).seedCollected(
-          all.where((a) => !a.cashPending).map((a) => a.bookingId));
+      // Split by REASON. Both hide Collect; only the second keeps Complete
+      // shut. Seeding an unpaid online booking as "collected" would unlock
+      // Complete on a job nobody has paid for -- the My-Jobs feed has no
+      // payment fields, so it cannot tell the two apart by itself.
+      ref.read(crewOverridesProvider.notifier).seedCollected(all
+          .where((a) => !a.cashPending && !a.onlineUnpaid)
+          .map((a) => a.bookingId));
+      ref
+          .read(crewOverridesProvider.notifier)
+          .seedOnlineUnpaid(all.where((a) => a.onlineUnpaid).map((a) => a.bookingId));
       setState(() => _jobCounts = counts);
     } catch (_) {}
   }
@@ -775,6 +783,11 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
               AppColors.amber, busy ? null : () => _collectCash(a)));
           children.add(
               _primary('Complete', AppColors.brand600, null)); // disabled
+        } else if (a.onlineUnpaid) {
+          // Paid by link, not yet settled: nothing to collect, and Complete
+          // waits for the customer.
+          children.add(
+              _primary('Complete', AppColors.brand600, null)); // disabled
         } else {
           children.add(_primary('Complete', AppColors.brand600,
               busy ? null : () => _act(a, 'complete')));
@@ -790,6 +803,29 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         ],
       ],
     );
+    if (a.status == 'in_progress' && a.onlineUnpaid) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.brand600.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border:
+                  Border.all(color: AppColors.brand600.withValues(alpha: 0.35)),
+            ),
+            child: Text(
+              'Paid online - do not collect cash. Complete unlocks once the '
+              'customer pays via their link.',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
+          ),
+          const SizedBox(height: 8),
+          row,
+        ],
+      );
+    }
     if (a.status == 'in_progress' && a.cashPending) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

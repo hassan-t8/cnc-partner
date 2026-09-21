@@ -46,6 +46,38 @@ const Set<String> _kRefundedStatuses = {
 
 bool _isRefundedStatus(String s) => _kRefundedStatuses.contains(s.toLowerCase());
 
+/// Methods the customer settles online, never at the door.
+///
+/// The partner web returns 0 cash due for these (page.tsx:363,
+/// WorkerBookings.tsx:305) so the Collect button cannot render. Kept as one
+/// predicate used by both models below: they had already drifted once, and a
+/// rule this easy to state is not worth stating twice.
+bool _isOnlineMethod(String payment) {
+  final m = payment.toLowerCase();
+  return m == 'card' || m == 'online';
+}
+
+/// Whether an online-settled booking has NOT been paid yet.
+///
+/// This is the gate that replaces the Collect button. Without it, hiding the
+/// button would leave Complete freely enabled on a booking nobody has paid
+/// for -- the opposite failure, and a worse one.
+///
+/// Mirrors the web's `_onlineUnpaid` (page.tsx:893-897): the server's net
+/// remaining decides when it is known, and an UNKNOWN remaining counts as
+/// unpaid rather than paid, so a missing field never lets a job through
+/// unpaid.
+bool _isOnlineUnpaid({
+  required String payment,
+  required String paymentStatus,
+  required double? remainingAmount,
+}) {
+  if (!_isOnlineMethod(payment)) return false;
+  if (_kPaidStatuses.contains(paymentStatus.toLowerCase())) return false;
+  if (remainingAmount == null) return true;
+  return remainingAmount > 0.005;
+}
+
 /// Refund-aware cash owed at the door — mirrors the web partner `cashDueFor`
 /// (2026-07-22). A booking refunded after being paid owes the server's net
 /// `remainingAmount` again (any method), so prefer that; otherwise an explicit
@@ -140,6 +172,20 @@ class Assignment {
   final String paymentStatus;
   final double cashDue;
   final bool cashCollected;
+
+  /// The server's net remaining, kept as sent. Null when the endpoint did not
+  /// include it - which [_isOnlineUnpaid] treats as unpaid, never as paid.
+  /// Previously this was consumed by `_cashDueFrom` and thrown away.
+  final double? remainingAmount;
+
+  /// Set by the crew override when a richer feed already worked this out.
+  ///
+  /// /booking-assignments sends no payment fields at all, so [onlineUnpaid]
+  /// computed from this row alone is always false. /workers/me/bookings does
+  /// send them, and CrewOverrides seeds the answer across. Null means "no
+  /// better information" and the derived value stands.
+  final bool? onlineUnpaidOverride;
+
   /// Agent the booking is assigned to. Tips on a cash extra are routed to
   /// this agent server-side, so tip/split allocations are only offered when
   /// it is set (backend throws TIP_REQUIRES_AGENT otherwise).
@@ -173,6 +219,8 @@ class Assignment {
     this.paymentStatus = '',
     this.cashDue = 0,
     this.cashCollected = false,
+    this.remainingAmount,
+    this.onlineUnpaidOverride,
     this.agentId,
     this.workerId,
     this.driverWorkerId,
@@ -185,23 +233,45 @@ class Assignment {
   bool get isLead => role.toLowerCase() == 'lead';
   bool get isDriverRole => role.toLowerCase() == 'driver';
 
-  /// Money still owed on this booking that the worker can collect as cash —
-  /// method-agnostic, mirroring the web WorkerBookings `cashDueFor` change
-  /// (2026-07-03). Cash bookings AND unpaid card/online bookings the customer
-  /// never captured are collectable; only wallet-prepaid or already-paid
-  /// bookings are excluded. The backend's ONLINE_PAYMENT_COVERS_CASH guard
-  /// still blocks a genuine double-collection if the status flag lags.
+  /// Money the worker should collect at the door.
+  ///
+  /// 2026-09-18 — card and online are NO LONGER collectable, matching
+  /// WorkerBookings.tsx:305. They are settled by link, and offering Collect
+  /// on them "tricked the partner into thinking they should physically
+  /// collect cash" (the web's own words). [onlineUnpaid] gates Complete on
+  /// those instead.
+  ///
+  /// Wallet is excluded as before. The refund overlay still wins over
+  /// everything: a booking refunded after payment owes again whatever the
+  /// method, which is why it sits ABOVE the method check, exactly as it does
+  /// in the web's `cashDueFor`.
   bool get cashPending {
     if (cashDue <= 0) return false;
-    // Refund overlay — a booking refunded after being paid owes again,
-    // regardless of the collected flag / method / paid status.
     if (_isRefundedStatus(paymentStatus)) return true;
+    if (_isOnlineMethod(payment)) return false;
     return !cashCollected &&
         payment.toLowerCase() != 'wallet' &&
         !_kPaidStatuses.contains(paymentStatus.toLowerCase());
   }
 
-  Assignment copyWith({String? status, bool? cashCollected}) => Assignment(
+  /// Settled online and still unpaid - Complete must wait for the customer.
+  ///
+  /// Prefers [onlineUnpaidOverride] when a feed that actually carries the
+  /// payment fields has already decided.
+  bool get onlineUnpaid =>
+      onlineUnpaidOverride ??
+      _isOnlineUnpaid(
+        payment: payment,
+        paymentStatus: paymentStatus,
+        remainingAmount: remainingAmount,
+      );
+
+  /// Everything that should hold Complete back, from either direction.
+  bool get blocksComplete => cashPending || onlineUnpaid;
+
+  Assignment copyWith(
+          {String? status, bool? cashCollected, bool? onlineUnpaidOverride}) =>
+      Assignment(
         id: id,
         bookingId: bookingId,
         bookingCode: bookingCode,
@@ -223,7 +293,17 @@ class Assignment {
         paymentStatus: paymentStatus,
         cashDue: cashDue,
         cashCollected: cashCollected ?? this.cashCollected,
+        remainingAmount: remainingAmount,
+        onlineUnpaidOverride:
+            onlineUnpaidOverride ?? this.onlineUnpaidOverride,
         agentId: agentId,
+        // Carried through. These were dropped silently, so a copyWith blanked
+        // the crew name and ids. Latent today - the only caller discards the
+        // copy after reading a getter - but not something to leave behind
+        // while adding a field to the same method.
+        workerId: workerId,
+        driverWorkerId: driverWorkerId,
+        workerName: workerName,
       );
 
   factory Assignment.fromJson(Map<String, dynamic> j) {
@@ -267,6 +347,7 @@ class Assignment {
       // Cash owed at the door — refund-aware, prefers the server's net
       // remaining, falls back to (total − coins). See _cashDueFrom.
       cashDue: _cashDueFrom(b, ps),
+      remainingAmount: _dOrNull(b['remainingAmount'] ?? j['remainingAmount']),
       // Truthy parse: the backend sends cashCollected as an int (1/0), and
       // `1 == true` is false in Dart — using `== true` made a collected cash
       // booking reappear as "Collect". _b handles 1 / '1' / true.
@@ -354,6 +435,10 @@ class PartnerBooking {
   final String payment; // cash | card | ...
   final double cashDue;
   final bool cashCollected;
+
+  /// The server's net remaining, kept as sent. Null when absent, which
+  /// [_isOnlineUnpaid] reads as unpaid rather than paid.
+  final double? remainingAmount;
   /// See Assignment.agentId — gates tip/split cash-extra allocation.
   final int? agentId;
   /// 2026-08-06 — wallet-credit projection from the backend.
@@ -462,6 +547,7 @@ class PartnerBooking {
     this.payment = '',
     this.cashDue = 0,
     this.cashCollected = false,
+    this.remainingAmount,
     this.customerReviewed = false,
     this.customerPhone,
     this.customerEmail,
@@ -509,19 +595,33 @@ class PartnerBooking {
   double get partnerNet => partnerCost;
 
   /// Money still owed on this booking that the partner can collect as cash —
-  /// method-agnostic, mirroring the web partner-admin `cashDueFor` (2026-07-03
-  /// merged form: skip already-collected, wallet-prepaid, and fully-paid
-  /// bookings; anything else is collectable). Covers unpaid/partial bookings
-  /// AND online bookings the customer never captured (COD fallback).
+  /// mirroring the web partner-admin `cashDueFor`.
+  ///
+  /// 2026-09-18 — card and online are NO LONGER collectable (page.tsx:363).
+  /// They are settled by link; Collect on them asked the partner to take
+  /// money the customer had already paid. [onlineUnpaid] gates Complete on
+  /// those instead.
+  ///
+  /// The refund overlay stays ABOVE the method check, as the web has it: a
+  /// booking refunded after payment owes again whatever the method.
   bool get cashPending {
     if (cashDue <= 0) return false;
-    // Refund overlay — a booking refunded after being paid owes again,
-    // regardless of the collected flag / method / paid status.
     if (_isRefundedStatus(paymentStatus)) return true;
+    if (_isOnlineMethod(payment)) return false;
     return !cashCollected &&
         payment.toLowerCase() != 'wallet' &&
         !_kPaidStatuses.contains(paymentStatus.toLowerCase());
   }
+
+  /// Settled online and still unpaid - Complete must wait for the customer.
+  bool get onlineUnpaid => _isOnlineUnpaid(
+        payment: payment,
+        paymentStatus: paymentStatus,
+        remainingAmount: remainingAmount,
+      );
+
+  /// Everything that should hold Complete back, from either direction.
+  bool get blocksComplete => cashPending || onlineUnpaid;
 
   PartnerBooking copyWith(
           {String? status, bool? cashCollected, bool? customerReviewed}) =>
@@ -541,6 +641,7 @@ class PartnerBooking {
         payment: payment,
         cashDue: cashDue,
         cashCollected: cashCollected ?? this.cashCollected,
+        remainingAmount: remainingAmount,
         customerReviewed: customerReviewed ?? this.customerReviewed,
         agentId: agentId,
         expectedWalletCredit: expectedWalletCredit,
@@ -596,6 +697,7 @@ class PartnerBooking {
       // remaining, falls back to (total − coins). See _cashDueFrom.
       cashDue: _cashDueFrom(j, ps),
       cashCollected: _b(j['cashCollected']),
+      remainingAmount: _dOrNull(j['remainingAmount']),
       agentId: _idOrNull(j['agentId']),
       expectedWalletCredit: _dOrNull(j['expectedWalletCredit']),
       cashInHand: _dOrNull(j['cashInHand']),

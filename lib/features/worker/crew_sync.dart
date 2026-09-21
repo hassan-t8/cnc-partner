@@ -6,11 +6,21 @@ import '../bookings/models.dart';
 class CrewPatch {
   final String? status;
   final bool? cashCollected;
-  const CrewPatch({this.status, this.cashCollected});
+
+  /// Settled by link and not yet paid.
+  ///
+  /// Distinct from [cashCollected] on purpose. Both hide the Collect button,
+  /// but only this one keeps Complete shut. Folding the two together would
+  /// mark an unpaid online booking as "cash collected" -- untrue, and it
+  /// would unlock Complete on a job nobody has paid for.
+  final bool? onlineUnpaid;
+
+  const CrewPatch({this.status, this.cashCollected, this.onlineUnpaid});
 
   CrewPatch merge(CrewPatch o) => CrewPatch(
         status: o.status ?? status,
         cashCollected: o.cashCollected ?? cashCollected,
+        onlineUnpaid: o.onlineUnpaid ?? onlineUnpaid,
       );
 }
 
@@ -35,13 +45,37 @@ class CrewOverrides extends Notifier<Map<int, CrewPatch>> {
   @override
   Map<int, CrewPatch> build() => {};
 
-  void patch(int? bookingId, {String? status, bool? cashCollected}) {
+  void patch(int? bookingId,
+      {String? status, bool? cashCollected, bool? onlineUnpaid}) {
     if (bookingId == null || bookingId <= 0) return;
     final cur = state[bookingId] ?? const CrewPatch();
     state = {
       ...state,
-      bookingId: cur.merge(CrewPatch(status: status, cashCollected: cashCollected)),
+      bookingId: cur.merge(CrewPatch(
+          status: status,
+          cashCollected: cashCollected,
+          onlineUnpaid: onlineUnpaid)),
     };
+  }
+
+  /// Mark several bookings as awaiting an online payment.
+  ///
+  /// Seeded from the rich feed like [seedCollected], and for the same reason
+  /// -- the My-Jobs feed has no payment fields, so it cannot work this out
+  /// for itself. The difference is what it means downstream: Collect is
+  /// hidden either way, but these keep Complete disabled.
+  void seedOnlineUnpaid(Iterable<int?> bookingIds) {
+    final next = {...state};
+    var changed = false;
+    for (final id in bookingIds) {
+      if (id == null || id <= 0) continue;
+      final cur = next[id] ?? const CrewPatch();
+      if (cur.onlineUnpaid != true) {
+        next[id] = cur.merge(const CrewPatch(onlineUnpaid: true));
+        changed = true;
+      }
+    }
+    if (changed) state = next;
   }
 
   /// Mark several bookings cash-collected in one state update — used to seed
@@ -72,6 +106,9 @@ class CrewOverrides extends Notifier<Map<int, CrewPatch>> {
     return a.copyWith(
       status: useStatus ? p.status : a.status,
       cashCollected: p.cashCollected == true ? true : a.cashCollected,
+      // Only ever set true from here. A null leaves the row's own derived
+      // answer alone, so an override cannot mark something as paid.
+      onlineUnpaidOverride: p.onlineUnpaid == true ? true : null,
     );
   }
 }

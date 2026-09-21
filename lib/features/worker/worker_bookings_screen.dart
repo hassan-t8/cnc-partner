@@ -712,6 +712,17 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
                 enabled: false),
           ];
         }
+        // Paid by link and not yet settled. No Collect - there is no cash
+        // to take - but Complete still waits for the customer.
+        if (a.onlineUnpaid) {
+          return [
+            const SizedBox(height: 10),
+            _onlineWaitNote(),
+            const SizedBox(height: 8),
+            btn('Complete job', AppColors.brand600, 'complete',
+                enabled: false),
+          ];
+        }
         return [
           const SizedBox(height: 10),
           btn('Complete job', AppColors.brand600, 'complete')
@@ -720,6 +731,24 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
         return const [];
     }
   }
+
+  /// The online counterpart to [_cashNote]. Says outright not to take cash:
+  /// workers have been trained by the old build to expect a Collect button
+  /// here, so its absence needs explaining rather than looking like a bug.
+  Widget _onlineWaitNote() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: AppColors.brand600.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.brand600.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          'Paid online - do not collect cash. Complete unlocks once the '
+          'customer pays via their link.',
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+        ),
+      );
 
   Widget _cashNote(Assignment a) => Container(
         width: double.infinity,

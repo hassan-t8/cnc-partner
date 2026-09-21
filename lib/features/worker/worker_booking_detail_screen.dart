@@ -439,7 +439,7 @@ class _WorkerBookingDetailScreenState
       ],
     );
     return _liftedBar(
-      (_status == 'in_progress' && _cashPending)
+      (_status == 'in_progress' && (_cashPending || a.onlineUnpaid))
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [

@@ -958,7 +958,9 @@ class _PartnerBookingsScreenState
           cardBusy ? null : () => _act(b, 'unsign'), active == 'unsign',
           outlined: true));
     } else if (b.status == 'in_progress') {
-      // Cash bookings must collect cash before completing.
+      // Cash bookings must collect cash before completing. Card and online
+      // never show Collect -- the customer pays by link -- but Complete
+      // still waits for the server to say they have.
       if (b.cashPending) {
         actions.add(_btn('Collect AED ${b.cashDue.toStringAsFixed(2)}',
             Icons.payments_rounded, AppColors.amber,
@@ -966,8 +968,14 @@ class _PartnerBookingsScreenState
       }
       actions.add(_btn('Complete', Icons.check_circle_rounded,
           AppColors.brand600,
-          (cardBusy || b.cashPending) ? null : () => _act(b, 'complete'),
+          (cardBusy || b.blocksComplete) ? null : () => _act(b, 'complete'),
           active == 'complete'));
+      // Says which of the two is holding it, so a disabled Complete is not
+      // a dead end. Without this an online booking just refuses, with the
+      // Collect button that used to explain it now correctly absent.
+      if (b.onlineUnpaid) {
+        actions.add(_waitingForPaymentNote());
+      }
     } else if (b.status == 'completed') {
       // After completion the partner can review the customer (optional, like
       // the web). Once reviewed, the button becomes a "Reviewed" chip.
@@ -1200,6 +1208,29 @@ class _PartnerBookingsScreenState
                       color: AppColors.brand700, fontWeight: FontWeight.w700)),
             ],
           ),
+        ),
+      );
+
+  /// Why Complete is disabled on an online booking.
+  ///
+  /// Without it the button simply refuses: the Collect button that used to
+  /// stand in the same place and explain the hold is now correctly absent on
+  /// card and online, so the reason has to be said outright.
+  Widget _waitingForPaymentNote() => Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.hourglass_bottom_rounded,
+                size: 14, color: AppColors.brand600),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Waiting for the customer to pay via their link.',
+                style: TextStyle(fontSize: 11.5, color: AppColors.brand600),
+              ),
+            ),
+          ],
         ),
       );
 

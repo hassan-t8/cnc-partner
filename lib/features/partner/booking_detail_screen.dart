@@ -1,3 +1,4 @@
+import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -509,6 +510,16 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 enabled: false),
           ];
         }
+        // Settled by link and not yet paid. No Collect button -- there is no
+        // cash to take -- but Complete waits for the customer, which is what
+        // the Collect button used to enforce by accident.
+        if (b.onlineUnpaid) {
+          return [
+            btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
+                'complete',
+                enabled: false),
+          ];
+        }
         return [
           btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
               'complete'),
@@ -834,14 +845,23 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         ),
       );
 
-  /// Job location and instructions — deliberately WITHOUT the customer.
+  /// Statuses at which the service address is shown to a partner-admin.
   ///
-  /// Name, phone, email and the exact address were here, with Call and
-  /// Directions buttons built on them. The partner web removed all of it from
-  /// this screen (2026-09): a partner-admin is not the person attending the
-  /// job, and the customer's details are revealed to the crew who are. What
-  /// stays is what a partner-admin actually needs to price and staff the work
-  /// — the area, and anything the customer said about access.
+  /// Mirrors the web's REVEAL list (BookingDetailModal.tsx:486). Before
+  /// acceptance the job is only an offer, and an offer must not be a way to
+  /// harvest customer addresses.
+  static const _addressVisibleAt = {'accepted', 'in_progress', 'completed'};
+
+  /// Job location and instructions — still WITHOUT the customer's identity.
+  ///
+  /// Name, phone and email were removed here in 2026-09 and stay removed: a
+  /// partner-admin is not the person attending, and those are revealed to the
+  /// crew who are.
+  ///
+  /// The ADDRESS came back on 2026-09-18, once the job is actually theirs.
+  /// Withholding it at every status left a partner-admin unable to tell
+  /// whether a job was ten minutes away or across the emirate — which is
+  /// exactly what they need in order to price and staff it.
   ///
   /// The crew, driver and worker screens are untouched: they DO attend, and
   /// they keep the full address and the call button.
@@ -849,7 +869,13 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     final area = b.area.trim();
     final instructions = b.specialInstructions.trim();
     final access = b.accessInstructions.trim();
-    if (area.isEmpty && instructions.isEmpty && access.isEmpty) {
+    final showAddress = _addressVisibleAt.contains(b.status.toLowerCase()) &&
+        b.address.trim().isNotEmpty;
+    final mapUrl = b.mapUrl;
+    if (area.isEmpty &&
+        instructions.isEmpty &&
+        access.isEmpty &&
+        !showAddress) {
       return const SizedBox.shrink();
     }
     return _card(
@@ -859,6 +885,29 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           _sectionHeader(Icons.place_outlined, 'Job details'),
           if (area.isNotEmpty)
             _infoRow(Icons.map_outlined, 'Area', area),
+          if (showAddress) ...[
+            _infoRow(Icons.home_outlined, 'Address', b.address.trim()),
+            // Only when there is somewhere to send them. mapUrl is null when
+            // the booking has no pin, no coordinates and no usable address
+            // text, and a Maps button that opens nothing is worse than none.
+            if (mapUrl != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => launchUrl(
+                  Uri.parse(mapUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+                icon: const Icon(Icons.directions_outlined, size: 16),
+                label: const Text('Open in Google Maps'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.brand600,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ),
+          ],
           if (instructions.isNotEmpty)
             _infoRow(Icons.info_outline, 'Instructions', instructions),
           if (access.isNotEmpty)
@@ -866,8 +915,14 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           const SizedBox(height: 10),
           _noticeBox(
             Icons.lock_outline,
-            'Customer contact details are shared with the crew assigned to '
-            'this job.',
+            // Named precisely. The old wording implied the location was
+            // withheld too, which is no longer true and would read as a bug
+            // now that the address is right above it.
+            showAddress
+                ? 'The customer\'s name and phone number are shared with the '
+                    'crew assigned to this job, not here.'
+                : 'The address and the customer\'s contact details are shared '
+                    'once you accept the job.',
             AppColors.textMuted,
           ),
         ],
@@ -970,6 +1025,19 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 'Collect AED ${b.cashDue.toStringAsFixed(2)} in cash from the '
                 'customer, then mark it collected to complete the job.',
                 AppColors.amber,
+              ),
+            ],
+            // The online counterpart. Deliberately says there is nothing to
+            // collect: partners have been trained by the old build to expect
+            // a Collect button here, and its absence needs explaining rather
+            // than looking like the app forgot.
+            if (b.onlineUnpaid && b.status == 'in_progress') ...[
+              const SizedBox(height: 12),
+              _noticeBox(
+                Icons.hourglass_bottom_rounded,
+                'This booking is paid online. Do not collect cash - wait for '
+                'the customer to pay via their link, then Complete unlocks.',
+                AppColors.brand600,
               ),
             ],
             if (b.cashCollected) ...[
