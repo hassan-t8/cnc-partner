@@ -911,6 +911,7 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
                 ),
                 _editField(_banks[i].name, hint: 'Bank name'),
                 _editField(_banks[i].branch, hint: 'Branch'),
+                _editField(_banks[i].holder, hint: 'Account holder name'),
                 _editField(_banks[i].account, hint: 'Account number'),
                 _editField(_banks[i].iban, hint: 'IBAN'),
               ],
@@ -1019,17 +1020,29 @@ class _BankEntry {
   final TextEditingController account;
   final TextEditingController iban;
 
-  _BankEntry({String? name, String? branch, String? account, String? iban})
-      : name = TextEditingController(text: name ?? ''),
+  /// 2026-09-23 — the web's bank form collects this, so it has to survive a
+  /// save from here. The whole bank array is POSTed back, so a field this
+  /// screen does not carry is a field the partner silently deletes.
+  final TextEditingController holder;
+
+  _BankEntry({
+    String? name,
+    String? branch,
+    String? account,
+    String? iban,
+    String? holder,
+  })  : name = TextEditingController(text: name ?? ''),
         branch = TextEditingController(text: branch ?? ''),
         account = TextEditingController(text: account ?? ''),
-        iban = TextEditingController(text: iban ?? '');
+        iban = TextEditingController(text: iban ?? ''),
+        holder = TextEditingController(text: holder ?? '');
 
   factory _BankEntry.from(BankAccount b) => _BankEntry(
         name: b.bankName,
         branch: b.branchName,
         account: b.accountNumber,
         iban: b.ibanNumber,
+        holder: b.accountHolderName,
       );
 
   bool get isEmpty =>
@@ -1041,7 +1054,11 @@ class _BankEntry {
         'bankName': name.text.trim(),
         'branchName': branch.text.trim(),
         'accountNumber': account.text.trim(),
+        // Both keys — see BankAccount.toJson for why the canonical one
+        // cannot be left to the backend to infer.
+        'iban': iban.text.trim(),
         'ibanNumber': iban.text.trim(),
+        'accountHolderName': holder.text.trim(),
       };
 
   void dispose() {
@@ -1049,5 +1066,6 @@ class _BankEntry {
     branch.dispose();
     account.dispose();
     iban.dispose();
+    holder.dispose();
   }
 }

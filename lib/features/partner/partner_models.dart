@@ -242,24 +242,52 @@ class BankAccount {
   final String bankName;
   final String branchName;
   final String accountNumber;
+
+  /// The IBAN, whichever key it arrived under.
+  ///
+  /// 2026-09-23 the backend made `iban` canonical and left `ibanNumber` as
+  /// the legacy key (Partner.js). Its normaliser mirrors ibanNumber → iban
+  /// when iban is empty, and deliberately NOT the other way, "so any old
+  /// reader still finds a value under the old key too". This app was an old
+  /// reader: it read ibanNumber only, so a partner edited on the web — where
+  /// only `iban` is written — showed a blank IBAN here.
   final String ibanNumber;
+
+  /// 2026-09-23 — new canonical field on the web's bank form.
+  ///
+  /// Carried even though nothing here displayed it at first, because the
+  /// profile screen POSTs the whole bank array back: a field the app does
+  /// not know about is a field the app deletes on the partner's next save.
+  final String accountHolderName;
+
   const BankAccount({
     this.bankName = '',
     this.branchName = '',
     this.accountNumber = '',
     this.ibanNumber = '',
+    this.accountHolderName = '',
   });
   factory BankAccount.fromJson(Map<String, dynamic> j) => BankAccount(
         bankName: _s(j['bankName']),
         branchName: _s(j['branchName']),
         accountNumber: _s(j['accountNumber']),
-        ibanNumber: _s(j['ibanNumber']),
+        // Canonical first, legacy second — a row written by the web has
+        // only the first, a row written by an older client only the second.
+        ibanNumber:
+            _s(j['iban']).isNotEmpty ? _s(j['iban']) : _s(j['ibanNumber']),
+        accountHolderName: _s(j['accountHolderName']),
       );
   Map<String, dynamic> toJson() => {
         'bankName': bankName,
         'branchName': branchName,
         'accountNumber': accountNumber,
+        // BOTH keys on the way out. The backend fills `iban` from
+        // `ibanNumber` but never the reverse, so sending only the legacy key
+        // would leave the canonical one stale for every other consumer
+        // (settlement CSV, payment slips, admin display).
+        'iban': ibanNumber,
         'ibanNumber': ibanNumber,
+        'accountHolderName': accountHolderName,
       };
   bool get isEmpty =>
       bankName.isEmpty && accountNumber.isEmpty && ibanNumber.isEmpty;
