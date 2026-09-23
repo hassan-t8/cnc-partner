@@ -217,7 +217,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     // actually taken — full, partial, or more than due — and any surplus is
     // then allocated to a tip / the customer wallet / a split of the two.
     setState(() => _busyAction = 'collect');
-    final ok = await runCashCollectFlow(
+    final res = await runCashCollectFlow(
       context,
       api: CashCollectApi(
         collect: _repo.cashCollect,
@@ -230,9 +230,18 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     );
     if (!mounted) return;
     setState(() => _busyAction = null);
-    if (!ok) return;
-    setState(() => b = b.copyWith(cashCollected: true));
+    if (res == null) return;
     _changed = true;
+    // The server's answer, not ours. A submission awaiting approval leaves
+    // cashCollected false, so claiming otherwise here would unlock Complete
+    // on a booking the server will then refuse to complete.
+    setState(() => b = b.copyWith(cashCollected: res.cashCollected));
+    if (res.pendingApproval) {
+      // runCashCollectFlow has already shown the server's own message,
+      // which says the amount was submitted for approval. A second toast
+      // claiming it was collected is the contradiction this removes.
+      return;
+    }
     AppToast.success(b.status == 'in_progress'
         ? 'Cash collected — you can complete the job now'
         : 'Cash marked collected');

@@ -271,7 +271,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     setState(() => _acting = a.id);
     try {
       final repo = ref.read(workerRepositoryProvider);
-      final ok = await runCashCollectFlow(
+      final res = await runCashCollectFlow(
         context,
         api: CashCollectApi(
           collect: repo.cashCollect,
@@ -282,7 +282,9 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         cashDue: a.cashDue,
         hasAgent: a.agentId != null,
       );
-      if (!ok) {
+      if (res == null || res.pendingApproval) {
+        // Awaiting an admin. The job still cannot be completed, so the
+        // override below must not be seeded as collected.
         if (mounted) setState(() => _acting = -1);
         return;
       }

@@ -378,7 +378,7 @@ class _PartnerBookingsScreenState
         case 'cash':
           // Cash-extras flow: amount confirmation, then allocation of any
           // surplus. Replaces the old yes/no confirm dialog.
-          final done = await runCashCollectFlow(
+          final res = await runCashCollectFlow(
             context,
             api: CashCollectApi(
               collect: repo.cashCollect,
@@ -389,7 +389,9 @@ class _PartnerBookingsScreenState
             cashDue: b.cashDue,
             hasAgent: b.agentId != null,
           );
-          if (!done) {
+          if (res == null || res.pendingApproval) {
+            // Pending approval means nothing moved server-side, so the row
+            // must not be patched as collected. The flow already said so.
             setState(() => _acting.remove(b.id));
             return;
           }

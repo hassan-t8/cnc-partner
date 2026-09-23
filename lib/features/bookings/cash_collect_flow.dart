@@ -51,7 +51,13 @@ class CashCollectApi {
 
 /// Runs the whole flow. Returns true when the cash was recorded (regardless
 /// of how any extra was resolved), false if the partner backed out.
-Future<bool> runCashCollectFlow(
+/// Returns the server's own answer, or null when nothing was submitted
+/// (cancelled, or the request failed).
+///
+/// This used to return a bare bool, so every caller had to guess what had
+/// happened and all five guessed "collected" — which stopped being true
+/// on 2026-09-23 when cash submissions went behind admin approval.
+Future<CashCollectResult?> runCashCollectFlow(
   BuildContext context, {
   required CashCollectApi api,
   required int bookingId,
@@ -59,8 +65,8 @@ Future<bool> runCashCollectFlow(
   required bool hasAgent,
 }) async {
   final amount = await _askAmount(context, cashDue: cashDue);
-  if (amount == null) return false;
-  if (!context.mounted) return false;
+  if (amount == null) return null;
+  if (!context.mounted) return null;
 
   // Over-collection: settle the destination before any money moves, so the
   // server can commit the payment and the surplus together. Backing out here
@@ -73,8 +79,8 @@ Future<bool> runCashCollectFlow(
       amount: surplus,
       hasAgent: hasAgent,
     );
-    if (allocation == null) return false;
-    if (!context.mounted) return false;
+    if (allocation == null) return null;
+    if (!context.mounted) return null;
   }
 
   final messenger = ScaffoldMessenger.of(context);
@@ -92,7 +98,7 @@ Future<bool> runCashCollectFlow(
       content: Text(_clean(e)),
       backgroundColor: Colors.red.shade600,
     ));
-    return false;
+    return null;
   }
 
   if (result.needsAllocation && context.mounted) {
@@ -106,7 +112,7 @@ Future<bool> runCashCollectFlow(
   } else if (result.message.isNotEmpty) {
     messenger.showSnackBar(SnackBar(content: Text(result.message)));
   }
-  return true;
+  return result;
 }
 
 bool _sameMoney(double a, double b) =>

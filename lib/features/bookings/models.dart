@@ -782,6 +782,17 @@ class CashCollectResult {
   final PendingCashExtra? pendingCashExtra;
   final String message;
 
+  /// The submission is queued for an admin to approve, and NOTHING has
+  /// moved yet.
+  ///
+  /// Since 2026-09-23 this is true for every cash submission from this app
+  /// and from the CRM (bookingController.js:8705). The booking is not
+  /// flipped, no wallet debit is written, and [cashCollected] comes back
+  /// false — so the job still cannot be completed. Treating the call's
+  /// success as "collected" is what made the app promise a partner they
+  /// could finish a job the server would then refuse.
+  final bool pendingApproval;
+
   const CashCollectResult({
     this.cashCollected = true,
     this.cashDue = 0,
@@ -790,6 +801,7 @@ class CashCollectResult {
     this.remainingAmount,
     this.pendingCashExtra,
     this.message = '',
+    this.pendingApproval = false,
   });
 
   factory CashCollectResult.fromJson(Map<String, dynamic> res) {
@@ -806,6 +818,7 @@ class CashCollectResult {
           d['remainingAmount'] == null ? null : _d(d['remainingAmount']),
       pendingCashExtra: PendingCashExtra.fromJson(d['pendingCashExtra']),
       message: _s(res['message']),
+      pendingApproval: _b(d['pendingApproval']),
     );
   }
 

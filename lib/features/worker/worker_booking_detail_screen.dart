@@ -342,7 +342,7 @@ class _WorkerBookingDetailScreenState
     setState(() => _busyAction = 'collect');
     try {
       final repo = ref.read(workerRepositoryProvider);
-      final ok = await runCashCollectFlow(
+      final res = await runCashCollectFlow(
         context,
         api: CashCollectApi(
           collect: repo.cashCollect,
@@ -353,7 +353,8 @@ class _WorkerBookingDetailScreenState
         cashDue: a.cashDue,
         hasAgent: a.agentId != null,
       );
-      if (!ok) {
+      if (res == null || res.pendingApproval) {
+        // Not collected until an admin approves it.
         if (mounted) setState(() => _busyAction = null);
         return;
       }
