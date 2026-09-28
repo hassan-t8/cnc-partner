@@ -11,6 +11,7 @@ import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
 import '../../widgets/service_title.dart';
+import 'bulk_accept.dart';
 import 'offer_details_sheet.dart';
 import 'offer_errors.dart';
 import 'partner_models.dart';
@@ -30,6 +31,7 @@ class _PartnerRequestsScreenState
   bool _loading = true;
   bool _error = false;
   int _acting = -1;
+  bool _bulkBusy = false;
   Timer? _poll;
   Timer? _tick;
 
@@ -101,6 +103,162 @@ class _PartnerRequestsScreenState
     }
   }
 
+  /// Offers still inside their window — the ones "Accept all" would take.
+  List<Offer> get _openOffers {
+    final now = DateTime.now();
+    return _offers
+        .where((o) => o.expiresAt == null || o.expiresAt!.isAfter(now))
+        .toList();
+  }
+
+  /// "Accept all" — portal parity (requests/page.tsx, 2026-09-23).
+  ///
+  /// Confirms first (it commits crew and van to every job and notifies each
+  /// customer), then accepts one by one with live progress in the dialog.
+  /// Failures (expired mid-run, worker taken) are counted, not fatal; they
+  /// stay on the list after the refetch so the partner can retry them.
+  Future<void> _acceptAll() async {
+    final snapshot = _openOffers;
+    if (snapshot.isEmpty) {
+      AppToast.error('No open offers to accept');
+      return;
+    }
+    final repo = ref.read(partnerRepositoryProvider);
+    BulkAcceptProgress? progress;
+    BulkAcceptProgress? result;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) {
+          final running = progress != null;
+          Future<void> start() async {
+            setDialog(
+                () => progress = BulkAcceptProgress(total: snapshot.length));
+            setState(() => _bulkBusy = true);
+            result = await runBulkAccept(
+              [for (final o in snapshot) o.id],
+              (id) => repo.acceptOffer(id),
+              onProgress: (p) {
+                if (ctx.mounted) setDialog(() => progress = p);
+              },
+            );
+            if (ctx.mounted) Navigator.of(ctx).pop();
+          }
+
+          final p = progress;
+          return PopScope(
+            canPop: !running,
+            child: AlertDialog(
+              icon: const CircleAvatar(
+                radius: 26,
+                backgroundColor: AppColors.brand50,
+                child: Icon(Icons.done_all_rounded,
+                    color: AppColors.brand600, size: 28),
+              ),
+              title: Text(
+                'Accept all ${snapshot.length} offers?',
+                textAlign: TextAlign.center,
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'This commits your crew and van to every listed booking '
+                    'and confirms each one to its customer. Offers are '
+                    'accepted one by one; any that fail (expired, worker '
+                    'taken) stay on the list so you can retry.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 13, color: AppColors.textSecondary),
+                  ),
+                  if (p != null) ...[
+                    const SizedBox(height: 16),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: p.fraction,
+                        minHeight: 6,
+                        backgroundColor: AppColors.brand50,
+                        color: AppColors.brand600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${p.done}/${p.total} done  ·  ${p.ok} accepted'
+                      '${p.failed > 0 ? '  ·  ${p.failed} failed' : ''}',
+                      style: const TextStyle(
+                          fontSize: 12.5, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: running ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: running ? null : start,
+                  icon: running
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.2, color: Colors.white))
+                      : const Icon(Icons.done_all_rounded, size: 18),
+                  label: Text(running ? 'Accepting…' : 'Accept all'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _bulkBusy = false);
+    final r = result;
+    if (r == null) return; // cancelled before starting
+    if (r.failed == 0) {
+      AppToast.success(r.summary);
+    } else {
+      AppToast.error(r.summary);
+    }
+    await _fetch();
+  }
+
+  /// Strip above the list: how many offers are open, and "Accept all".
+  /// Only with two or more — a single offer already has its own Accept.
+  Widget _bulkBar() {
+    final open = _openOffers.length;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+      decoration: BoxDecoration(
+        color: AppColors.brand50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.brand600.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$open open offers',
+              style: const TextStyle(
+                  fontWeight: FontWeight.w700, color: AppColors.brand700),
+            ),
+          ),
+          SizedBox(
+            height: 38,
+            child: ElevatedButton.icon(
+              onPressed: (_bulkBusy || _acting != -1) ? null : _acceptAll,
+              icon: const Icon(Icons.done_all_rounded, size: 18),
+              label: Text('Accept all ($open)'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,12 +280,19 @@ class _PartnerRequestsScreenState
                       subtitle: 'New dispatch offers will appear here.')
                   : RefreshIndicator(
                       onRefresh: _fetch,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _offers.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (_, i) => _card(_offers[i]),
-                      ),
+                      child: Builder(builder: (_) {
+                        final bulk = _openOffers.length >= 2;
+                        final lead = bulk ? 1 : 0;
+                        return ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _offers.length + lead,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, i) => bulk && i == 0
+                              ? _bulkBar()
+                              : _card(_offers[i - lead]),
+                        );
+                      }),
                     ),
     );
   }
@@ -154,7 +319,7 @@ class _PartnerRequestsScreenState
   }
 
   Widget _card(Offer o) {
-    final busy = _acting == o.id;
+    final busy = _acting == o.id || _bulkBusy;
     final expired =
         o.expiresAt != null && o.expiresAt!.isBefore(DateTime.now());
     return InkWell(
