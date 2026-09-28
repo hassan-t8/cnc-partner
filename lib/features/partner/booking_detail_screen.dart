@@ -12,6 +12,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/service_title.dart';
 import '../../widgets/status_badge.dart';
 import '../bookings/cash_collect_flow.dart';
+import '../bookings/cash_submissions.dart';
 import '../bookings/models.dart';
 import '../worker/otp_dialog.dart';
 import 'assign_team_sheet.dart';
@@ -209,6 +210,12 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     }
   }
 
+  /// This session already submitted this booking's cash for approval and
+  /// nothing has moved since (see cashSubmittedProvider).
+  /// build() watches the provider, so reading it here stays current.
+  bool get _cashAwaitingApproval => isCashAwaitingApproval(
+      ref.read(cashSubmittedProvider), b.id, b.cashDue);
+
   /// Collect the cash owed on this booking. Shown for unpaid/partial (and
   /// online-uncaptured) bookings, mirroring the web partner-admin condition.
   /// Confirms (like the web) with an optional notes field before recording.
@@ -217,6 +224,15 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     // actually taken — full, partial, or more than due. Under the approval
     // gate any surplus is left unallocated for an admin (see
     // runCashCollectFlow).
+    //
+    // A submission from this session still awaiting an admin: filing another
+    // makes a second pending claim for the same cash (the server does not
+    // dedupe them), so it takes an explicit confirmation.
+    if (_cashAwaitingApproval &&
+        !await confirmCashResubmit(context, b.cashDue)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _busyAction = 'collect');
     final res = await runCashCollectFlow(
       context,
@@ -238,6 +254,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     // on a booking the server will then refuse to complete.
     setState(() => b = b.copyWith(cashCollected: res.cashCollected));
     if (res.pendingApproval) {
+      rememberCashSubmitted(ref, b.id, b.cashDue);
       // runCashCollectFlow has already shown the server's own message,
       // which says the amount was submitted for approval. A second toast
       // claiming it was collected is the contradiction this removes.
@@ -512,9 +529,16 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
         // the web. The Complete button stays disabled until cash is collected.
         if (b.cashPending) {
           return [
-            btn('Collect AED ${b.cashDue.toStringAsFixed(0)}',
-                Icons.payments_rounded, AppColors.amber, 'collect',
-                onTap: _collectCash),
+            // Already submitted this session: the primary action is to wait,
+            // so the button steps down to an outlined "Submit again".
+            if (_cashAwaitingApproval)
+              btn('Submit again', Icons.replay_rounded, AppColors.amber,
+                  'collect',
+                  outlined: true, onTap: _collectCash)
+            else
+              btn('Collect AED ${b.cashDue.toStringAsFixed(0)}',
+                  Icons.payments_rounded, AppColors.amber, 'collect',
+                  onTap: _collectCash),
             btn('Complete', Icons.check_circle_rounded, AppColors.brand600,
                 'complete',
                 enabled: false),
@@ -549,6 +573,8 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when a cash submission is remembered (_cashAwaitingApproval).
+    ref.watch(cashSubmittedProvider);
     // Live: refresh team when this booking changes (status/dispatch/assign).
     ref.listen(bookingRealtimeProvider, (_, __) {
       final lid = _rt?.lastBookingId;
@@ -759,6 +785,9 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                 if (b.cashCollected)
                   _semChip('Cash collected', AppColors.brand600,
                       icon: Icons.check_circle_outline)
+                else if (b.cashPending && _cashAwaitingApproval)
+                  _semChip('Cash awaiting approval', AppColors.amber,
+                      icon: Icons.hourglass_top_rounded)
                 else if (b.cashPending)
                   _semChip('Cash due AED ${b.cashDue.toStringAsFixed(0)}',
                       AppColors.amber,
@@ -1038,9 +1067,16 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             if (b.cashPending && b.status == 'in_progress') ...[
               const SizedBox(height: 12),
               _noticeBox(
-                Icons.account_balance_wallet_outlined,
-                'Collect AED ${b.cashDue.toStringAsFixed(2)} in cash from the '
-                'customer, then mark it collected to complete the job.',
+                _cashAwaitingApproval
+                    ? Icons.hourglass_top_rounded
+                    : Icons.account_balance_wallet_outlined,
+                _cashAwaitingApproval
+                    ? 'AED ${b.cashDue.toStringAsFixed(2)} cash submitted — '
+                        'waiting for an admin to approve it. Complete unlocks '
+                        'once it is approved.'
+                    : 'Collect AED ${b.cashDue.toStringAsFixed(2)} in cash '
+                        'from the customer, then mark it collected to '
+                        'complete the job.',
                 AppColors.amber,
               ),
             ],

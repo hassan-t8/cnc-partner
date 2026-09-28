@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../bookings/cash_collect_flow.dart';
+import '../bookings/cash_submissions.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -376,6 +377,15 @@ class _PartnerBookingsScreenState
           _removeBooking(b.id);
           break;
         case 'cash':
+          // Already submitted this session and still waiting: another
+          // submission is a second pending claim the server won't dedupe.
+          if (isCashAwaitingApproval(
+                  ref.read(cashSubmittedProvider), b.id, b.cashDue) &&
+              !await confirmCashResubmit(context, b.cashDue)) {
+            setState(() => _acting.remove(b.id));
+            return;
+          }
+          if (!mounted) return;
           // Cash-extras flow: amount confirmation, then one submission for
           // admin approval. Replaces the old yes/no confirm dialog.
           final res = await runCashCollectFlow(
@@ -392,6 +402,7 @@ class _PartnerBookingsScreenState
           if (res == null || res.pendingApproval) {
             // Pending approval means nothing moved server-side, so the row
             // must not be patched as collected. The flow already said so.
+            if (res != null) rememberCashSubmitted(ref, b.id, b.cashDue);
             setState(() => _acting.remove(b.id));
             return;
           }
@@ -964,9 +975,19 @@ class _PartnerBookingsScreenState
       // never show Collect -- the customer pays by link -- but Complete
       // still waits for the server to say they have.
       if (b.cashPending) {
-        actions.add(_btn('Collect AED ${b.cashDue.toStringAsFixed(2)}',
-            Icons.payments_rounded, AppColors.amber,
-            cardBusy ? null : () => _act(b, 'cash'), active == 'cash'));
+        // Submitted this session and not yet acted on: the row says so, and
+        // the button steps down to outlined. Tapping it still works — behind
+        // a confirmation — for when an admin rejected the submission.
+        final awaiting = isCashAwaitingApproval(
+            ref.watch(cashSubmittedProvider), b.id, b.cashDue);
+        actions.add(awaiting
+            ? _btn('Awaiting approval', Icons.hourglass_top_rounded,
+                AppColors.amber,
+                cardBusy ? null : () => _act(b, 'cash'), active == 'cash',
+                outlined: true)
+            : _btn('Collect AED ${b.cashDue.toStringAsFixed(2)}',
+                Icons.payments_rounded, AppColors.amber,
+                cardBusy ? null : () => _act(b, 'cash'), active == 'cash'));
       }
       actions.add(_btn('Complete', Icons.check_circle_rounded,
           AppColors.brand600,
