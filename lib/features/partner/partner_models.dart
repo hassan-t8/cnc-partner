@@ -955,9 +955,9 @@ class WalletInfo {
 
 /// A partner-submitted cash request — `/partner-cash-requests`.
 ///
-/// Only `withdraw` can be created now: the backend rejects new `deposit`
-/// submissions with `USE_HYPERPAY_DEPOSIT`, because deposits moved to the
-/// payment gateway. Historical deposit rows still come back from `/me`.
+/// Both kinds can be created. 2026-09-25: deposits moved BACK here from the
+/// HyperPay gateway — the partner submits Cash / Bank Transfer (+ optional
+/// proof file) and the wallet is credited only once an admin approves.
 class PartnerCashRequest {
   final int id;
   final String type; // withdraw | deposit
@@ -971,7 +971,12 @@ class PartnerCashRequest {
   final String iban;
 
   final String paymentMethod;
+  /// For a bank_transfer deposit: the CNC `bank_details.id` paid into.
   final String externalRef;
+
+  /// Deposit proof (bank slip / cash receipt). A server path like
+  /// `/uploads/<uuid>.jpg` for an uploaded file, or a legacy absolute URL.
+  final String proofImageUrl;
   final String notes;
   final String rejectionReason;
 
@@ -990,6 +995,7 @@ class PartnerCashRequest {
     required this.iban,
     required this.paymentMethod,
     required this.externalRef,
+    this.proofImageUrl = '',
     required this.notes,
     required this.rejectionReason,
     required this.createdAt,
@@ -998,6 +1004,8 @@ class PartnerCashRequest {
 
   bool get isPending => status.toLowerCase() == 'pending';
   bool get isWithdraw => type.toLowerCase() == 'withdraw';
+  bool get isDeposit => type.toLowerCase() == 'deposit';
+  bool get isBankTransfer => paymentMethod.toLowerCase() == 'bank_transfer';
 
   /// Only a pending row can be cancelled; the server answers 409 otherwise.
   bool get canCancel => isPending;
@@ -1015,11 +1023,44 @@ class PartnerCashRequest {
         iban: _s(j['iban']),
         paymentMethod: _s(j['paymentMethod']),
         externalRef: _s(j['externalRef']),
+        proofImageUrl: _s(j['proofImageUrl']),
         notes: _s(j['notes']),
         rejectionReason: _s(j['rejectionReason']),
         createdAt: _dt(j['createdAt']),
         reviewedAt: _dt(j['reviewedAt']),
       );
+}
+
+/// A CNC bank account a partner can pay a deposit into —
+/// `GET /partner-cash-requests/cnc-bank-accounts` (active rows only).
+class CncBankAccount {
+  final int id;
+  final String bankName;
+  final String iban;
+  final String accountNo;
+  final String branchName;
+  final String accountTitle;
+
+  const CncBankAccount({
+    required this.id,
+    this.bankName = '',
+    this.iban = '',
+    this.accountNo = '',
+    this.branchName = '',
+    this.accountTitle = '',
+  });
+
+  factory CncBankAccount.fromJson(Map<String, dynamic> j) => CncBankAccount(
+        id: _i(j['id']) ?? 0,
+        bankName: _s(j['bankName']),
+        iban: _s(j['iban']),
+        accountNo: _s(j['accountNo']),
+        branchName: _s(j['branchName']),
+        accountTitle: _s(j['accountTitle']),
+      );
+
+  /// Dropdown label — same as the portal: "Bank — Title (AccountNo)".
+  String get label => '$bankName — $accountTitle ($accountNo)';
 }
 
 /// One row from the partner wallet statement (/settlement/wallet/:id/statement).

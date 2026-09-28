@@ -591,7 +591,7 @@ class PartnerRepository {
     );
   }
 
-  // ----- cash requests (withdraw) -----
+  // ----- cash requests (withdraw + deposit) -----
   //
   // partnerId always comes from req.partnerScope server-side, never from the
   // URL or body, so none of these take one.
@@ -613,7 +613,7 @@ class PartnerRepository {
   Future<PartnerCashRequest> submitWithdraw({
     required double amount,
     required String clientRequestId,
-    required String bankAccountName,
+    String? bankAccountName,
     required String bankAccountNumber,
     String? bankName,
     String? iban,
@@ -623,18 +623,72 @@ class PartnerRepository {
       'type': 'withdraw',
       'amount': amount,
       'clientRequestId': clientRequestId,
-      'bankAccountName': bankAccountName,
+      // Older saved accounts have no holder name; the server stores null.
+      if (bankAccountName != null && bankAccountName.isNotEmpty)
+        'bankAccountName': bankAccountName,
       'bankAccountNumber': bankAccountNumber,
       if (bankName != null && bankName.isNotEmpty) 'bankName': bankName,
       if (iban != null && iban.isNotEmpty) 'iban': iban,
       if (notes != null && notes.isNotEmpty) 'notes': notes,
     });
-    // Both the 201 and the deduped 200 wrap the row as `data.request`.
-    final data = pickMap(res.data);
+    return _cashRequestFrom(res.data);
+  }
+
+  /// `POST /partner-cash-requests` with `type: 'deposit'` — the portal's
+  /// 2026-09-25 manual deposit. Nothing moves on submit: the row lands
+  /// `pending` and the wallet is credited only when an admin approves it.
+  ///
+  /// [paymentMethod] is `cash` | `bank_transfer`; a bank transfer needs
+  /// [cncBankId] (sent as `externalRef`). With [proofFilePath] the request
+  /// goes multipart and the file rides under `proofFile` — the server stores
+  /// it and sets `proofImageUrl` to `/uploads/<name>`.
+  ///
+  /// Throws [ApiException] with `code`:
+  ///   `INVALID_PAYMENT_METHOD`, `BANK_ACCOUNT_REQUIRED`,
+  ///   `INVALID_BANK_ACCOUNT`, `BANK_NOT_FOUND` (400)
+  Future<PartnerCashRequest> submitDeposit({
+    required double amount,
+    required String clientRequestId,
+    required String paymentMethod,
+    int? cncBankId,
+    String? notes,
+    String? proofFilePath,
+  }) async {
+    final fields = <String, String>{
+      'type': 'deposit',
+      'amount': amount.toString(),
+      'clientRequestId': clientRequestId,
+      'paymentMethod': paymentMethod,
+      if (paymentMethod == 'bank_transfer' && cncBankId != null)
+        'externalRef': cncBankId.toString(),
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
+    };
+    final res = (proofFilePath != null && proofFilePath.isNotEmpty)
+        ? await _api.multipart(
+            '/partner-cash-requests',
+            method: 'POST',
+            fields: fields,
+            filePath: proofFilePath,
+            fileField: 'proofFile',
+          )
+        : await _api.post('/partner-cash-requests', body: fields);
+    return _cashRequestFrom(res.data);
+  }
+
+  /// Both the 201 and the deduped 200 wrap the row as `data.request`.
+  PartnerCashRequest _cashRequestFrom(dynamic body) {
+    final data = pickMap(body);
     final row = data['request'] is Map
         ? Map<String, dynamic>.from(data['request'] as Map)
         : data;
     return PartnerCashRequest.fromJson(row);
+  }
+
+  /// `GET /partner-cash-requests/cnc-bank-accounts` — the active CNC accounts
+  /// a bank-transfer deposit can be paid into (display-safe fields only).
+  Future<List<CncBankAccount>> cncBankAccounts() async {
+    final res = await _api.get('/partner-cash-requests/cnc-bank-accounts');
+    return pickList(res.data).map(CncBankAccount.fromJson).toList();
   }
 
   /// `GET /partner-cash-requests/me` — newest first. `limit` caps at 100.

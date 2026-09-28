@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/config/env.dart';
 import '../../core/network/api_client.dart';
 import '../../core/providers.dart';
 import '../../core/realtime/booking_realtime.dart';
@@ -119,8 +121,10 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     final results = await Future.wait([
       repo.wallet(partnerId).catchError((_) => const WalletStatement()),
       repo.bookings().catchError((_) => <PartnerBooking>[]),
+      // Both kinds (portal parity, 2026-09-25): withdraws feed the
+      // Withdrawals tab + on-hold banner, deposits the Deposits tab.
       repo
-          .myCashRequests(type: 'withdraw')
+          .myCashRequests(limit: 100)
           .catchError((_) => <PartnerCashRequest>[]),
       repo.myDeposits().catchError((_) => <PartnerDepositRow>[]),
     ]);
@@ -330,7 +334,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         // Above the tabs: only a compact "you have a request pending" banner.
         // The full history (and the Cancel action) lives in the Withdrawals tab,
         // so this section stops duplicating it.
-        ..._pendingWithdrawBanner(e.requests),
+        ..._pendingWithdrawBanner(e.withdrawals),
         const SizedBox(height: 16),
         _searchField(),
         const SizedBox(height: 12),
@@ -339,8 +343,10 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         _tabs(
           pendingView.length + upcomingBookingsView.length,
           settledView.length,
-          _visibleDeposits(e.deposits).length,
-          e.requests.length,
+          _visibleDeposits(e.deposits).length +
+              e.depositRequests.length +
+              _adminDeposits(txns).length,
+          e.withdrawals.length,
         ),
         const SizedBox(height: 12),
         if (_tab == 'upcoming')
@@ -348,9 +354,9 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
         else if (_tab == 'settled')
           ..._settledList(settledView, bMap)
         else if (_tab == 'deposits')
-          ..._depositsList(e.deposits)
+          ..._depositsList(e.deposits, e.depositRequests, _adminDeposits(txns))
         else
-          ..._withdrawalsList(e.requests),
+          ..._withdrawalsList(e.withdrawals),
         const SizedBox(height: 8),
       ],
     );
@@ -481,19 +487,26 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
 
   Future<void> _openDeposit() async {
     final added = await showDepositSheet(context);
-    // The callback credited the wallet server-side, so refresh to show it.
-    if (added) await _refresh();
+    // A deposit REQUEST was filed (credited only on admin approval) — show it
+    // pending on the Deposits tab.
+    if (added) {
+      setState(() => _tab = 'deposits');
+      await _refresh();
+    }
   }
 
   Future<void> _cancelRequest(PartnerCashRequest r) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Cancel withdraw request?'),
-        content: Text(
-          'AED ${r.amount.toStringAsFixed(2)} will be released back to your '
-          'available balance.',
-        ),
+        title: Text(r.isDeposit
+            ? 'Cancel deposit request?'
+            : 'Cancel withdraw request?'),
+        content: Text(r.isDeposit
+            ? 'The AED ${r.amount.toStringAsFixed(2)} deposit request will be '
+                'withdrawn from admin review.'
+            : 'AED ${r.amount.toStringAsFixed(2)} will be released back to your '
+                'available balance.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -509,7 +522,9 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     if (ok != true) return;
     try {
       await ref.read(partnerRepositoryProvider).cancelCashRequest(r.id);
-      AppToast.success('Request cancelled — funds released.');
+      AppToast.success(r.isDeposit
+          ? 'Deposit request cancelled.'
+          : 'Request cancelled — funds released.');
       await _refresh();
     } on ApiException catch (e) {
       // 409 NOT_PENDING: an admin decided it while this screen was open.
@@ -913,19 +928,285 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
     }
   }
 
-  List<Widget> _depositsList(List<PartnerDepositRow> allDeposits) {
+  /// Deposits an admin credited directly from the CRM (never a cash request).
+  /// `settlementController.adjust` stamps them `[Admin Deposit…]`.
+  List<WalletTransaction> _adminDeposits(List<WalletTransaction> txns) =>
+      txns
+          .where((t) =>
+              t.type == 'adjustment' &&
+              t.isCredit &&
+              t.description.startsWith('[Admin Deposit'))
+          .toList()
+        ..sort((a, b) => (b.createdAt ?? DateTime(0))
+            .compareTo(a.createdAt ?? DateTime(0)));
+
+  /// Split `[Admin Deposit — Bank Transfer via CNC Bank #5] note` into the
+  /// method label and the admin's note.
+  static ({String? method, String note}) _parseAdminDeposit(String desc) {
+    final m = RegExp(r'^\[Admin Deposit(?: — ([^\]]+))?\]\s*(.*)$',
+            dotAll: true)
+        .firstMatch(desc);
+    if (m == null) return (method: null, note: desc);
+    return (method: m.group(1), note: (m.group(2) ?? '').trim());
+  }
+
+  /// Proof paths come back as `/uploads/<name>`; legacy rows may carry an
+  /// absolute URL. Same resolution as the other upload screens.
+  static String _uploadUrl(String f) {
+    if (f.startsWith('http')) return f;
+    if (f.startsWith('/')) return '${Env.apiUrl}$f';
+    return '${Env.apiUrl}/uploads/$f';
+  }
+
+  Future<void> _openProof(String path) async {
+    final ok = await launchUrl(Uri.parse(_uploadUrl(path)),
+        mode: LaunchMode.externalApplication);
+    if (!ok && mounted) AppToast.error('Could not open the attachment.');
+  }
+
+  Widget _sectionHeader(String title, String subtitle) => Padding(
+        padding: const EdgeInsets.only(bottom: 8, top: 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title.toUpperCase(),
+                style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4)),
+            const SizedBox(height: 2),
+            Text(subtitle,
+                style: TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+          ],
+        ),
+      );
+
+  /// A deposit REQUEST (Cash / Bank Transfer) awaiting or past admin review.
+  Widget _depositRequestCard(PartnerCashRequest r) {
+    final (label, color) = switch (r.status.toLowerCase()) {
+      'approved' => ('Approved', AppColors.emerald),
+      'rejected' => ('Rejected', AppColors.rose),
+      'cancelled' => ('Cancelled', Colors.black54),
+      _ => ('Pending approval', AppColors.amber),
+    };
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: AppColors.brand50,
+                child: Icon(
+                    r.isBankTransfer
+                        ? Icons.account_balance_outlined
+                        : Icons.payments_outlined,
+                    size: 18,
+                    color: AppColors.brand700),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${r.currency} ${r.amount.toStringAsFixed(2)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text(
+                      [
+                        r.isBankTransfer ? 'Bank Transfer' : 'Cash',
+                        if (r.isBankTransfer && r.externalRef.isNotEmpty)
+                          'Bank ref #${r.externalRef}',
+                      ].join(' · '),
+                      style:
+                          TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(label.toUpperCase(),
+                    style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: color)),
+              ),
+            ],
+          ),
+          if (r.notes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text('"${r.notes}"',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black54,
+                      fontStyle: FontStyle.italic)),
+            ),
+          if (r.status.toLowerCase() == 'rejected' &&
+              r.rejectionReason.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('Reason: ${r.rejectionReason}',
+                  style:
+                      const TextStyle(fontSize: 12, color: AppColors.rose)),
+            ),
+          Row(
+            children: [
+              if (r.createdAt != null)
+                Expanded(
+                  child: Text(
+                    DateFormat('d MMM y · h:mm a').format(r.createdAt!),
+                    style:
+                        const TextStyle(fontSize: 11.5, color: Colors.black45),
+                  ),
+                )
+              else
+                const Spacer(),
+              if (r.proofImageUrl.isNotEmpty)
+                TextButton.icon(
+                  onPressed: () => _openProof(r.proofImageUrl),
+                  icon: const Icon(Icons.attach_file_rounded, size: 15),
+                  label: const Text('View proof'),
+                ),
+              if (r.canCancel)
+                TextButton.icon(
+                  onPressed: () => _cancelRequest(r),
+                  icon: const Icon(Icons.close_rounded, size: 15),
+                  label: const Text('Cancel'),
+                  style:
+                      TextButton.styleFrom(foregroundColor: AppColors.rose),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// A deposit an admin credited directly — already in the wallet.
+  Widget _adminDepositCard(WalletTransaction t) {
+    final parsed = _parseAdminDeposit(t.description);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: AppColors.brand50,
+            child: const Icon(Icons.admin_panel_settings_outlined,
+                size: 18, color: AppColors.brand700),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('AED ${t.amount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 15)),
+                if (parsed.method != null)
+                  Text(parsed.method!,
+                      style: TextStyle(
+                          color: AppColors.textMuted, fontSize: 12)),
+                if (parsed.note.isNotEmpty)
+                  Text('"${parsed.note}"',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.black54,
+                          fontStyle: FontStyle.italic)),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    if (t.createdAt != null)
+                      DateFormat('d MMM y · h:mm a').format(t.createdAt!),
+                    'Balance after: AED ${t.balanceAfter.toStringAsFixed(2)}',
+                  ].join('  ·  '),
+                  style: const TextStyle(fontSize: 11.5, color: Colors.black45),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.emerald.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text('CREDITED',
+                style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.emerald)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _depositsList(
+    List<PartnerDepositRow> allDeposits,
+    List<PartnerCashRequest> depositRequests,
+    List<WalletTransaction> adminDeposits,
+  ) {
     final deposits = _visibleDeposits(allDeposits);
-    if (deposits.isEmpty) {
+    if (deposits.isEmpty && depositRequests.isEmpty && adminDeposits.isEmpty) {
       return const [
         Padding(
           padding: EdgeInsets.symmetric(vertical: 28),
           child: EmptyState(
               icon: Icons.account_balance_wallet_outlined,
               title: 'No deposits yet',
-              subtitle: 'Top-ups you make to your wallet will appear here.'),
+              subtitle: 'Deposits you make to your wallet will appear here.'),
         ),
       ];
     }
+    // Portal order: requests awaiting review, then admin-added credits, then
+    // the legacy card / Apple Pay history.
+    final requests = [...depositRequests]..sort((a, b) =>
+        (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+    return [
+      if (requests.isNotEmpty) ...[
+        _sectionHeader('Deposit requests',
+            'Cash / Bank Transfer — credited once admin approves'),
+        for (final r in requests) _depositRequestCard(r),
+        const SizedBox(height: 8),
+      ],
+      if (adminDeposits.isNotEmpty) ...[
+        _sectionHeader('Admin-added deposits',
+            'Directly credited by CNC admin — already in your wallet'),
+        for (final t in adminDeposits) _adminDepositCard(t),
+        const SizedBox(height: 8),
+      ],
+      if (deposits.isNotEmpty)
+        _sectionHeader('Recent deposits', 'Legacy Card / Apple Pay top-ups'),
+      ..._legacyDepositRows(deposits),
+    ];
+  }
+
+  List<Widget> _legacyDepositRows(List<PartnerDepositRow> deposits) {
     final df = DateFormat('d MMM y, h:mm a');
     Color statusColor(String s) {
       switch (s.toLowerCase()) {
@@ -1110,7 +1391,7 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
           title: [ServiceTitle.primary(b.serviceName), b.customerName]
               .where((s) => s.isNotEmpty)
               .join(' · '),
-          statusBadge: StatusBadge(b.status),
+          statusBadge: StatusBadge(b.displayStatus),
           clearsIn: b.scheduledStart != null
               ? DateFormat('d MMM · h:mm a').format(b.scheduledStart!)
               : 'Scheduled',
@@ -1452,13 +1733,18 @@ class _Earn {
   final WalletStatement statement;
   final List<PartnerBooking> bookings;
 
-  /// The partner's own cash requests, withdraw-only. New deposits go through
-  /// the payment gateway now (the submit route rejects them with
-  /// USE_HYPERPAY_DEPOSIT), so the portal filters deposit rows out and so
-  /// do we — historical deposit rows would otherwise be uncancellable clutter.
+  /// The partner's own cash requests, BOTH kinds. 2026-09-25: deposits moved
+  /// back onto this flow (Cash / Bank Transfer + admin approval), so — like the
+  /// portal — the list keeps both and each tab filters to its own type.
   final List<PartnerCashRequest> requests;
 
-  /// Wallet top-ups (HyperPay) — history for the Deposits tab.
+  List<PartnerCashRequest> get withdrawals =>
+      requests.where((r) => r.isWithdraw).toList();
+  List<PartnerCashRequest> get depositRequests =>
+      requests.where((r) => r.isDeposit).toList();
+
+  /// Legacy wallet top-ups (HyperPay, now frozen) — history for the Deposits
+  /// tab.
   final List<PartnerDepositRow> deposits;
 
   _Earn({

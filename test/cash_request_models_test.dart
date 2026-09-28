@@ -52,5 +52,46 @@ void main() {
         expect(r.canCancel, isFalse, reason: 'status=$s');
       }
     });
+
+    test('parses a bank-transfer deposit with proof', () {
+      final r = PartnerCashRequest.fromJson({
+        'id': 9,
+        'type': 'deposit',
+        'amount': '250.00',
+        'status': 'pending',
+        'paymentMethod': 'bank_transfer',
+        'externalRef': '3',
+        'proofImageUrl': '/uploads/abc.jpg',
+      });
+      expect(r.isDeposit, isTrue);
+      expect(r.isWithdraw, isFalse);
+      expect(r.isBankTransfer, isTrue);
+      expect(r.externalRef, '3');
+      expect(r.proofImageUrl, '/uploads/abc.jpg');
+      expect(r.canCancel, isTrue);
+    });
+
+    test('proofImageUrl defaults to empty', () {
+      final r = PartnerCashRequest.fromJson({'id': 1, 'type': 'deposit'});
+      expect(r.proofImageUrl, '');
+      expect(r.isBankTransfer, isFalse);
+    });
+  });
+
+  group('CncBankAccount', () {
+    test('reads the display fields and builds the dropdown label', () {
+      final b = CncBankAccount.fromJson({
+        'id': 5,
+        'bankName': 'ENBD',
+        'iban': 'AE070331234567890123456',
+        'accountNo': '1012345',
+        'branchName': 'Deira',
+        'accountTitle': 'CNC LLC',
+      });
+      expect(b.id, 5);
+      expect(b.iban, 'AE070331234567890123456');
+      expect(b.branchName, 'Deira');
+      expect(b.label, 'ENBD — CNC LLC (1012345)');
+    });
   });
 }

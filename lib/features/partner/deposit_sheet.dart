@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import '../../core/util/request_id.dart';
 
 import 'package:flutter/material.dart';
@@ -7,16 +9,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
-import 'deposit_checkout_screen.dart';
+import '../../widgets/image_source_sheet.dart';
+import 'partner_models.dart';
 import 'partner_repository.dart';
 
-/// Top up the partner wallet by card — the app's port of the portal's
-/// `_DepositModal`. Collects an amount + method, calls
-/// `POST /partner-deposit/initiate`, then pushes the HyperPay WebView.
+/// Deposit to the partner wallet — the app's port of the portal's
+/// `_DepositModal` (2026-09-25 rewrite).
 ///
-/// Resolves `true` when a deposit succeeded (so the caller refreshes the
-/// wallet). The hold/credit happens server-side on the callback, so a success
-/// means the balance is already updated.
+/// The partner states HOW they paid CNC (Cash / Bank Transfer), which CNC bank
+/// account a transfer went into, and can attach a photo of the bank slip / cash
+/// receipt. Submitting calls `POST /partner-cash-requests` (`type: 'deposit'`);
+/// the row lands `pending` and the wallet is credited only when an admin
+/// approves it. The HyperPay card path is frozen server-side — legacy
+/// in-flight checkouts can still be resumed from the Deposits tab.
+///
+/// Resolves `true` when a request was submitted, so the caller can refresh.
 Future<bool> showDepositSheet(BuildContext context) async {
   final ok = await showModalBottomSheet<bool>(
     context: context,
@@ -38,117 +45,157 @@ class _DepositSheet extends ConsumerStatefulWidget {
 }
 
 class _DepositSheetState extends ConsumerState<_DepositSheet> {
+  /// Matches the backend multer limit.
+  static const _maxProofBytes = 50 * 1024 * 1024;
+
   final _amount = TextEditingController();
-  String _method = 'card'; // card | apple_pay
+  final _notes = TextEditingController();
+  String _method = 'cash'; // cash | bank_transfer
+  int? _bankId;
+  String? _proofPath;
   bool _busy = false;
   String? _error;
+
+  List<CncBankAccount> _banks = const [];
+  bool _banksLoading = true;
+  String? _banksError;
 
   @override
   void initState() {
     super.initState();
-    _amount.addListener(() {
-      if (mounted) setState(() {});
-    });
+    for (final c in [_amount, _notes]) {
+      c.addListener(() {
+        if (mounted) setState(() {});
+      });
+    }
+    _loadBanks();
   }
 
   @override
   void dispose() {
     _amount.dispose();
+    _notes.dispose();
     super.dispose();
   }
 
+  Future<void> _loadBanks() async {
+    setState(() {
+      _banksLoading = true;
+      _banksError = null;
+    });
+    try {
+      final banks =
+          await ref.read(partnerRepositoryProvider).cncBankAccounts();
+      if (!mounted) return;
+      setState(() {
+        _banks = banks;
+        _banksLoading = false;
+        // A reload (after BANK_NOT_FOUND) may have dropped the picked bank.
+        if (!banks.any((b) => b.id == _bankId)) _bankId = null;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _banksError = e.message;
+        _banksLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _banksError = 'Failed to load bank accounts';
+        _banksLoading = false;
+      });
+    }
+  }
+
   double get _amountValue => double.tryParse(_amount.text.trim()) ?? 0;
-  bool get _canSubmit => !_busy && _amountValue > 0;
+  bool get _bankMissing => _method == 'bank_transfer' && _bankId == null;
+  bool get _canSubmit => !_busy && _amountValue > 0 && !_bankMissing;
+
+  CncBankAccount? get _pickedBank {
+    for (final b in _banks) {
+      if (b.id == _bankId) return b;
+    }
+    return null;
+  }
 
   /// Idempotency key for this deposit attempt.
   ///
-  /// It must be STABLE so that retrying after a network drop re-opens the same
-  /// checkout instead of starting a second one (it used to be minted inline at
-  /// the request site, so every retry looked like a new intent and could open a
-  /// second pending deposit + a second HyperPay checkout).
-  ///
-  /// But it must also track the AMOUNT and METHOD: the server's dedup branch
-  /// returns the EXISTING deposit, old amount and all. Reusing one key across an
-  /// amount change would silently charge the previous amount. So the key is
-  /// re-minted whenever either changes — same amount+method = same intent =
-  /// dedupe; different amount = genuinely new intent.
+  /// STABLE across retries of the same intent, so resending after a network
+  /// drop returns the row the server already created (deduped) instead of
+  /// filing a second request. Re-minted when the amount, method or bank
+  /// changes: the dedup branch returns the EXISTING row, old amount and all,
+  /// so reusing a key across an edit would silently keep the old values.
   String _clientRequestId = newRequestId('deposit');
-  double? _keyAmount;
-  String? _keyMethod;
+  String? _keyIntent;
 
-  String _requestIdFor(double amount, String method) {
-    if (_keyAmount != amount || _keyMethod != method) {
+  String _requestIdFor(double amount, String method, int? bankId) {
+    final intent = '$amount|$method|$bankId';
+    if (_keyIntent != intent) {
       _clientRequestId = newRequestId('deposit');
-      _keyAmount = amount;
-      _keyMethod = method;
+      _keyIntent = intent;
     }
     return _clientRequestId;
   }
 
-  Future<void> _start() async {
+  Future<void> _pickProof() async {
+    final picked = await pickProfileImage(
+      context,
+      title: 'Bank slip / cash receipt',
+      maxWidth: 2048,
+    );
+    if (picked == null || !mounted) return;
+    if (await File(picked.path).length() > _maxProofBytes) {
+      AppToast.error('File too large — max 50 MB.');
+      return;
+    }
+    if (mounted) setState(() => _proofPath = picked.path);
+  }
+
+  Future<void> _submit() async {
     if (!_canSubmit) return;
     setState(() {
       _busy = true;
       _error = null;
     });
+    final amount = _amountValue;
+    final bankId = _method == 'bank_transfer' ? _bankId : null;
     try {
-      // Stable across retries: if the network drops after the server created
-      // the checkout, resending the SAME id re-opens that one (deduped) rather
-      // than starting a second.
-      final init = await ref
-          .read(partnerRepositoryProvider)
-          .initiateDeposit(
-            amount: _amountValue,
+      await ref.read(partnerRepositoryProvider).submitDeposit(
+            amount: amount,
+            clientRequestId: _requestIdFor(amount, _method, bankId),
             paymentMethod: _method,
-            clientRequestId: _requestIdFor(_amountValue, _method),
+            cncBankId: bankId,
+            notes: _notes.text.trim(),
+            proofFilePath: _proofPath,
           );
       if (!mounted) return;
-
-      // Hand off to the WebView; it resolves with the outcome.
-      final outcome = await Navigator.of(context).push<DepositOutcome>(
-        MaterialPageRoute(
-          builder: (_) => DepositCheckoutScreen(init: init),
-          fullscreenDialog: true,
-        ),
-      );
-      if (!mounted) return;
-
-      if (outcome == null || outcome.isCancelled) {
-        // Nothing charged; let them adjust and try again.
-        setState(() => _busy = false);
-        return;
-      }
-      if (outcome.isSuccess) {
-        AppToast.success(
-          outcome.pendingCredit
-              ? 'Paid — your balance will update shortly.'
-              : 'Deposit added to your wallet.',
-        );
-        Navigator.of(context).pop(true);
-      } else if (outcome.status == 'pending') {
-        AppToast.success('Payment is processing — check back shortly.');
-        Navigator.of(context).pop(true);
-      } else {
-        setState(() {
-          _busy = false;
-          _error = outcome.error.isEmpty
-              ? 'Payment failed. No money was taken.'
-              : outcome.error;
-        });
-      }
+      AppToast.success(_method == 'cash'
+          ? 'Cash deposit request for AED ${amount.toStringAsFixed(2)} '
+              'submitted — awaiting admin approval.'
+          : 'Bank transfer deposit for AED ${amount.toStringAsFixed(2)} '
+              'submitted — awaiting admin approval.');
+      Navigator.of(context).pop(true);
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = e.code == 'WALLET_FROZEN'
-            ? 'Your wallet is frozen. Contact support.'
-            : e.message;
+        _error = switch (e.code) {
+          'WALLET_FROZEN' => 'Your wallet is frozen. Contact support.',
+          'BANK_ACCOUNT_REQUIRED' =>
+            'Please pick which CNC bank account you paid into.',
+          'BANK_NOT_FOUND' || 'INVALID_BANK_ACCOUNT' =>
+            'That CNC bank account is no longer active. Please pick another.',
+          _ => e.message,
+        };
       });
+      // A bank that went inactive must be dropped from the list.
+      if (e.code == 'BANK_NOT_FOUND') _loadBanks();
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = 'Could not start the payment.';
+        _error = 'Failed to submit deposit request.';
       });
     }
   }
@@ -157,15 +204,13 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
     final keyboard = mq.viewInsets.bottom;
-    // Clearance for the system gesture / navigation bar, so the Continue button
+    // Clearance for the system gesture / navigation bar, so the Submit button
     // isn't flush against it. Skipped while the keyboard is up — the nav bar sits
     // behind the keyboard then, and adding both would leave a dead gap.
     final systemBottom = keyboard > 0 ? 0.0 : mq.viewPadding.bottom;
 
-    // The body must SCROLL. This was a fixed Column, so opening the keyboard
-    // shrank the available height (viewInsets) while the content stayed the same
-    // size — a guaranteed bottom overflow. Pin the header, scroll the rest, and
-    // cap the sheet, exactly as the withdraw sheet already does.
+    // Pin the header, scroll the rest, and cap the sheet — a fixed Column
+    // overflows as soon as the keyboard opens.
     return Padding(
       padding: EdgeInsets.only(bottom: keyboard),
       child: ConstrainedBox(
@@ -174,64 +219,20 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.brand50,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.add_card_rounded,
-                      size: 18,
-                      color: AppColors.brand700,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Add funds',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: Colors.black45,
-                    ),
-                    onPressed: _busy
-                        ? null
-                        : () => Navigator.pop(context, false),
-                  ),
-                ],
-              ),
-            ),
+            _header(),
             Flexible(
               child: SingleChildScrollView(
-                // Bottom padding clears the system gesture / nav bar so the
-                // Continue button isn't flush against it.
                 padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + systemBottom),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Amount (AED)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    _infoBanner(),
+                    const SizedBox(height: 16),
+                    _label('Amount (AED)', required: true),
                     const SizedBox(height: 4),
                     TextField(
                       controller: _amount,
                       enabled: !_busy,
-                      autofocus: true,
                       keyboardType: const TextInputType.numberWithOptions(
                         decimal: true,
                       ),
@@ -262,35 +263,65 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Pay with',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    _label('Payment method', required: true),
                     const SizedBox(height: 6),
                     Row(
                       children: [
                         Expanded(
                           child: _methodTile(
-                            'card',
-                            'Card',
-                            Icons.credit_card_rounded,
+                            'cash',
+                            'Cash',
+                            Icons.payments_outlined,
                           ),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: _methodTile(
-                            'apple_pay',
-                            'Apple Pay',
-                            Icons.apple_rounded,
+                            'bank_transfer',
+                            'Bank Transfer',
+                            Icons.account_balance_outlined,
                           ),
                         ),
                       ],
                     ),
+                    if (_method == 'bank_transfer') ...[
+                      const SizedBox(height: 16),
+                      _label('Which CNC bank did you pay into?',
+                          required: true),
+                      const SizedBox(height: 6),
+                      _bankPicker(),
+                    ],
+                    const SizedBox(height: 16),
+                    _label('Proof attachment',
+                        hint: ' (optional but recommended)'),
+                    const SizedBox(height: 6),
+                    _proofPicker(),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Upload your bank transfer receipt / cash slip so admin '
+                      'can verify quickly.',
+                      style:
+                          TextStyle(fontSize: 11, color: AppColors.textMuted),
+                    ),
+                    const SizedBox(height: 16),
+                    _label('Notes', hint: ' (optional)'),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: _notes,
+                      enabled: !_busy,
+                      maxLines: 2,
+                      maxLength: 500,
+                      decoration: InputDecoration(
+                        hintText:
+                            'Any details that help admin verify this deposit',
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
                     if (_error != null) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Text(
                         _error!,
                         style: const TextStyle(
@@ -300,11 +331,11 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: _canSubmit ? _start : null,
+                        onPressed: _canSubmit ? _submit : null,
                         icon: _busy
                             ? const SizedBox(
                                 width: 16,
@@ -314,18 +345,10 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Icon(Icons.lock_rounded, size: 16),
+                            : const Icon(Icons.send_rounded, size: 16),
                         label: Text(
-                          _busy ? 'Starting…' : 'Continue to payment',
+                          _busy ? 'Submitting…' : 'Submit for approval',
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Payments are processed securely by HyperPay.',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: AppColors.textMuted,
                       ),
                     ),
                   ],
@@ -334,6 +357,274 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _header() => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 12, 4),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.brand50,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.add_card_rounded,
+                size: 18,
+                color: AppColors.brand700,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Deposit to wallet',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Submit for admin approval. Wallet credits once approved.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.black45),
+              onPressed: _busy ? null : () => Navigator.pop(context, false),
+            ),
+          ],
+        ),
+      );
+
+  Widget _infoBanner() => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.amber.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline_rounded, size: 17, color: AppColors.amber),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Submit a deposit request with proof (bank slip or cash '
+                'receipt). An admin will review + approve, then your wallet '
+                'balance updates.',
+                style: TextStyle(fontSize: 12, height: 1.35),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _label(String text, {bool required = false, String? hint}) =>
+      Text.rich(
+        TextSpan(
+          text: text,
+          children: [
+            if (required)
+              const TextSpan(
+                  text: ' *', style: TextStyle(color: AppColors.rose)),
+            if (hint != null)
+              TextSpan(
+                text: hint,
+                style: TextStyle(
+                    fontWeight: FontWeight.w400, color: AppColors.textMuted),
+              ),
+          ],
+        ),
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      );
+
+  Widget _bankPicker() {
+    if (_banksLoading) {
+      return _bankNotice(
+        'Loading bank accounts…',
+        AppColors.textMuted,
+        leading: const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    if (_banksError != null) {
+      return _bankNotice(
+        _banksError!,
+        AppColors.rose,
+        leading: const Icon(Icons.warning_amber_rounded,
+            size: 16, color: AppColors.rose),
+        trailing: TextButton(
+          onPressed: _busy ? null : _loadBanks,
+          child: const Text('Retry'),
+        ),
+      );
+    }
+    if (_banks.isEmpty) {
+      return _bankNotice(
+        'No active CNC bank accounts. Please contact admin.',
+        AppColors.amber,
+      );
+    }
+    final picked = _pickedBank;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<int>(
+          // Re-created when the list reloads, so it never holds an id that is
+          // no longer among its items.
+          key: ValueKey(_banks),
+          initialValue: picked?.id,
+          isExpanded: true,
+          hint: const Text('Select bank account…'),
+          decoration: InputDecoration(
+            isDense: true,
+            border:
+                OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          items: [
+            for (final b in _banks)
+              DropdownMenuItem(
+                value: b.id,
+                child: Text(b.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13.5)),
+              ),
+          ],
+          onChanged: _busy ? null : (v) => setState(() => _bankId = v),
+        ),
+        if (picked != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _detail('Bank', picked.bankName),
+                _detail('Account Title', picked.accountTitle),
+                _detail('Account No', picked.accountNo),
+                _detail('IBAN', picked.iban),
+                _detail('Branch', picked.branchName),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _detail(String k, String v) => v.isEmpty
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: SelectableText.rich(
+            TextSpan(children: [
+              TextSpan(
+                  text: '$k: ',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              TextSpan(text: v),
+            ]),
+            style: const TextStyle(fontSize: 12, color: Colors.black87),
+          ),
+        );
+
+  Widget _bankNotice(String text, Color color,
+          {Widget? leading, Widget? trailing}) =>
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            if (leading != null) ...[leading, const SizedBox(width: 8)],
+            Expanded(
+              child: Text(text,
+                  style: TextStyle(fontSize: 12, color: color)),
+            ),
+            if (trailing != null) trailing,
+          ],
+        ),
+      );
+
+  Widget _proofPicker() {
+    final path = _proofPath;
+    if (path == null) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: _busy ? null : _pickProof,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border, width: 1.4),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.upload_rounded, size: 18, color: AppColors.textMuted),
+              const SizedBox(width: 8),
+              Text(
+                'Choose bank slip / cash receipt photo',
+                style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: AppColors.brand50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.brand600.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Image.file(File(path),
+                width: 48, height: 48, fit: BoxFit.cover),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              path.split(RegExp(r'[\\/]')).last,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Remove file',
+            icon: const Icon(Icons.delete_outline_rounded,
+                color: AppColors.rose),
+            onPressed: _busy ? null : () => setState(() => _proofPath = null),
+          ),
+        ],
       ),
     );
   }
@@ -362,12 +653,16 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
               color: on ? AppColors.brand700 : AppColors.textMuted,
             ),
             const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: on ? AppColors.brand700 : AppColors.textMuted,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: on ? AppColors.brand700 : AppColors.textMuted,
+                ),
               ),
             ),
           ],

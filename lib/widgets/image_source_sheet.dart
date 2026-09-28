@@ -6,7 +6,14 @@ import '../core/theme/app_colors.dart';
 /// Bottom sheet offering Camera / Gallery / Cancel, then returns the picked
 /// image (or null if the user backed out). Centralises the picker so every
 /// place that changes the profile photo behaves identically.
-Future<XFile?> pickProfileImage(BuildContext context) async {
+///
+/// [title] / [maxWidth] let other flows reuse it (e.g. a deposit receipt,
+/// which needs more resolution than an avatar to stay legible).
+Future<XFile?> pickProfileImage(
+  BuildContext context, {
+  String title = 'Update photo',
+  double maxWidth = 1024,
+}) async {
   final source = await showModalBottomSheet<ImageSource>(
     context: context,
     backgroundColor: Colors.white,
@@ -24,13 +31,13 @@ Future<XFile?> pickProfileImage(BuildContext context) async {
                 color: Colors.grey.shade300,
                 borderRadius: BorderRadius.circular(4)),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text('Update photo',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800)),
             ),
           ),
           ListTile(
@@ -58,5 +65,5 @@ Future<XFile?> pickProfileImage(BuildContext context) async {
   );
   if (source == null) return null;
   return ImagePicker()
-      .pickImage(source: source, maxWidth: 1024, imageQuality: 85);
+      .pickImage(source: source, maxWidth: maxWidth, imageQuality: 85);
 }

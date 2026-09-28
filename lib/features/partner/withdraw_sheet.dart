@@ -4,12 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import 'partner_models.dart';
+import 'partner_profile_screen.dart';
 import 'partner_repository.dart';
 
 /// Partner withdraw request — the app's port of the portal's `_WithdrawModal`.
+///
+/// 2026-09-25 (portal parity): no more typed-in bank fields. The partner picks
+/// one of the bank accounts SAVED on their profile; its details are
+/// snapshotted onto the request so admin pays the exact account even if the
+/// profile is edited later. With no saved account, submit is blocked and the
+/// sheet points to Profile → Bank Accounts.
 ///
 /// Submitting immediately moves the amount out of `wallet.balance` and into
 /// `wallet.heldBalance` server-side, inside a transaction, before the row is
@@ -43,11 +52,12 @@ class _WithdrawSheet extends ConsumerStatefulWidget {
 
 class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
   final _amount = TextEditingController();
-  final _accountName = TextEditingController();
-  final _accountNumber = TextEditingController();
-  final _bankName = TextEditingController();
-  final _iban = TextEditingController();
   final _notes = TextEditingController();
+
+  List<BankAccount> _banks = const [];
+  bool _banksLoading = true;
+  String? _banksError;
+  int _selectedIdx = -1;
 
   /// Minted ONCE per open, never per submit. The backend keys idempotency on
   /// `withdraw:<partnerId>:<clientRequestId>`; reusing it is what stops a retry
@@ -62,9 +72,65 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
   @override
   void initState() {
     super.initState();
-    for (final c in [_amount, _accountName, _accountNumber]) {
+    for (final c in [_amount, _notes]) {
       c.addListener(_rebuild);
     }
+    _loadBanks();
+  }
+
+  /// The partner's saved bank accounts (Profile → Bank Accounts). Rows with
+  /// no account number are skipped — there is nothing to pay out to.
+  Future<void> _loadBanks() async {
+    setState(() {
+      _banksLoading = true;
+      _banksError = null;
+    });
+    final partnerId = ref.read(authControllerProvider).user?.partnerId;
+    if (partnerId == null) {
+      setState(() {
+        _banksLoading = false;
+        _banksError = 'Missing partner id — please sign in again.';
+      });
+      return;
+    }
+    try {
+      final p =
+          await ref.read(partnerRepositoryProvider).getPartner(partnerId);
+      if (!mounted) return;
+      // Any identifying field will do — account number, IBAN or bank name.
+      // Some saved accounts carry only an IBAN, and dropping them left the
+      // partner told they had no account (portal fix 2026-09-25).
+      final clean = p.bankDetails
+          .where((b) =>
+              b.accountNumber.trim().isNotEmpty ||
+              b.ibanNumber.trim().isNotEmpty ||
+              b.bankName.trim().isNotEmpty)
+          .toList();
+      setState(() {
+        _banks = clean;
+        _banksLoading = false;
+        _selectedIdx = clean.length == 1 ? 0 : -1;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _banksLoading = false;
+        _banksError = e.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _banksLoading = false;
+        _banksError = 'Failed to load your bank accounts';
+      });
+    }
+  }
+
+  /// Open the profile editor to add a bank account, then reload the list.
+  Future<void> _addBankAccount() async {
+    await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => const PartnerProfileScreen(startInEdit: true)));
+    if (mounted) _loadBanks();
   }
 
   void _rebuild() {
@@ -73,14 +139,7 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
 
   @override
   void dispose() {
-    for (final c in [
-      _amount,
-      _accountName,
-      _accountNumber,
-      _bankName,
-      _iban,
-      _notes,
-    ]) {
+    for (final c in [_amount, _notes]) {
       c.dispose();
     }
     super.dispose();
@@ -89,29 +148,32 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
   double get _amountValue => double.tryParse(_amount.text.trim()) ?? 0;
   bool get _exceedsBalance => _amountValue > widget.availableBalance + 0.001;
 
+  BankAccount? get _picked =>
+      _selectedIdx >= 0 && _selectedIdx < _banks.length
+          ? _banks[_selectedIdx]
+          : null;
+
   bool get _canSubmit =>
-      !_busy &&
-      _amountValue > 0 &&
-      !_exceedsBalance &&
-      _accountName.text.trim().isNotEmpty &&
-      _accountNumber.text.trim().isNotEmpty;
+      !_busy && _amountValue > 0 && !_exceedsBalance && _picked != null;
 
   String _money(double n) => 'AED ${n.toStringAsFixed(2)}';
 
   Future<void> _submit() async {
-    if (!_canSubmit) return;
+    final bank = _picked;
+    if (!_canSubmit || bank == null) return;
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
+      // Snapshot the picked account onto the request.
       await ref.read(partnerRepositoryProvider).submitWithdraw(
             amount: _amountValue,
             clientRequestId: _clientRequestId,
-            bankAccountName: _accountName.text.trim(),
-            bankAccountNumber: _accountNumber.text.trim(),
-            bankName: _bankName.text.trim(),
-            iban: _iban.text.trim(),
+            bankAccountName: bank.accountHolderName.trim(),
+            bankAccountNumber: bank.accountNumber.trim(),
+            bankName: bank.bankName.trim(),
+            iban: bank.ibanNumber.trim(),
             notes: _notes.text.trim(),
           );
       if (!mounted) return;
@@ -183,38 +245,15 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
                         child: const Text('Max'),
                       ),
                     ),
-                    _field(
-                      label: 'Account holder name',
-                      required: true,
-                      controller: _accountName,
-                      maxLength: 120,
-                    ),
-                    _field(
-                      label: 'Account number',
-                      required: true,
-                      controller: _accountNumber,
-                      maxLength: 60,
-                    ),
-                    _field(
-                      label: 'Bank name',
-                      controller: _bankName,
-                      maxLength: 120,
-                    ),
-                    _field(
-                      label: 'IBAN',
-                      controller: _iban,
-                      maxLength: 60,
-                      hint: 'AE07 0331 2345 6789 0123 456',
-                      monospace: true,
-                      // The backend stores it verbatim; upper-case it here so
-                      // two partners don't file the same IBAN in two casings.
-                      inputFormatters: [_UpperCaseFormatter()],
-                    ),
+                    _bankPicker(),
+                    const SizedBox(height: 12),
                     _field(
                       label: 'Notes (optional)',
                       controller: _notes,
                       maxLength: 500,
                       maxLines: 2,
+                      hint: 'Anything admin should know about this withdrawal',
+                      showCounter: true,
                     ),
                     if (_error != null) ...[
                       const SizedBox(height: 4),
@@ -299,6 +338,156 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
         ),
       );
 
+  /// "Deposit to" — the saved-account dropdown plus a details preview.
+  Widget _bankPicker() {
+    final Widget body;
+    if (_banksLoading) {
+      body = _notice(
+        'Loading your bank accounts…',
+        AppColors.textMuted,
+        leading: const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    } else if (_banksError != null) {
+      body = _notice(
+        _banksError!,
+        AppColors.rose,
+        trailing: TextButton(
+            onPressed: _busy ? null : _loadBanks, child: const Text('Retry')),
+      );
+    } else if (_banks.isEmpty) {
+      body = _notice(
+        "You haven't added any bank accounts yet. Add one from "
+        'Profile → Bank Accounts, then come back here.',
+        AppColors.amber,
+        trailing: TextButton(
+            onPressed: _busy ? null : _addBankAccount,
+            child: const Text('Add')),
+      );
+    } else {
+      body = DropdownButtonFormField<int>(
+        // Re-created when the list reloads, so it never holds a stale index.
+        key: ValueKey(_banks),
+        initialValue: _selectedIdx >= 0 ? _selectedIdx : null,
+        isExpanded: true,
+        hint: const Text('Select an account…'),
+        decoration: InputDecoration(
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        items: [
+          for (var i = 0; i < _banks.length; i++)
+            DropdownMenuItem(
+              value: i,
+              child: Text(
+                '${_banks[i].bankName.isEmpty ? 'Bank' : _banks[i].bankName}'
+                ' · ${_tail(_banks[i], i)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+        ],
+        onChanged:
+            _busy ? null : (v) => setState(() => _selectedIdx = v ?? -1),
+      );
+    }
+
+    final picked = _picked;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text.rich(
+          TextSpan(
+            text: 'Deposit to',
+            children: [
+              TextSpan(text: ' *', style: TextStyle(color: AppColors.rose))
+            ],
+          ),
+          style: TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w700, height: 1.6),
+        ),
+        const SizedBox(height: 4),
+        body,
+        if (picked != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _detail('Bank', picked.bankName),
+                _detail('Account Holder', picked.accountHolderName),
+                _detail('Account No', picked.accountNumber),
+                _detail('IBAN', picked.ibanNumber),
+                _detail('Branch', picked.branchName),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _last4(String s) =>
+      s.length <= 4 ? s : s.substring(s.length - 4);
+
+  /// Last 4 of the account number, else of the IBAN, else the branch — so
+  /// two accounts at the same bank can still be told apart (portal parity).
+  static String _tail(BankAccount b, int i) {
+    final id = (b.accountNumber.trim().isNotEmpty
+            ? b.accountNumber
+            : b.ibanNumber)
+        .trim();
+    if (id.isNotEmpty) return '••••${_last4(id)}';
+    return b.branchName.trim().isNotEmpty ? b.branchName.trim() : '#${i + 1}';
+  }
+
+  Widget _detail(String k, String v) => v.trim().isEmpty
+      ? const SizedBox.shrink()
+      : Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: Text.rich(
+            TextSpan(children: [
+              TextSpan(
+                  text: '$k: ',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              TextSpan(text: v),
+            ]),
+            style: const TextStyle(fontSize: 12, color: Colors.black87),
+          ),
+        );
+
+  Widget _notice(String text, Color color,
+          {Widget? leading, Widget? trailing}) =>
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            if (leading != null) ...[leading, const SizedBox(width: 8)],
+            Expanded(
+              child: Text(text,
+                  style: TextStyle(fontSize: 12, color: color, height: 1.35)),
+            ),
+            if (trailing != null) trailing,
+          ],
+        ),
+      );
+
   Widget _field({
     required String label,
     required TextEditingController controller,
@@ -308,6 +497,7 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
     int? maxLength,
     int maxLines = 1,
     bool monospace = false,
+    bool showCounter = false,
     TextInputType? keyboardType,
     List<TextInputFormatter>? inputFormatters,
     Widget? trailing,
@@ -344,7 +534,7 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
             decoration: InputDecoration(
               hintText: hint,
               isDense: true,
-              counterText: '',
+              counterText: showCounter ? null : '',
               errorText: error,
               suffixIcon: trailing,
               border: OutlineInputBorder(
@@ -395,10 +585,3 @@ class _WithdrawSheetState extends ConsumerState<_WithdrawSheet> {
   }
 }
 
-class _UpperCaseFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
-    return newValue.copyWith(text: newValue.text.toUpperCase());
-  }
-}
