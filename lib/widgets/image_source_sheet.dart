@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -9,12 +10,17 @@ import '../core/theme/app_colors.dart';
 ///
 /// [title] / [maxWidth] let other flows reuse it (e.g. a deposit receipt,
 /// which needs more resolution than an avatar to stay legible).
+///
+/// [allowPdf] adds a third option that picks a PDF (or an image file) from
+/// the device's files — the portal's deposit proof accepts "image or PDF".
+/// The result is still an [XFile]; check [isPdfPath] before previewing it.
 Future<XFile?> pickProfileImage(
   BuildContext context, {
   String title = 'Update photo',
   double maxWidth = 1024,
+  bool allowPdf = false,
 }) async {
-  final source = await showModalBottomSheet<ImageSource>(
+  final source = await showModalBottomSheet<_PickSource>(
     context: context,
     backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(
@@ -44,14 +50,21 @@ Future<XFile?> pickProfileImage(
             leading: const Icon(Icons.photo_camera_outlined,
                 color: AppColors.brand600),
             title: const Text('Take photo'),
-            onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            onTap: () => Navigator.pop(ctx, _PickSource.camera),
           ),
           ListTile(
             leading: const Icon(Icons.photo_library_outlined,
                 color: AppColors.brand600),
             title: const Text('Choose from gallery'),
-            onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            onTap: () => Navigator.pop(ctx, _PickSource.gallery),
           ),
+          if (allowPdf)
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf_outlined,
+                  color: AppColors.brand600),
+              title: const Text('Choose PDF or file'),
+              onTap: () => Navigator.pop(ctx, _PickSource.document),
+            ),
           const Divider(height: 1),
           ListTile(
             leading: Icon(Icons.close, color: AppColors.textMuted),
@@ -64,6 +77,26 @@ Future<XFile?> pickProfileImage(
     ),
   );
   if (source == null) return null;
-  return ImagePicker()
-      .pickImage(source: source, maxWidth: maxWidth, imageQuality: 85);
+  if (source == _PickSource.document) {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'jpg', 'jpeg', 'png', 'webp'],
+    );
+    final f = (res == null || res.files.isEmpty) ? null : res.files.single;
+    if (f?.path == null) return null;
+    return XFile(f!.path!, name: f.name);
+  }
+  return ImagePicker().pickImage(
+    source: source == _PickSource.camera
+        ? ImageSource.camera
+        : ImageSource.gallery,
+    maxWidth: maxWidth,
+    imageQuality: 85,
+  );
 }
+
+enum _PickSource { camera, gallery, document }
+
+/// True when [path] names a PDF — the caller shows a document tile instead of
+/// an image preview, which `Image.file` cannot render.
+bool isPdfPath(String path) => path.trim().toLowerCase().endsWith('.pdf');

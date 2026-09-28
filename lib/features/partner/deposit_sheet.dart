@@ -17,7 +17,7 @@ import 'partner_repository.dart';
 /// `_DepositModal` (2026-09-25 rewrite).
 ///
 /// The partner states HOW they paid CNC (Cash / Bank Transfer), which CNC bank
-/// account a transfer went into, and can attach a photo of the bank slip / cash
+/// account a transfer went into, and can attach a photo or PDF of the bank slip / cash
 /// receipt. Submitting calls `POST /partner-cash-requests` (`type: 'deposit'`);
 /// the row lands `pending` and the wallet is credited only when an admin
 /// approves it. The HyperPay card path is frozen server-side — legacy
@@ -143,6 +143,8 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
       context,
       title: 'Bank slip / cash receipt',
       maxWidth: 2048,
+      // Portal parity: the proof is "image or PDF".
+      allowPdf: true,
     );
     if (picked == null || !mounted) return;
     if (await File(picked.path).length() > _maxProofBytes) {
@@ -567,6 +569,14 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
         ),
       );
 
+  Widget _docThumb(IconData icon) => Container(
+        width: 48,
+        height: 48,
+        color: AppColors.surface,
+        alignment: Alignment.center,
+        child: Icon(icon, color: AppColors.rose, size: 26),
+      );
+
   Widget _proofPicker() {
     final path = _proofPath;
     if (path == null) {
@@ -586,7 +596,7 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
               Icon(Icons.upload_rounded, size: 18, color: AppColors.textMuted),
               const SizedBox(width: 8),
               Text(
-                'Choose bank slip / cash receipt photo',
+                'Choose bank slip / cash receipt (image or PDF)',
                 style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
               ),
             ],
@@ -605,8 +615,16 @@ class _DepositSheetState extends ConsumerState<_DepositSheet> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
-            child: Image.file(File(path),
-                width: 48, height: 48, fit: BoxFit.cover),
+            child: isPdfPath(path)
+                ? _docThumb(Icons.picture_as_pdf_outlined)
+                : Image.file(File(path),
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    // A format the platform cannot decode still uploads
+                    // fine; show a file glyph rather than a broken box.
+                    errorBuilder: (_, __, ___) =>
+                        _docThumb(Icons.insert_drive_file_outlined)),
           ),
           const SizedBox(width: 10),
           Expanded(

@@ -317,6 +317,9 @@ class _PartnerProfileScreenState extends ConsumerState<PartnerProfileScreen> {
                     .expand((b) => [
                           _kv('Bank', b.bankName),
                           _kv('Branch', b.branchName),
+                          // 2026-09-23 web bank form field — was editable
+                          // here but never shown in the read-only view.
+                          _kv('Holder', b.accountHolderName),
                           _kv('A/C', b.accountNumber),
                           _kv('IBAN', b.ibanNumber),
                         ])

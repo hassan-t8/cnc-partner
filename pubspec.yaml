@@ -40,6 +40,8 @@ dependencies:
 
   # Media
   image_picker: ^1.1.2
+  # Deposit proof: a PDF bank slip, as the portal accepts (image or PDF).
+  file_picker: ^10.3.3
 
   # UI
   shimmer: ^3.0.0

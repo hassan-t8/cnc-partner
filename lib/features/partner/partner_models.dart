@@ -1079,6 +1079,11 @@ class WalletTransaction {
   final double? grossAmount; // cash collected at the door
   final double? commissionAmount; // what the partner owes CNC on cash
 
+  /// 2026-09-25 (admin-deposit-alignment) — bank slip / cash receipt an
+  /// admin attached when crediting a deposit from the CRM: `/uploads/<name>`
+  /// or a legacy absolute URL. Empty on every other row.
+  final String proofImageUrl;
+
   const WalletTransaction({
     required this.id,
     this.type = '',
@@ -1093,6 +1098,7 @@ class WalletTransaction {
     this.reversesId,
     this.grossAmount,
     this.commissionAmount,
+    this.proofImageUrl = '',
   });
 
   bool get isCredit => direction == 'credit';
@@ -1117,6 +1123,7 @@ class WalletTransaction {
             j['grossAmount'] == null ? null : _d(j['grossAmount']),
         commissionAmount:
             j['commissionAmount'] == null ? null : _d(j['commissionAmount']),
+        proofImageUrl: _s(j['proofImageUrl']),
       );
 }
 

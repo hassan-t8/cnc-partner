@@ -1146,6 +1146,18 @@ class _PartnerEarningsScreenState extends ConsumerState<PartnerEarningsScreen> {
                   ].join('  ·  '),
                   style: const TextStyle(fontSize: 11.5, color: Colors.black45),
                 ),
+                // The slip the admin attached when crediting it (CRM
+                // Partner Settlement → deposit, 2026-09-25).
+                if (t.proofImageUrl.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _openProof(t.proofImageUrl),
+                    icon: const Icon(Icons.attach_file_rounded, size: 15),
+                    label: const Text('View proof'),
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
               ],
             ),
           ),
