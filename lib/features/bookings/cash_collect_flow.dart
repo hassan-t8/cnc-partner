@@ -6,21 +6,21 @@ import 'models.dart';
 /// Door-cash collection with extras — parity with the web portal's
 /// CashCollectionPanel / CashExtrasPanel (2026-08-07).
 ///
-/// The flow asks for everything up front, then makes ONE call:
-///   1. Confirm the amount actually taken. Default is the full amount due;
-///      the partner can record less (partial) or more (extra).
-///   2. If more was taken, ask where the surplus goes — tip, customer wallet,
-///      or a split — *before* anything is sent, and pass that choice into the
-///      collect call so the server commits both legs in one transaction.
+/// The flow confirms the amount actually taken — default the full amount due;
+/// the partner can record less (partial) or more (extra) — then makes ONE
+/// call.
 ///
-/// Choosing first matters: the old order recorded the payment and then made a
-/// second call to place the surplus, so a dropped connection between them —
-/// the normal case at a customer's door — committed the money and left the
-/// extra dangling for someone to clean up in the CRM.
+/// 2026-09-24 — no more up-front tip / wallet choice for a surplus. Every
+/// cash submission from this app now goes to admin approval
+/// (bookingController.js passes `pendingApproval: true` unconditionally), and
+/// in that mode cashCollection.js ignores `extraAllocation`, creates no
+/// pending extra and returns `pendingCashExtra: null`. Asking the partner to
+/// pick a destination told them the surplus went somewhere it did not. The
+/// surplus is noted on the booking's audit trail, unallocated, for an admin
+/// to handle; the flow says exactly that once the server answers.
 ///
-/// [_resolveExtra] survives as a fallback for pending rows that already exist:
-/// created by an older build, by the CRM, or by a server that ignored
-/// `extraAllocation`.
+/// [_resolveExtra] survives as a fallback for a server that still answers
+/// with a pending extra (no approval gate in front of it).
 ///
 /// Both repositories expose the same three calls, so they are passed in as
 /// [CashCollectApi] rather than coupling this widget to either one.
@@ -68,21 +68,6 @@ Future<CashCollectResult?> runCashCollectFlow(
   if (amount == null) return null;
   if (!context.mounted) return null;
 
-  // Over-collection: settle the destination before any money moves, so the
-  // server can commit the payment and the surplus together. Backing out here
-  // costs nothing — nothing has been sent yet.
-  final surplus = double.parse((amount - cashDue).toStringAsFixed(2));
-  CashExtraAllocation? allocation;
-  if (surplus > 0.004) {
-    allocation = await _askAllocation(
-      context,
-      amount: surplus,
-      hasAgent: hasAgent,
-    );
-    if (allocation == null) return null;
-    if (!context.mounted) return null;
-  }
-
   final messenger = ScaffoldMessenger.of(context);
   CashCollectResult result;
   try {
@@ -91,7 +76,6 @@ Future<CashCollectResult?> runCashCollectFlow(
       // Only send the amount when it differs from the due, so an untouched
       // confirmation keeps the pre-cash-extras behaviour on the server.
       collectedAmount: _sameMoney(amount, cashDue) ? null : amount,
-      extraAllocation: allocation,
     );
   } catch (e) {
     messenger.showSnackBar(SnackBar(
@@ -109,6 +93,24 @@ Future<CashCollectResult?> runCashCollectFlow(
       extra: result.pendingCashExtra!,
       hasAgent: hasAgent,
     );
+  } else if (result.pendingApproval && !result.isPartial) {
+    // The server's message only states the amount booked against the due
+    // (it caps the payment there). Say what became of any surplus too,
+    // without claiming it went anywhere: pending mode allocates nothing.
+    final booked = result.collectedAmount ?? cashDue;
+    final extra = double.parse((amount - booked).toStringAsFixed(2));
+    final note = extra > 0.004
+        ? 'The extra ${_aed(extra)} is noted on the booking but not '
+            'allocated to a tip or the customer wallet — an admin will '
+            'handle it.'
+        : '';
+    final text = [result.message, note].where((s) => s.isNotEmpty).join(' ');
+    if (text.isNotEmpty) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(text),
+        duration: Duration(seconds: note.isEmpty ? 4 : 7),
+      ));
+    }
   } else if (result.message.isNotEmpty) {
     messenger.showSnackBar(SnackBar(content: Text(result.message)));
   }
@@ -219,8 +221,9 @@ class _AmountSheetState extends State<_AmountSheet> {
               _Banner(
                 icon: Icons.savings_outlined,
                 color: Colors.teal.shade700,
-                text:
-                    'Extra ${_aed(_delta)} — you will choose where it goes next.',
+                text: 'Extra ${_aed(_delta)} — goes to admin approval with '
+                    'the cash. It is not allocated to a tip or wallet until '
+                    'an admin handles it.',
               ),
             const SizedBox(height: 14),
             SizedBox(
@@ -285,30 +288,10 @@ class _Banner extends StatelessWidget {
 
 // ─── Step 2: where does the surplus go ──────────────────────────────────────
 
-/// Choose-only: pick a destination for a surplus that has not been sent yet.
-/// Returns null if the partner backs out, which aborts the whole collection.
-Future<CashExtraAllocation?> _askAllocation(
-  BuildContext context, {
-  required double amount,
-  required bool hasAgent,
-}) {
-  return showModalBottomSheet<CashExtraAllocation>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-    ),
-    builder: (ctx) => Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-      child: _AllocateSheet(amount: amount, hasAgent: hasAgent),
-    ),
-  );
-}
-
-/// Fallback for a surplus that is already parked server-side — an older build,
-/// the CRM, or a server that ignored `extraAllocation`. Here the money has
-/// moved, so the sheet cannot be dismissed without resolving it.
+/// Fallback for a surplus that is already parked server-side — a server
+/// without the approval gate, or one created by an older build or the CRM.
+/// Here the money has moved, so the sheet cannot be dismissed without
+/// resolving it.
 Future<void> _resolveExtra(
   BuildContext context, {
   required CashCollectApi api,
@@ -338,27 +321,21 @@ Future<void> _resolveExtra(
   );
 }
 
-/// One sheet, two modes.
-///
-/// Choose-only ([api] and [extra] null) returns the picked
-/// [CashExtraAllocation] to the caller and touches no API. Resolve mode calls
-/// `allocate`/`cancel` on an extra that already exists.
+/// Calls `allocate`/`cancel` on an extra that already exists server-side.
 class _AllocateSheet extends StatefulWidget {
   const _AllocateSheet({
-    this.api,
-    this.bookingId,
-    this.extra,
+    required this.api,
+    required this.bookingId,
+    required this.extra,
     required this.amount,
     required this.hasAgent,
   });
 
-  final CashCollectApi? api;
-  final int? bookingId;
-  final PendingCashExtra? extra;
+  final CashCollectApi api;
+  final int bookingId;
+  final PendingCashExtra extra;
   final double amount;
   final bool hasAgent;
-
-  bool get chooseOnly => extra == null;
 
   @override
   State<_AllocateSheet> createState() => _AllocateSheetState();
@@ -398,28 +375,14 @@ class _AllocateSheetState extends State<_AllocateSheet> {
     }
     final split = _dest == CashExtraDestination.split;
 
-    // Choose-only: hand the selection back, no network call. The caller sends
-    // it with the collection so both legs commit together.
-    if (widget.chooseOnly) {
-      Navigator.pop(
-        context,
-        CashExtraAllocation(
-          _dest,
-          tipAmount: split ? _tipValue : null,
-          walletAmount: split ? _walletValue : null,
-        ),
-      );
-      return;
-    }
-
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await widget.api!.allocate(
-        widget.bookingId!,
-        widget.extra!.id,
+      await widget.api.allocate(
+        widget.bookingId,
+        widget.extra.id,
         _dest,
         tipAmount: split ? _tipValue : null,
         walletAmount: split ? _walletValue : null,
@@ -441,7 +404,7 @@ class _AllocateSheetState extends State<_AllocateSheet> {
       _error = null;
     });
     try {
-      await widget.api!.cancel(widget.bookingId!, widget.extra!.id);
+      await widget.api.cancel(widget.bookingId, widget.extra.id);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
@@ -548,25 +511,16 @@ class _AllocateSheetState extends State<_AllocateSheet> {
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2.2))
-                    : Text(widget.chooseOnly ? 'Collect cash' : 'Allocate',
-                        style: const TextStyle(
+                    : const Text('Allocate',
+                        style: TextStyle(
                             fontWeight: FontWeight.w700, fontSize: 15)),
               ),
             ),
-            if (widget.chooseOnly)
-              // Nothing has been sent yet, so backing out is free.
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text('Back',
-                    style: TextStyle(color: Colors.grey[700], fontSize: 12.5)),
-              )
-            else
-              TextButton(
-                onPressed: _busy ? null : _cancelExtra,
-                child: Text('Money handed back — cancel extra',
-                    style:
-                        TextStyle(color: Colors.red.shade600, fontSize: 12.5)),
-              ),
+            TextButton(
+              onPressed: _busy ? null : _cancelExtra,
+              child: Text('Money handed back — cancel extra',
+                  style: TextStyle(color: Colors.red.shade600, fontSize: 12.5)),
+            ),
           ],
         ),
       ),
