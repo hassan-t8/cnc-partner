@@ -25,8 +25,14 @@ final cashSubmittedProvider =
 
 /// True while [bookingId] has a submission from this session that the server
 /// has not acted on yet, judged by its cash due being unchanged.
+///
+/// [bookingId] is the BOOKING id (not a crew assignment id), so a submission
+/// made from the partner screens and one made from the crew screens guard
+/// each other. A null id (an assignment missing its booking reference) is
+/// never awaiting.
 bool isCashAwaitingApproval(
-    Map<int, double> submitted, int bookingId, double cashDue) {
+    Map<int, double> submitted, int? bookingId, double cashDue) {
+  if (bookingId == null) return false;
   final at = submitted[bookingId];
   return at != null && (at - cashDue).abs() < 0.005;
 }
@@ -36,6 +42,12 @@ void rememberCashSubmitted(WidgetRef ref, int bookingId, double cashDue) {
   final n = ref.read(cashSubmittedProvider.notifier);
   n.state = {...n.state, bookingId: cashDue};
 }
+
+/// The notice shown in place of "Collect AED … cash" while a submission is
+/// awaiting approval.
+String cashAwaitingApprovalNote(double cashDue) =>
+    'AED ${cashDue.toStringAsFixed(2)} cash submitted — waiting for an admin '
+    'to approve it. Complete unlocks once it is approved.';
 
 /// Confirms a second submission for cash already sent for approval.
 Future<bool> confirmCashResubmit(BuildContext context, double cashDue) async {

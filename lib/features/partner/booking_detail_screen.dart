@@ -1071,9 +1071,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
                     ? Icons.hourglass_top_rounded
                     : Icons.account_balance_wallet_outlined,
                 _cashAwaitingApproval
-                    ? 'AED ${b.cashDue.toStringAsFixed(2)} cash submitted — '
-                        'waiting for an admin to approve it. Complete unlocks '
-                        'once it is approved.'
+                    ? cashAwaitingApprovalNote(b.cashDue)
                     : 'Collect AED ${b.cashDue.toStringAsFixed(2)} in cash '
                         'from the customer, then mark it collected to '
                         'complete the job.',

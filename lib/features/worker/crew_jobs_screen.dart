@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../bookings/cash_collect_flow.dart';
+import '../bookings/cash_submissions.dart';
 
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
@@ -268,6 +269,14 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
       AppToast.error('Missing booking reference');
       return;
     }
+    // Already submitted (here or on another screen) and still waiting:
+    // another submission is a second pending claim the server won't dedupe.
+    if (isCashAwaitingApproval(
+            ref.read(cashSubmittedProvider), bookingId, a.cashDue) &&
+        !await confirmCashResubmit(context, a.cashDue)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _acting = a.id);
     try {
       final repo = ref.read(workerRepositoryProvider);
@@ -285,6 +294,7 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
       if (res == null || res.pendingApproval) {
         // Awaiting an admin. The job still cannot be completed, so the
         // override below must not be seeded as collected.
+        if (res != null) rememberCashSubmitted(ref, bookingId, a.cashDue);
         if (mounted) setState(() => _acting = -1);
         return;
       }
@@ -370,6 +380,8 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     // Rebuild whenever any crew screen changes a booking, and overlay those
     // changes on this day's server data so state is consistent everywhere.
     ref.watch(crewOverridesProvider);
+    // Rebuild when a cash submission is remembered (Collect -> Awaiting).
+    ref.watch(cashSubmittedProvider);
     final ov = ref.read(crewOverridesProvider.notifier);
     final jobs = [for (final j in _jobs) ov.apply(j)];
     // "Up next" hero — only for today, so it stays a genuine "what's next".
@@ -766,6 +778,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
         ],
       );
     }
+    // Submitted this session and not yet acted on (see cashSubmittedProvider).
+    final awaiting = a.cashPending &&
+        isCashAwaitingApproval(
+            ref.read(cashSubmittedProvider), a.bookingId, a.cashDue);
     final children = <Widget>[];
     switch (a.status) {
       case 'pending_acceptance':
@@ -781,8 +797,14 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
       case 'in_progress':
         // Cash still owed → collect before completing (backend enforces it).
         if (a.cashPending) {
-          children.add(_primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
-              AppColors.amber, busy ? null : () => _collectCash(a)));
+          // Awaiting approval: the button steps down to outlined. Tapping it
+          // still works (behind a confirmation) for a rejected submission.
+          children.add(awaiting
+              ? _primary('Awaiting approval', AppColors.amber,
+                  busy ? null : () => _collectCash(a),
+                  outlined: true)
+              : _primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
+                  AppColors.amber, busy ? null : () => _collectCash(a)));
           children.add(
               _primary('Complete', AppColors.brand600, null)); // disabled
         } else if (a.onlineUnpaid) {
@@ -840,8 +862,10 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
               border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
             ),
             child: Text(
-              'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark it '
-              'collected to complete.',
+              awaiting
+                  ? cashAwaitingApprovalNote(a.cashDue)
+                  : 'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then '
+                      'mark it collected to complete.',
               style: TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
           ),
@@ -853,13 +877,24 @@ class _CrewJobsScreenState extends ConsumerState<CrewJobsScreen> {
     return row;
   }
 
-  Widget _primary(String label, Color color, VoidCallback? onTap) => SizedBox(
+  Widget _primary(String label, Color color, VoidCallback? onTap,
+          {bool outlined = false}) =>
+      SizedBox(
         height: 42,
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: color),
-          onPressed: onTap,
-          child: Text(label),
-        ),
+        child: outlined
+            ? OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: color,
+                  side: BorderSide(color: color.withValues(alpha: 0.6)),
+                ),
+                onPressed: onTap,
+                child: Text(label),
+              )
+            : ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: color),
+                onPressed: onTap,
+                child: Text(label),
+              ),
       );
 
   /// Circular icon action (Directions / Call) that lives at the end of an info

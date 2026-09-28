@@ -70,6 +70,10 @@ void main() {
       expect(isCashAwaitingApproval({5: 250}, 6, 250), isFalse);
       expect(isCashAwaitingApproval(const {}, 5, 250), isFalse);
     });
+
+    test('an assignment without a booking id is never awaiting', () {
+      expect(isCashAwaitingApproval({5: 250}, null, 250), isFalse);
+    });
   });
 
   test('isPdfPath', () {

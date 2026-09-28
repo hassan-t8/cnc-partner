@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../bookings/cash_collect_flow.dart';
+import '../bookings/cash_submissions.dart';
 
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
@@ -277,6 +278,14 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
       AppToast.error('Missing booking reference');
       return;
     }
+    // Already submitted (here or on another screen) and still waiting:
+    // another submission is a second pending claim the server won't dedupe.
+    if (isCashAwaitingApproval(
+            ref.read(cashSubmittedProvider), bookingId, a.cashDue) &&
+        !await confirmCashResubmit(context, a.cashDue)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _acting = a.id);
     try {
       final repo = ref.read(workerRepositoryProvider);
@@ -294,6 +303,7 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
       if (res == null || res.pendingApproval) {
         // Awaiting an admin. The job still cannot be completed, so the
         // override below must not be seeded as collected.
+        if (res != null) rememberCashSubmitted(ref, bookingId, a.cashDue);
         if (mounted) setState(() => _acting = -1);
         return;
       }
@@ -376,6 +386,8 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
     ref.listen(bookingRealtimeProvider, (_, __) => _onRealtime());
     // Rebuild when any crew screen changes a booking (shared store).
     ref.watch(crewOverridesProvider);
+    // Rebuild when a cash submission is remembered (Collect -> Awaiting).
+    ref.watch(cashSubmittedProvider);
     return Scaffold(
       appBar: MainAppBar('My bookings',
         bottom: TabBar(
@@ -673,8 +685,9 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
         ),
       ];
     }
-    Widget outlineBtn(String label, Color color, String action) {
-      final handler = busy ? null : () => _act(a, action);
+    Widget outlineBtn(String label, Color color, String action,
+        {VoidCallback? onTap}) {
+      final handler = busy ? null : (onTap ?? () => _act(a, action));
       return SizedBox(
         height: 42,
         width: double.infinity,
@@ -702,13 +715,22 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
       case 'in_progress':
         // Cash still owed → collect before completing (backend enforces it too).
         if (a.cashPending) {
+          // Submitted this session and not yet acted on: the note says so and
+          // the button steps down to outlined. Tapping it still works (behind
+          // a confirmation) for when an admin rejected it.
+          final awaiting = isCashAwaitingApproval(
+              ref.read(cashSubmittedProvider), a.bookingId, a.cashDue);
           return [
             const SizedBox(height: 10),
-            _cashNote(a),
+            _cashNote(a, awaiting: awaiting),
             const SizedBox(height: 8),
-            btn('Collect AED ${a.cashDue.toStringAsFixed(0)}', AppColors.amber,
-                'collect',
-                onTap: () => _collectCash(a)),
+            if (awaiting)
+              outlineBtn('Awaiting approval', AppColors.amber, 'collect',
+                  onTap: () => _collectCash(a))
+            else
+              btn('Collect AED ${a.cashDue.toStringAsFixed(0)}',
+                  AppColors.amber, 'collect',
+                  onTap: () => _collectCash(a)),
             const SizedBox(height: 8),
             btn('Complete job', AppColors.brand600, 'complete',
                 enabled: false),
@@ -752,7 +774,7 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
         ),
       );
 
-  Widget _cashNote(Assignment a) => Container(
+  Widget _cashNote(Assignment a, {bool awaiting = false}) => Container(
         width: double.infinity,
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
@@ -761,8 +783,10 @@ class _WorkerBookingsScreenState extends ConsumerState<WorkerBookingsScreen>
           border: Border.all(color: AppColors.amber.withValues(alpha: 0.4)),
         ),
         child: Text(
-          'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark it '
-          'collected to complete.',
+          awaiting
+              ? cashAwaitingApprovalNote(a.cashDue)
+              : 'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark '
+                  'it collected to complete.',
           style: TextStyle(fontSize: 12, color: AppColors.textMuted),
         ),
       );

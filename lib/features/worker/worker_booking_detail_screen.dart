@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../bookings/cash_collect_flow.dart';
+import '../bookings/cash_submissions.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
@@ -41,6 +42,14 @@ class _WorkerBookingDetailScreenState
   // button hides the instant cash is marked collected on this screen.
   bool get _cashPending =>
       a.copyWith(cashCollected: _cashCollected).cashPending;
+
+  /// Cash still owed that this session already submitted for approval, with
+  /// nothing moved since (see cashSubmittedProvider). build() watches the
+  /// provider, so reading it here stays current.
+  bool get _cashAwaitingApproval =>
+      _cashPending &&
+      isCashAwaitingApproval(
+          ref.read(cashSubmittedProvider), a.bookingId, a.cashDue);
 
   /// Drivers only transport — view only (no start/complete/photos). True when
   /// this is a driver assignment OR the signed-in user is a driver (not crew).
@@ -196,6 +205,8 @@ class _WorkerBookingDetailScreenState
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when a cash submission is remembered (_cashAwaitingApproval).
+    ref.watch(cashSubmittedProvider);
     // Live: refresh this job when its booking changes (payment/status).
     ref.listen(bookingRealtimeProvider, (_, __) {
       final lid = _rt?.lastBookingId;
@@ -252,6 +263,10 @@ class _WorkerBookingDetailScreenState
                           color: Colors.white70,
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600)),
+                  if (_cashAwaitingApproval) ...[
+                    const SizedBox(height: 8),
+                    _awaitingChip(),
+                  ],
                 ],
               ),
             ),
@@ -339,6 +354,14 @@ class _WorkerBookingDetailScreenState
       AppToast.error('Missing booking reference');
       return;
     }
+    // A submission from this session still awaiting an admin: filing another
+    // makes a second pending claim for the same cash (the server does not
+    // dedupe them), so it takes an explicit confirmation.
+    if (_cashAwaitingApproval &&
+        !await confirmCashResubmit(context, a.cashDue)) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _busyAction = 'collect');
     try {
       final repo = ref.read(workerRepositoryProvider);
@@ -355,6 +378,7 @@ class _WorkerBookingDetailScreenState
       );
       if (res == null || res.pendingApproval) {
         // Not collected until an admin approves it.
+        if (res != null) rememberCashSubmitted(ref, bookingId, a.cashDue);
         if (mounted) setState(() => _busyAction = null);
         return;
       }
@@ -418,9 +442,15 @@ class _WorkerBookingDetailScreenState
       case 'in_progress':
         // Cash still owed → collect before completing (backend enforces it).
         if (_cashPending) {
-          buttons.add(_primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
-              AppColors.amber, busy ? null : _collectCash,
-              busy: _busyAction == 'collect'));
+          // Already submitted this session: the primary action is to wait,
+          // so the button steps down to an outlined "Submit again".
+          buttons.add(_cashAwaitingApproval
+              ? _primary('Submit again', AppColors.amber,
+                  busy ? null : _collectCash,
+                  busy: _busyAction == 'collect', outlined: true)
+              : _primary('Collect AED ${a.cashDue.toStringAsFixed(0)}',
+                  AppColors.amber, busy ? null : _collectCash,
+                  busy: _busyAction == 'collect'));
           buttons.add(_primary(
               'Complete job', AppColors.brand600, null)); // disabled
         } else {
@@ -454,8 +484,10 @@ class _WorkerBookingDetailScreenState
                         color: AppColors.amber.withValues(alpha: 0.4)),
                   ),
                   child: Text(
-                    'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, then mark '
-                    'it collected to complete.',
+                    _cashAwaitingApproval
+                        ? cashAwaitingApprovalNote(a.cashDue)
+                        : 'Collect AED ${a.cashDue.toStringAsFixed(2)} cash, '
+                            'then mark it collected to complete.',
                     style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                   ),
                 ),
@@ -491,19 +523,52 @@ class _WorkerBookingDetailScreenState
       );
 
   Widget _primary(String label, Color color, VoidCallback? onTap,
-          {bool busy = false}) =>
-      SizedBox(
-        height: 50,
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: color),
-          onPressed: onTap,
-          child: busy
-              ? const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2.4, color: Colors.white))
-              : Text(label),
+      {bool busy = false, bool outlined = false}) {
+    final child = busy
+        ? SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+                strokeWidth: 2.4, color: outlined ? color : Colors.white))
+        : Text(label);
+    return SizedBox(
+      height: 50,
+      child: outlined
+          ? OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: color,
+                side: BorderSide(color: color.withValues(alpha: 0.6)),
+              ),
+              onPressed: onTap,
+              child: child,
+            )
+          : ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: color),
+              onPressed: onTap,
+              child: child,
+            ),
+    );
+  }
+
+  /// "Cash awaiting approval" pill for the hero, the counterpart of the
+  /// partner booking detail's chip.
+  Widget _awaitingChip() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.amber,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.hourglass_top_rounded, size: 13, color: Colors.white),
+            SizedBox(width: 4),
+            Text('Cash awaiting approval',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700)),
+          ],
         ),
       );
 
