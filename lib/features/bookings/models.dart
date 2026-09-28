@@ -401,6 +401,19 @@ class PartnerBooking {
   final String serviceName;
   final String area;
   final String status;
+
+  /// 2026-09-24 — Who put this booking with the partner, from the freshest
+  /// BookingAssignment row: 'manual' (admin assigned from CRM),
+  /// 'partner_admin' (partner accepted), 'auto' (auto-dispatch), or null on
+  /// legacy rows. Display only — see [displayStatus].
+  final String? assignedBy;
+
+  /// Status key for the pill/rail. An admin-assigned booking reads
+  /// "assigned" (amber) instead of "accepted" (green), mirroring the web
+  /// portal's displayStatus(). Purely visual — filters, gates and actions keep
+  /// reading [status], which is still 'accepted'.
+  String get displayStatus =>
+      status == 'accepted' && assignedBy == 'manual' ? 'assigned' : status;
   final DateTime? scheduledStart;
   // Cap-aware take-home (partnerNet). `partnerCost` is the Booking column
   // mirror of the central settlement helper's cap-aware `partnerNet` — net of
@@ -538,6 +551,7 @@ class PartnerBooking {
     this.serviceName = '',
     this.area = '',
     this.status = '',
+    this.assignedBy,
     this.scheduledStart,
     this.partnerCost = 0,
     this.partnerFloor = 0,
@@ -632,6 +646,7 @@ class PartnerBooking {
         serviceName: serviceName,
         area: area,
         status: status ?? this.status,
+        assignedBy: assignedBy,
         scheduledStart: scheduledStart,
         partnerCost: partnerCost,
         partnerFloor: partnerFloor,
@@ -683,6 +698,7 @@ class PartnerBooking {
       }(),
       area: _s(j['area'] ?? j['city']),
       status: _s(j['dispatchStatus'] ?? j['status']),
+      assignedBy: j['assignedBy'] == null ? null : _s(j['assignedBy']),
       scheduledStart: _dt(j['scheduledStart'] ?? j['date']),
       // Cap-aware take-home (partnerNet mirror). Prefer the explicit
       // partnerNet field if the API ever returns it; else the Booking column

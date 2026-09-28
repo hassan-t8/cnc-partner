@@ -214,8 +214,9 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
   /// Confirms (like the web) with an optional notes field before recording.
   Future<void> _collectCash() async {
     // Cash-extras flow (2026-08-06): the partner confirms how much was
-    // actually taken — full, partial, or more than due — and any surplus is
-    // then allocated to a tip / the customer wallet / a split of the two.
+    // actually taken — full, partial, or more than due. Under the approval
+    // gate any surplus is left unallocated for an admin (see
+    // runCashCollectFlow).
     setState(() => _busyAction = 'collect');
     final res = await runCashCollectFlow(
       context,
@@ -748,7 +749,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               spacing: 8,
               runSpacing: 8,
               children: [
-                StatusBadge(b.status),
+                StatusBadge(b.displayStatus),
                 if (b.paymentStatus.isNotEmpty)
                   _semChip(
                     b.paymentStatus.replaceAll('_', ' '),
@@ -878,9 +879,15 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
     final area = b.area.trim();
     final instructions = b.specialInstructions.trim();
     final access = b.accessInstructions.trim();
-    final showAddress = _addressVisibleAt.contains(b.status.toLowerCase()) &&
-        b.address.trim().isNotEmpty;
-    final mapUrl = b.mapUrl;
+    // Raw dispatch status, not displayStatus: an admin-assigned booking is
+    // still 'accepted' and reveals the address like any other.
+    final revealed = _addressVisibleAt.contains(b.status.toLowerCase());
+    final showAddress = revealed && b.address.trim().isNotEmpty;
+    // Web parity (BookingDetailModal: hasAddr = address || area): once
+    // revealed, the Maps link shows even when only the area is known — a
+    // pin-only booking with no street text still gets directions.
+    final mapUrl =
+        revealed && (showAddress || area.isNotEmpty) ? b.mapUrl : null;
     if (area.isEmpty &&
         instructions.isEmpty &&
         access.isEmpty &&
@@ -894,8 +901,9 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
           _sectionHeader(Icons.place_outlined, 'Job details'),
           if (area.isNotEmpty)
             _infoRow(Icons.map_outlined, 'Area', area),
-          if (showAddress) ...[
-            _infoRow(Icons.home_outlined, 'Address', b.address.trim()),
+          if (showAddress || mapUrl != null) ...[
+            if (showAddress)
+              _infoRow(Icons.home_outlined, 'Address', b.address.trim()),
             // Only when there is somewhere to send them. mapUrl is null when
             // the booking has no pin, no coordinates and no usable address
             // text, and a Maps button that opens nothing is worse than none.
@@ -927,7 +935,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
             // Named precisely. The old wording implied the location was
             // withheld too, which is no longer true and would read as a bug
             // now that the address is right above it.
-            showAddress
+            revealed
                 ? 'The customer\'s name and phone number are shared with the '
                     'crew assigned to this job, not here.'
                 : 'The address and the customer\'s contact details are shared '

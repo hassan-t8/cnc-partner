@@ -376,8 +376,8 @@ class _PartnerBookingsScreenState
           _removeBooking(b.id);
           break;
         case 'cash':
-          // Cash-extras flow: amount confirmation, then allocation of any
-          // surplus. Replaces the old yes/no confirm dialog.
+          // Cash-extras flow: amount confirmation, then one submission for
+          // admin approval. Replaces the old yes/no confirm dialog.
           final res = await runCashCollectFlow(
             context,
             api: CashCollectApi(
@@ -1032,7 +1032,7 @@ class _PartnerBookingsScreenState
   }
 
   Widget _card(PartnerBooking b) {
-    final (accent, _) = AppColors.dispatchStatus(b.status);
+    final (accent, _) = AppColors.dispatchStatus(b.displayStatus);
     final time = b.scheduledStart != null
         ? DateFormat('EEE d MMM · h:mm a').format(b.scheduledStart!)
         : 'Not scheduled';
@@ -1102,7 +1102,7 @@ class _PartnerBookingsScreenState
                                 ],
                               ),
                             ),
-                            StatusBadge(b.status),
+                            StatusBadge(b.displayStatus),
                           ],
                         ),
                         const SizedBox(height: 10),

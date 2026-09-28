@@ -61,6 +61,10 @@ class AppColors {
         return (const Color(0xFFFEF3C7), const Color(0xFF92400E));
       case 'awaiting_acceptance':
         return (const Color(0xFFE0F2FE), const Color(0xFF075985));
+      // Display-only key (PartnerBooking.displayStatus): accepted, but pushed
+      // by an admin rather than accepted by the partner. Amber, as on web.
+      case 'assigned':
+        return (const Color(0xFFFEF3C7), const Color(0xFF92400E));
       case 'accepted':
         return (const Color(0xFFD1FAE5), const Color(0xFF065F46));
       case 'in_progress':
