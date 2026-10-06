@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/profile/profile_image_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/profile_avatar.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
 
@@ -121,10 +123,11 @@ class _PartnerScheduleScreenState
               ),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 18,
+                  ProfileAvatar(
+                    url: ProfileImageNotifier.urlFor(w.photoUrl),
+                    size: 36,
                     backgroundColor: AppColors.brand50,
-                    child: Text(
+                    placeholder: Text(
                       (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
                       style: const TextStyle(
                           color: AppColors.brand700,
