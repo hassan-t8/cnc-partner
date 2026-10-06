@@ -566,6 +566,10 @@ class Worker {
   final double? homeLng;
   final int? primaryZoneId;
 
+  /// Profile photo — the stored upload filename (`Worker.photoUrl`, backend
+  /// 2026-10-05), or a legacy absolute URL. Empty when there is none.
+  final String photoUrl;
+
   const Worker({
     required this.id,
     this.firstName = '',
@@ -584,6 +588,7 @@ class Worker {
     this.homeLat,
     this.homeLng,
     this.primaryZoneId,
+    this.photoUrl = '',
   });
 
   String get name => [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
@@ -605,6 +610,7 @@ class Worker {
         acceptAutoAssign: acceptAutoAssign ?? this.acceptAutoAssign,
         homeAddress: homeAddress,
         primaryZoneId: primaryZoneId,
+        photoUrl: photoUrl,
       );
 
   factory Worker.fromJson(Map<String, dynamic> j) {
@@ -646,6 +652,7 @@ class Worker {
       homeLat: j['homeLat'] == null ? null : _d(j['homeLat']),
       homeLng: j['homeLng'] == null ? null : _d(j['homeLng']),
       primaryZoneId: _i(j['primaryZoneId']),
+      photoUrl: _s(j['photoUrl']),
     );
   }
 }
