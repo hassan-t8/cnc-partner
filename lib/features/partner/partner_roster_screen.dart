@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../../core/profile/profile_image_provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/main_app_bar.dart';
+import '../../widgets/profile_avatar.dart';
 import '../bookings/models.dart';
 import 'partner_models.dart';
 import 'partner_repository.dart';
@@ -203,10 +205,11 @@ class _PartnerRosterScreenState extends ConsumerState<PartnerRosterScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            CircleAvatar(
-              radius: 16,
+            ProfileAvatar(
+              url: ProfileImageNotifier.urlFor(w.photoUrl),
+              size: 32,
               backgroundColor: AppColors.brand50,
-              child: Text(initials,
+              placeholder: Text(initials,
                   style: const TextStyle(
                       color: AppColors.brand700,
                       fontWeight: FontWeight.w800,
