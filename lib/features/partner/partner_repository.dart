@@ -316,6 +316,16 @@ class PartnerRepository {
   Future<void> updateWorker(int id, Map<String, dynamic> body) =>
       _api.put('/workers/$id', body: body);
 
+  /// Upload a worker's profile photo: `PUT /workers/:id` as multipart with
+  /// the file under `photo` (backend 2026-10-05 — multer stores it and sets
+  /// `Worker.photoUrl` to the filename). Sent on its own, with no other
+  /// fields, so nothing else on the worker goes through multipart's
+  /// all-strings coercion. Removing the photo is a plain
+  /// [updateWorker] with `photoUrl: ''`.
+  Future<void> uploadWorkerPhoto(int id, String filePath) =>
+      _api.multipart('/workers/$id',
+          method: 'PUT', filePath: filePath, fileField: 'photo');
+
   /// Change only a worker's status. This is a DIFFERENT endpoint from
   /// [updateWorker]: the generic `PUT /workers/:id` validates the smaller enum
   /// `active | on_leave | suspended | terminated`, so posting `not_working`
