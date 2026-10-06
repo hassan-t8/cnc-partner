@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_client.dart';
+import '../../core/profile/profile_image_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_states.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/profile_avatar.dart';
 import '../../widgets/reason_dialog.dart';
 import '../../widgets/status_badge.dart';
 import '../../widgets/search_filter_bar.dart';
@@ -511,12 +513,18 @@ class _PartnerWorkersScreenState extends ConsumerState<PartnerWorkersScreen> {
                         ],
                       ),
                       alignment: Alignment.center,
-                      child: Text(
-                        (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 20,
+                      // The worker's photo when one is set; the initial on
+                      // the brand gradient otherwise (and while it loads).
+                      child: ProfileAvatar(
+                        url: ProfileImageNotifier.urlFor(w.photoUrl),
+                        size: 52,
+                        placeholder: Text(
+                          (w.name.isNotEmpty ? w.name[0] : '?').toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 20,
+                          ),
                         ),
                       ),
                     ),
