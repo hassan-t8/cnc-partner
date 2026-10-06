@@ -1,13 +1,18 @@
+import 'dart:io';
+
 import '../../widgets/main_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
 import '../../core/network/api_client.dart';
+import '../../core/profile/profile_image_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/image_source_sheet.dart';
 import '../../widgets/location_picker_screen.dart';
 import '../../widgets/phone_field.dart';
+import '../../widgets/profile_avatar.dart';
 import '../../widgets/searchable_picker.dart';
 import 'partner_schedule_screen.dart';
 import 'partner_models.dart';
@@ -46,6 +51,11 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
   Map<int, List<int>> _serviceItemsByBp = {}; // basePriceId -> serviceItemIds
   int? _assignedVanId; // van (driver)
   bool _autoAssign = true;
+  // Profile photo (backend 2026-10-05, as the CRM's worker form): the saved
+  // filename, and a newly picked local file waiting for Save. Clearing
+  // _photoUrl with nothing picked removes the photo on Save.
+  String _photoUrl = '';
+  String? _photoPath;
   bool _busy = false;
   bool _dirty = false; // enables Save only after a change/entry
   late Future<List<Zone>> _zones;
@@ -75,6 +85,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
     _zoneId = w?.primaryZoneId;
     _homeLat = w?.homeLat;
     _homeLng = w?.homeLng;
+    _photoUrl = w?.photoUrl ?? '';
     final repo = ref.read(partnerRepositoryProvider);
     _zones = repo.zones();
     _vans = repo.vans().catchError((_) => <Van>[]);
@@ -165,6 +176,13 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       if (_homeLat != null) 'homeLat': _homeLat,
       if (_homeLng != null) 'homeLng': _homeLng,
       if (partnerId != null) 'partnerId': partnerId,
+      // Remove: the server stores '' as no photo. A new pick is uploaded
+      // after the save instead (it needs the worker id on create).
+      if (_isEdit &&
+          _photoPath == null &&
+          _photoUrl.isEmpty &&
+          widget.worker!.photoUrl.isNotEmpty)
+        'photoUrl': '',
     };
     try {
       final repo = ref.read(partnerRepositoryProvider);
@@ -178,7 +196,23 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
       if (workerId != null) {
         await _syncRelations(repo, workerId);
       }
-      AppToast.success(_isEdit ? 'Worker updated' : 'Worker added');
+      // The worker is saved by now, so a failed upload must not keep the
+      // form open: on create a second Save would add the worker twice.
+      var photoFailed = false;
+      if (workerId != null && _photoPath != null) {
+        try {
+          await repo.uploadWorkerPhoto(workerId, _photoPath!);
+        } catch (_) {
+          photoFailed = true;
+        }
+      }
+      if (photoFailed) {
+        AppToast.error(_isEdit
+            ? 'Worker updated, but the photo could not be uploaded. Please try again.'
+            : 'Worker added, but the photo could not be uploaded. Add it from Edit.');
+      } else {
+        AppToast.success(_isEdit ? 'Worker updated' : 'Worker added');
+      }
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (e) {
       AppToast.error(e.message);
@@ -243,6 +277,7 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
           controller: _scrollCtrl,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           children: [
+            _photoSection(),
             _field('First name *', _first, fieldKey: _firstKey,
                 validator: (v) => (v ?? '').trim().isEmpty ? 'Required' : null),
             _field('Last name', _last),
@@ -582,6 +617,132 @@ class _WorkerFormState extends ConsumerState<WorkerForm> {
                 : Text(_isEdit ? 'Save changes' : 'Add worker'),
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _pickPhoto() async {
+    final picked = await pickProfileImage(context, title: 'Profile photo');
+    if (picked == null || !mounted) return;
+    setState(() => _photoPath = picked.path);
+    _markDirty();
+  }
+
+  void _removePhoto() {
+    setState(() {
+      _photoPath = null;
+      _photoUrl = '';
+    });
+    _markDirty();
+  }
+
+  /// Avatar + Upload/Replace/Remove at the top of the form, like the CRM's
+  /// worker form. The pick is held until Save.
+  Widget _photoSection() {
+    final hasPhoto = _photoPath != null || _photoUrl.isNotEmpty;
+    final initials = ListenableBuilder(
+      listenable: Listenable.merge([_first, _last]),
+      builder: (_, __) {
+        final s = [_first.text, _last.text]
+            .map((t) => t.trim())
+            .where((t) => t.isNotEmpty)
+            .map((t) => t[0])
+            .join()
+            .toUpperCase();
+        return Text(s.isEmpty ? 'W' : s,
+            style: const TextStyle(
+                color: AppColors.brand700,
+                fontWeight: FontWeight.w800,
+                fontSize: 20));
+      },
+    );
+    final avatar = _photoPath != null
+        ? Container(
+            width: 64,
+            height: 64,
+            clipBehavior: Clip.antiAlias,
+            decoration: const BoxDecoration(shape: BoxShape.circle),
+            child: Image.file(File(_photoPath!), fit: BoxFit.cover),
+          )
+        : ProfileAvatar(
+            url: ProfileImageNotifier.urlFor(_photoUrl),
+            size: 64,
+            backgroundColor: AppColors.brand50,
+            border: Border.all(color: AppColors.border),
+            placeholder: initials,
+          );
+    final linkStyle = TextButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      minimumSize: const Size(0, 36),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            key: const Key('worker-photo-avatar'),
+            onTap: _busy ? null : _pickPhoto,
+            child: Stack(
+              children: [
+                avatar,
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: AppColors.brand600,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.surface, width: 2),
+                    ),
+                    child: const Icon(Icons.camera_alt,
+                        size: 13, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Profile photo',
+                    style:
+                        TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(
+                    "Shown on the dispatch board and the worker's own profile.",
+                    style:
+                        TextStyle(color: AppColors.textFaint, fontSize: 11.5)),
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    TextButton(
+                      onPressed: _busy ? null : _pickPhoto,
+                      style: linkStyle,
+                      child: Text(hasPhoto ? 'Replace' : 'Upload'),
+                    ),
+                    if (hasPhoto)
+                      TextButton(
+                        onPressed: _busy ? null : _removePhoto,
+                        style: linkStyle.copyWith(
+                          foregroundColor:
+                              const WidgetStatePropertyAll(AppColors.rose),
+                        ),
+                        child: const Text('Remove'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
