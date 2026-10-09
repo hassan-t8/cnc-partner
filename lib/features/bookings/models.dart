@@ -142,6 +142,50 @@ class BookingServiceLine {
   }
 }
 
+/// One company-side point of contact on a corporate booking — the snapshot
+/// the backend takes from User.contactPersons at booking creation.
+class ContactPerson {
+  const ContactPerson({
+    this.name = '',
+    this.role = '',
+    this.phone = '',
+    this.email = '',
+  });
+
+  final String name;
+  final String role;
+  final String phone;
+  final String email;
+
+  /// Mirrors the web's parseContactPersons (BookingDetailModal.tsx): the
+  /// column may arrive as an array or a JSON string; anything malformed → [].
+  /// Entries with no name, phone or email are dropped.
+  static List<ContactPerson> listFrom(dynamic raw) {
+    dynamic arr = raw;
+    if (arr is String) {
+      try {
+        arr = jsonDecode(arr);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (arr is! List) return const [];
+    final out = <ContactPerson>[];
+    for (final c in arr) {
+      if (c is! Map) continue;
+      final p = ContactPerson(
+        name: _s(c['name']).trim(),
+        role: _s(c['role']).trim(),
+        phone: _s(c['phone']).trim(),
+        email: _s(c['email']).trim(),
+      );
+      if (p.name.isEmpty && p.phone.isEmpty && p.email.isEmpty) continue;
+      out.add(p);
+    }
+    return out;
+  }
+}
+
 /// A worker's job assignment (crew/driver).
 class Assignment {
   final int id;
@@ -540,6 +584,15 @@ class PartnerBooking {
   /// and each one has its own scope worth reading before attending.
   final List<BookingServiceLine> services;
 
+  /// 2026-10-08 — corporate booking snapshot. [bookingType] is 'individual'
+  /// or 'corporate'; [companyName] and [contactPersons] are what the web
+  /// shows in its "Corporate Client" block once the job is committed.
+  final String bookingType;
+  final String companyName;
+  final List<ContactPerson> contactPersons;
+
+  bool get isCorporate => bookingType.toLowerCase() == 'corporate';
+
   const PartnerBooking({
     required this.id,
     this.ref = '',
@@ -580,6 +633,9 @@ class PartnerBooking {
     this.hours = 1,
     this.scheduledEnd,
     this.services = const [],
+    this.bookingType = '',
+    this.companyName = '',
+    this.contactPersons = const [],
   });
 
   /// Address + area for display, deduped/joined.
@@ -679,6 +735,9 @@ class PartnerBooking {
         hours: hours,
         scheduledEnd: scheduledEnd,
         services: services,
+        bookingType: bookingType,
+        companyName: companyName,
+        contactPersons: contactPersons,
       );
 
   factory PartnerBooking.fromJson(Map<String, dynamic> j) {
@@ -748,6 +807,9 @@ class PartnerBooking {
       hours: crew.hours,
       scheduledEnd: _dt(j['scheduledEnd']),
       services: BookingServiceLine.listFrom(j['bookingServices']),
+      bookingType: _s(j['bookingType']),
+      companyName: _s(j['companyName']),
+      contactPersons: ContactPerson.listFrom(j['contactPersons']),
     );
   }
 }
