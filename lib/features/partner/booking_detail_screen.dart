@@ -584,6 +584,7 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       }
     });
     final actions = _actions();
+    final corporate = _corporateCard();
     final canManageTeam = b.status == 'awaiting_acceptance' ||
         b.status == 'accepted' ||
         b.status == 'in_progress';
@@ -612,6 +613,10 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
               if (b.services.isNotEmpty) ...[
                 const SizedBox(height: 14),
                 _servicesCard(),
+              ],
+              if (corporate != null) ...[
+                const SizedBox(height: 14),
+                corporate,
               ],
               const SizedBox(height: 14),
               _customerCard(),
@@ -975,6 +980,136 @@ class _BookingDetailScreenState extends ConsumerState<BookingDetailScreen> {
       ),
     );
   }
+
+  /// Corporate client block — company name plus the contact persons picked at
+  /// booking creation. Mirrors the web's "Corporate Client" section
+  /// (BookingDetailModal.tsx, 2026-10-08): corporate bookings only, and the
+  /// same reveal rule as the address (only once the job is committed).
+  /// Null when there is nothing to show.
+  Widget? _corporateCard() {
+    if (!b.isCorporate) return null;
+    if (!_addressVisibleAt.contains(b.status.toLowerCase())) return null;
+    final company = (b.companyName.trim().isNotEmpty
+            ? b.companyName
+            : b.customerName)
+        .trim();
+    final contacts = b.contactPersons;
+    if (company.isEmpty && contacts.isEmpty) return null;
+    return _card(
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeader(Icons.business_outlined, 'Corporate Client'),
+          if (company.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(company,
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                _semChip('Corporate', const Color(0xFF4F46E5)),
+              ],
+            ),
+          ],
+          if (contacts.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+                (contacts.length > 1 ? 'Contact persons' : 'Contact person')
+                    .toUpperCase(),
+                style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: AppColors.textMuted)),
+            for (final c in contacts) ...[
+              const SizedBox(height: 6),
+              _contactRow(c),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _contactRow(ContactPerson c) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: c.name.isEmpty ? 'Contact' : c.name,
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              if (c.role.isNotEmpty)
+                TextSpan(
+                    text: '  (${c.role})',
+                    style: TextStyle(color: AppColors.textMuted)),
+            ]),
+                style: const TextStyle(fontSize: 13)),
+            if (c.phone.isNotEmpty || c.email.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 12,
+                runSpacing: 2,
+                children: [
+                  if (c.phone.isNotEmpty)
+                    _contactLink(
+                      Icons.phone_outlined,
+                      c.phone,
+                      // Strip formatting the dialer rejects; keep a leading +.
+                      Uri(
+                          scheme: 'tel',
+                          path: c.phone.replaceAll(RegExp(r'[^0-9+]'), '')),
+                    ),
+                  if (c.email.isNotEmpty)
+                    _contactLink(Icons.mail_outline, c.email,
+                        Uri(scheme: 'mailto', path: c.email)),
+                ],
+              ),
+            ],
+          ],
+        ),
+      );
+
+  /// Tappable phone / email inside a contact row (tel: / mailto:, as on web).
+  Widget _contactLink(IconData icon, String text, Uri uri) => InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () async {
+          final ok =
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+          if (!ok) AppToast.error('Could not open $text');
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 13, color: AppColors.textFaint),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(text,
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary)),
+              ),
+            ],
+          ),
+        ),
+      );
 
   /// Schedule.
   Widget _scheduleCard() => _card(
